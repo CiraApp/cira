@@ -9,7 +9,7 @@
     "nextjs",
     "cli"
   ],
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/CiraApp/cira#readme",
   "repository": {
     "type": "git",
@@ -27,7 +27,8 @@
   "files": [
     "bin",
     "SKILL.md",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22"

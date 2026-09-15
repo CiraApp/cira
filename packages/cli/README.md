@@ -48,3 +48,7 @@ declining writes nothing.
 | -------------- | ------------------------------------------------------ |
 | `CIRA_API_URL` | Point at a different Cira.                             |
 | `CIRA_HOME`    | Where the credential is stored. Defaults to `~/.cira`. |
+
+## Licence
+
+Apache 2.0. The CLI is a thin client; Cira itself is a hosted service.
