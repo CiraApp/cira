@@ -1,0 +1,64 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+/**
+ * A command someone is meant to run elsewhere, so the useful action is copying
+ * it rather than reading it. Confirmation is inline and brief; a toast for
+ * something this small would be louder than the action.
+ */
+export function CopyableCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+  const [canCopy, setCanCopy] = useState(false);
+
+  // Clipboard access needs a secure context, so the button only appears where
+  // it will actually work. Elsewhere the command is still readable and
+  // selectable, which is the thing that matters.
+  useEffect(() => {
+    setCanCopy(typeof navigator !== "undefined" && navigator.clipboard !== undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+    } catch {
+      setCanCopy(false);
+    }
+  };
+
+  const body = (
+    <>
+      <span className="text-ink-subtle select-none">$</span>
+      <code className="font-mono text-[13px] text-ink">{command}</code>
+    </>
+  );
+
+  if (!canCopy) {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5">
+        {body}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={copied ? "Copied" : `Copy "${command}"`}
+      className="group inline-flex items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5 transition-colors hover:border-border-strong hover:bg-surface"
+    >
+      {body}
+      <span className="ml-1 w-[52px] text-left text-[11px] font-medium text-ink-subtle transition-colors group-hover:text-ink-muted">
+        {copied ? "Copied" : "Copy"}
+      </span>
+    </button>
+  );
+}

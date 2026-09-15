@@ -1,8 +1,14 @@
 import { notFound } from "next/navigation";
 import { AppGallery } from "@/components/app-gallery";
 import { EmptyGallery } from "@/components/empty-gallery";
+import { SpaceSwitcher } from "@/components/space-switcher";
 import { TopBar } from "@/components/top-bar";
-import { NotFoundError, listVisibleApps, requireSpaceMember } from "@/lib/authz";
+import {
+  NotFoundError,
+  listMySpaces,
+  listVisibleApps,
+  requireSpaceMember,
+} from "@/lib/authz";
 
 export default async function SpacePage({
   params,
@@ -12,9 +18,10 @@ export default async function SpacePage({
   const { spaceSlug } = await params;
 
   try {
-    const [{ space }, apps] = await Promise.all([
-      requireSpaceMember(spaceSlug),
+    await requireSpaceMember(spaceSlug);
+    const [apps, spaces] = await Promise.all([
       listVisibleApps(spaceSlug),
+      listMySpaces(),
     ]);
 
     return (
@@ -22,7 +29,7 @@ export default async function SpacePage({
         <TopBar spaceSlug={spaceSlug} />
 
         <main className="mx-auto w-full max-w-5xl px-6 py-10">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">{space.name}</h1>
+          <SpaceSwitcher spaces={spaces} currentSlug={spaceSlug} />
 
           <div className="mt-7">
             {apps.length === 0 ? (

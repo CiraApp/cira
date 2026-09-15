@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { TopBar } from "@/components/top-bar";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { latestDeployment } from "@/lib/queries";
+import { appColor, appInitial } from "@/lib/app-color";
+import { resolveAppState } from "@/lib/app-state";
 
 export default async function AppPage({
   params,
@@ -14,43 +16,73 @@ export default async function AppPage({
   try {
     const { app, space } = await requireAppAccess(spaceSlug, appSlug);
     const deployment = await latestDeployment(app.id);
+    const color = appColor(app.id);
+    const resolved = resolveAppState(app, deployment);
 
     return (
       <>
         <TopBar spaceSlug={spaceSlug} />
 
-        <main className="mx-auto w-full max-w-3xl px-6 py-10">
+        <main className="animate-fade-in mx-auto w-full max-w-3xl px-6 py-10">
           <Link
             href={`/${spaceSlug}`}
-            className="text-sm text-ink-muted transition-colors hover:text-ink"
+            className="group inline-flex items-center gap-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
           >
-            &larr; {space.name}
+            <span
+              aria-hidden="true"
+              className="transition-transform duration-200 group-hover:-translate-x-0.5"
+            >
+              &larr;
+            </span>
+            {space.name}
           </Link>
 
-          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">
-            {app.name}
-          </h1>
+          <div className="mt-6 flex items-start gap-4">
+            <span
+              aria-hidden="true"
+              style={{ backgroundColor: color.bg, color: color.fg }}
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[15px] text-[22px] font-semibold"
+            >
+              {app.icon ?? appInitial(app.name)}
+            </span>
 
-          {app.description !== null && app.description !== "" ? (
-            <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">
-              {app.description}
-            </p>
-          ) : null}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-ink">
+                {app.name}
+              </h1>
+              {app.description !== null && app.description !== "" ? (
+                <p className="mt-1 text-[15px] text-ink-muted">{app.description}</p>
+              ) : null}
+            </div>
+          </div>
 
           <div className="mt-7">
-            {deployment !== null && deployment.url !== null && app.status === "live" ? (
+            {resolved.openUrl !== null ? (
               <a
-                href={deployment.url}
-                className="inline-flex rounded-xl bg-accent px-5 py-2.5 text-[15px] font-medium text-white transition-colors hover:bg-accent-hover"
+                href={resolved.openUrl}
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[15px] font-medium text-white shadow-[0_4px_14px_-4px_rgba(91,75,214,0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover"
               >
                 Open
+                <span aria-hidden="true">&rarr;</span>
               </a>
             ) : (
-              <p className="rounded-xl border border-border bg-surface px-5 py-4 text-[15px] text-ink-muted">
-                This app has not finished deploying yet.
+              <p className="rounded-xl border border-border bg-surface px-5 py-4 text-[14px] text-ink-muted">
+                {resolved.blockedReason}
               </p>
             )}
           </div>
+
+          <dl className="mt-9 grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-px overflow-hidden rounded-[var(--radius-card)] border border-border bg-border">
+            <Fact label="Status">
+              <StatusValue state={resolved.state} label={resolved.label} />
+            </Fact>
+            <Fact label="Last deployed">
+              {deployment === null ? "Never" : relativeTime(deployment.createdAt)}
+            </Fact>
+            <Fact label="Provider">
+              {deployment === null ? "Not deployed" : deployment.provider}
+            </Fact>
+          </dl>
         </main>
       </>
     );
@@ -58,4 +90,58 @@ export default async function AppPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   }
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-surface px-5 py-4">
+      <dt className="text-[11px] font-medium tracking-wide text-ink-subtle uppercase">
+        {label}
+      </dt>
+      <dd className="mt-1.5 text-[14px] text-ink">{children}</dd>
+    </div>
+  );
+}
+
+const STATUS_DOT: Record<string, string> = {
+  live: "bg-live",
+  deploying: "bg-pending animate-breathe",
+  failed: "bg-failed",
+  "never-deployed": "bg-ink-subtle",
+};
+
+function StatusValue({ state, label }: { state: string; label: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[state] ?? "bg-ink-subtle"}`}
+      />
+      {label}
+    </span>
+  );
+}
+
+/** Coarse on purpose: "5 minutes ago" is what the spec asks for, not a timestamp. */
+function relativeTime(when: Date): string {
+  const seconds = Math.round((Date.now() - when.getTime()) / 1000);
+  if (seconds < 60) return "Just now";
+
+  const units: Array<[number, string]> = [
+    [60, "minute"],
+    [3600, "hour"],
+    [86400, "day"],
+  ];
+
+  for (let i = units.length - 1; i >= 0; i -= 1) {
+    const entry = units[i];
+    if (entry === undefined) continue;
+    const [size, name] = entry;
+    if (seconds >= size) {
+      const value = Math.floor(seconds / size);
+      return `${value} ${name}${value === 1 ? "" : "s"} ago`;
+    }
+  }
+
+  return "Just now";
 }
