@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db, memberships, spaces } from "@cira/db";
 import { newId, slugify } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
+import { claimableDomain } from "@/lib/email-domain";
 
 const createSpaceInput = z.object({
   name: z
@@ -45,10 +46,14 @@ export async function createSpace(
   const slug = await findFreeSlug(base);
 
   const spaceId = newId("space");
+  // The founder's company domain becomes the space's, so colleagues can join
+  // without being invited one at a time. Only a domain they hold an address
+  // at, and never a public provider.
   await database.insert(spaces).values({
     id: spaceId,
     name: parsed.data.name,
     slug,
+    domain: claimableDomain(user.email),
   });
 
   await database.insert(memberships).values({

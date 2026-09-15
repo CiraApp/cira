@@ -20,6 +20,7 @@ Keep `prod` green.
 - [x] Create a Space (first-login onboarding, one field, no wizard)
 - [x] Space membership and roles
 - [x] Invite by link bound to one address, join through it
+- [x] Join by company email domain, so colleagues do not need inviting one by one
 - [x] Logout
 
 ## Phase 3 - App gallery
@@ -84,6 +85,11 @@ Keep `prod` green.
   regardless of CI, so a red pipeline would still ship. `VERCEL_TOKEN` is a
   repository secret and expires 2026-12-14; org and project ids are not
   secrets and live in the workflow.
+- **Joining** - a company is the unit, like Slack: a space claims its
+  founder's email domain, and anyone with a VERIFIED address there joins in one
+  click without an invite. Public providers (gmail and friends) can never be
+  claimed. This exists because the second employee to sign up was otherwise
+  pushed to found a duplicate of their own company.
 - **Invites** - a link the inviter sends themselves, bound to one email
   address, single use, seven-day lifetime. No mail provider in V1: an inviter
   who can reach a colleague already has a channel, and binding to an address

@@ -55,9 +55,18 @@ export const spaces = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    /**
+     * The company's email domain, when its creator had one. Anyone with a
+     * verified address here can join without an individual invite, the way a
+     * company Slack works. Null for spaces created from a personal address.
+     */
+    domain: text("domain"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("spaces_slug_idx").on(t.slug)],
+  (t) => [
+    uniqueIndex("spaces_slug_idx").on(t.slug),
+    index("spaces_domain_idx").on(t.domain),
+  ],
 );
 
 export const memberships = pgTable(

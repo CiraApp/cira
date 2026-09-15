@@ -30,11 +30,20 @@ async function readProviderIdentity(): Promise<ProviderIdentity | null> {
   const account = await currentUser();
   if (account === null) return null;
 
+  // Only a VERIFIED address may be used. Space membership can be granted from
+  // an email domain, so an unverified address would let anyone claim to work
+  // anywhere simply by typing it in.
+  const verified = account.emailAddresses.filter(
+    (e) => e.verification?.status === "verified",
+  );
+  const primary = account.primaryEmailAddress;
   const email =
-    account.primaryEmailAddress?.emailAddress ?? account.emailAddresses[0]?.emailAddress;
+    primary !== null && primary !== undefined && verified.some((e) => e.id === primary.id)
+      ? primary.emailAddress
+      : verified[0]?.emailAddress;
 
-  // An account with no email cannot be invited, granted access, or matched to a
-  // pending invite, so it is not a usable Cira identity.
+  // An account with no verified email cannot be invited, granted access, or
+  // matched to a pending invite, so it is not a usable Cira identity.
   if (email === undefined) return null;
 
   const name =
