@@ -71,8 +71,10 @@ jobs:
       # VERCEL_TOKEN expires 2026-12-14 (90 days from 2026-09-15). When it
       # lapses, these steps fail with an authentication error rather than
       # anything that mentions expiry, so check the token first.
+      # npm, not pnpm: pnpm's global bin directory is not on PATH on the
+      # runner, so `pnpm add -g` installs a binary nothing can then invoke.
       - name: Install Vercel CLI
-        run: pnpm add -g vercel@59
+        run: npm install -g vercel@59
 
       - name: Pull project settings
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
