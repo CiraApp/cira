@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CanonicalSkill } from "@cira/skill";
-import type { InstallResult, SkillEnv, SkillInstaller } from "./installer.js";
+import {
+  onPath,
+  type InstallResult,
+  type SkillEnv,
+  type SkillInstaller,
+} from "./installer.js";
 
 /**
  * Cursor reads project rules from `.cursor/rules/*.mdc`.
@@ -24,7 +29,10 @@ export function cursor(env: SkillEnv): SkillInstaller {
       Promise.resolve(
         existsSync(join(env.home, ".cursor")) ||
           existsSync(join(env.home, ".config", "Cursor")) ||
-          existsSync(join(env.home, "Library", "Application Support", "Cursor")),
+          existsSync(join(env.home, "Library", "Application Support", "Cursor")) ||
+          // On WSL the editor is installed on the Windows side: its binary is
+          // reachable while its configuration directory is not.
+          onPath(env, "cursor"),
       ),
 
     install: (skill: CanonicalSkill): Promise<InstallResult> => {

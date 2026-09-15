@@ -3,16 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { canonicalSkill } from "@cira/skill";
-import { claudeCode } from "./claude-code.js";
-import { codex } from "./codex.js";
+import { claudeCode, codex, geminiCli, pi } from "./agents.js";
 import { cursor } from "./cursor.js";
-import { detectAgents, installSkill, mergeBlock } from "./index.js";
+import { detectAgents, installSkill, sharedSkillsDir } from "./index.js";
 import type { SkillEnv } from "./installer.js";
 
 /**
  * Installing runs against a real temporary filesystem rather than mocks.
  * Writing files correctly is the entire job, so a test that does not write
  * files would be testing the wrong thing.
+ *
+ * `path` is empty in every case, so detection sees only the fake home and
+ * never whatever happens to be installed on the machine running the suite.
  */
 
 let root: string;
@@ -25,7 +27,7 @@ beforeEach(() => {
   mkdirSync(join(root, "home"), { recursive: true });
   mkdirSync(join(root, "project"), { recursive: true });
   writeFileSync(join(root, "project", "package.json"), "{}\n");
-  env = { home: join(root, "home"), cwd: join(root, "project") };
+  env = { home: join(root, "home"), cwd: join(root, "project"), path: [] };
 });
 
 afterEach(() => {
@@ -34,9 +36,11 @@ afterEach(() => {
   delete process.env["CODEX_HOME"];
 });
 
-const withClaude = () => mkdirSync(join(env.home, ".claude"), { recursive: true });
-const withCodex = () => mkdirSync(join(env.home, ".codex"), { recursive: true });
-const withCursor = () => mkdirSync(join(env.home, ".cursor"), { recursive: true });
+const withAgent = (dir: string) => mkdirSync(join(env.home, dir), { recursive: true });
+const read = (path: string) => readFileSync(path, "utf8");
+const shared = () => join(sharedSkillsDir(env), "cira", "SKILL.md");
+const claudePath = () => join(env.home, ".claude", "skills", "cira", "SKILL.md");
+const cursorPath = () => join(env.cwd, ".cursor", "rules", "cira.mdc");
 
 describe("detection", () => {
   it("finds nothing on a machine with no coding agents", async () => {
@@ -44,88 +48,64 @@ describe("detection", () => {
   });
 
   it("finds each agent by its own configuration directory", async () => {
-    withClaude();
-    withCursor();
-    expect((await detectAgents(env)).map((a) => a.name)).toEqual([
-      "Claude Code",
-      "Cursor",
-    ]);
-
-    withCodex();
+    for (const dir of [".claude", ".codex", ".pi", ".gemini", ".cursor"]) {
+      withAgent(dir);
+    }
     expect((await detectAgents(env)).map((a) => a.name)).toEqual([
       "Claude Code",
       "Codex",
+      "Pi",
+      "Gemini CLI",
       "Cursor",
     ]);
+  });
+
+  it("finds an agent that is on the PATH but has never been run", async () => {
+    // The WSL case: Cursor installed on the Windows side has a reachable
+    // binary and no configuration directory this side of the boundary.
+    const bin = join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "cursor"), "");
+
+    expect(await cursor({ ...env, path: [bin] }).detect()).toBe(true);
+    expect(await cursor(env).detect()).toBe(false);
   });
 
   it("respects the environment variables those agents document", async () => {
     const elsewhere = join(root, "elsewhere");
     mkdirSync(elsewhere, { recursive: true });
     process.env["CLAUDE_CONFIG_DIR"] = elsewhere;
-
     expect(await claudeCode(env).detect()).toBe(true);
   });
 });
 
-describe("Claude Code", () => {
-  it("writes the canonical file through, unchanged", async () => {
-    withClaude();
+describe("the shared skills directory", () => {
+  it("is one file for Codex, Pi and Gemini CLI", async () => {
+    for (const agent of [codex(env), pi(env), geminiCli(env)]) {
+      const result = await agent.install(skill);
+      expect(result).toEqual({ ok: true, where: shared() });
+    }
+
+    expect(read(shared()).trim()).toBe(skill.source.trim());
+  });
+
+  it("gives Claude Code its own copy, because it reads nowhere else", async () => {
     const result = await claudeCode(env).install(skill);
 
-    expect(result.ok).toBe(true);
-    const path = join(env.home, ".claude", "skills", "cira", "SKILL.md");
-    expect(readFileSync(path, "utf8").trim()).toBe(skill.source.trim());
-  });
-});
-
-describe("Codex", () => {
-  it("creates AGENTS.md when the developer has none", async () => {
-    withCodex();
-    await codex(env).install(skill);
-
-    const written = readFileSync(join(env.home, ".codex", "AGENTS.md"), "utf8");
-    expect(written).toContain("<!-- cira:skill:start -->");
-    expect(written).toContain("# Cira");
-  });
-
-  it("keeps instructions the developer already had", async () => {
-    withCodex();
-    const path = join(env.home, ".codex", "AGENTS.md");
-    writeFileSync(path, "# My rules\n\nAlways write tests first.\n");
-
-    await codex(env).install(skill);
-
-    const written = readFileSync(path, "utf8");
-    expect(written).toContain("Always write tests first.");
-    expect(written).toContain("# Cira");
-  });
-
-  it("replaces its own block rather than stacking copies", async () => {
-    withCodex();
-    const path = join(env.home, ".codex", "AGENTS.md");
-    writeFileSync(path, "# My rules\n");
-
-    await codex(env).install(skill);
-    const once = readFileSync(path, "utf8");
-    await codex(env).install(skill);
-    const twice = readFileSync(path, "utf8");
-
-    expect(twice).toBe(once);
-    expect(twice.match(/cira:skill:start/g)).toHaveLength(1);
-    expect(twice).toContain("# My rules");
+    expect(result).toEqual({ ok: true, where: claudePath() });
+    expect(claudePath()).not.toBe(shared());
+    expect(read(claudePath()).trim()).toBe(skill.source.trim());
   });
 });
 
 describe("Cursor", () => {
   it("writes a project rule with the frontmatter .mdc requires", async () => {
-    withCursor();
     const result = await cursor(env).install(skill);
 
     expect(result.ok).toBe(true);
-    const written = readFileSync(join(env.cwd, ".cursor", "rules", "cira.mdc"), "utf8");
-    // A plain .md in .cursor/rules is ignored, so these three fields are the
-    // one adaptation a provider forces on us.
+    const written = read(cursorPath());
+    // A plain .md in .cursor/rules is ignored, so these fields are the one
+    // adaptation any provider forces on us.
     expect(written.startsWith("---\n")).toBe(true);
     expect(written).toContain("description:");
     expect(written).toContain("alwaysApply:");
@@ -133,11 +113,9 @@ describe("Cursor", () => {
   });
 
   it("says why rather than scattering a .cursor folder outside a project", async () => {
-    withCursor();
     const homeless = { ...env, cwd: join(root, "home") };
 
-    const result = await cursor(homeless).install(skill);
-    expect(result).toEqual({
+    expect(await cursor(homeless).install(skill)).toEqual({
       ok: false,
       why: "run this from a project folder - Cursor rules live in the project",
     });
@@ -145,34 +123,32 @@ describe("Cursor", () => {
 });
 
 describe("installing across agents", () => {
-  it("gives every agent the same skill, whatever the wrapper", async () => {
-    withClaude();
-    withCodex();
-    withCursor();
+  const everything = () => {
+    for (const dir of [".claude", ".codex", ".pi", ".gemini", ".cursor"]) {
+      withAgent(dir);
+    }
+  };
 
+  it("gives every agent the same skill, whatever the wrapper", async () => {
+    everything();
     await installSkill(await detectAgents(env));
 
-    const claude = readFileSync(
-      join(env.home, ".claude", "skills", "cira", "SKILL.md"),
-      "utf8",
-    );
-    const codexFile = readFileSync(join(env.home, ".codex", "AGENTS.md"), "utf8");
-    const cursorFile = readFileSync(
-      join(env.cwd, ".cursor", "rules", "cira.mdc"),
-      "utf8",
-    );
-
-    // The packaging differs by necessity; the content must not.
-    for (const written of [claude, codexFile, cursorFile]) {
-      expect(written).toContain(skill.body.trim());
+    for (const path of [claudePath(), shared(), cursorPath()]) {
+      expect(read(path), path).toContain(skill.body.trim());
     }
   });
 
-  it("is safe to run twice", async () => {
-    withClaude();
-    withCodex();
-    withCursor();
+  it("writes three files for five agents", async () => {
+    everything();
+    const reports = await installSkill(await detectAgents(env));
 
+    const paths = new Set(reports.flatMap((r) => (r.result.ok ? [r.result.where] : [])));
+    expect(reports).toHaveLength(5);
+    expect(paths.size).toBe(3);
+  });
+
+  it("is safe to run twice", async () => {
+    everything();
     const first = await installSkill(await detectAgents(env));
     const before = snapshot();
     const second = await installSkill(await detectAgents(env));
@@ -182,9 +158,7 @@ describe("installing across agents", () => {
   });
 
   it("does not let one agent's failure touch the others", async () => {
-    withClaude();
-    withCodex();
-
+    everything();
     const broken = {
       name: "Broken",
       detect: () => Promise.resolve(true),
@@ -197,18 +171,8 @@ describe("installing across agents", () => {
       ok: false,
       why: "permission denied",
     });
-    expect(reports.filter((r) => r.result.ok).map((r) => r.agent)).toEqual([
-      "Claude Code",
-      "Codex",
-    ]);
-
-    // The two that worked are intact.
-    expect(
-      readFileSync(join(env.home, ".claude", "skills", "cira", "SKILL.md"), "utf8"),
-    ).toContain("# Cira");
-    expect(readFileSync(join(env.home, ".codex", "AGENTS.md"), "utf8")).toContain(
-      "# Cira",
-    );
+    expect(read(claudePath())).toContain("# Cira");
+    expect(read(shared())).toContain("# Cira");
   });
 
   it("writes nothing at all when there is nothing to write into", async () => {
@@ -218,39 +182,12 @@ describe("installing across agents", () => {
   });
 
   function snapshot(): string[] {
-    const paths = [
-      join(env.home, ".claude", "skills", "cira", "SKILL.md"),
-      join(env.home, ".codex", "AGENTS.md"),
-      join(env.cwd, ".cursor", "rules", "cira.mdc"),
-    ];
-    return paths.flatMap((path) => {
+    return [claudePath(), shared(), cursorPath()].flatMap((path) => {
       try {
-        return [`${path}::${readFileSync(path, "utf8")}`];
+        return [`${path}::${read(path)}`];
       } catch {
         return [];
       }
     });
   }
-});
-
-describe("mergeBlock", () => {
-  it("adds, then replaces in place", () => {
-    const once = mergeBlock("# Mine\n", "cira one");
-    expect(once).toContain("# Mine");
-
-    const twice = mergeBlock(once, "cira two");
-    expect(twice).toContain("cira two");
-    expect(twice).not.toContain("cira one");
-    expect(twice.match(/cira:skill:start/g)).toHaveLength(1);
-  });
-
-  it("leaves what surrounds it alone", () => {
-    const start =
-      "# Top\n\n<!-- cira:skill:start -->\nold\n<!-- cira:skill:end -->\n\n# Bottom\n";
-    const merged = mergeBlock(start, "new");
-    expect(merged).toContain("# Top");
-    expect(merged).toContain("# Bottom");
-    expect(merged).toContain("new");
-    expect(merged).not.toContain("old");
-  });
 });

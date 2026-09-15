@@ -1,11 +1,13 @@
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import type { CanonicalSkill } from "@cira/skill";
 
 /**
  * Installing the Cira Skill into one coding agent.
  *
- * Three implementations and no more abstraction than three need. Each one
- * answers two questions - is this agent here, and where does its skill go -
- * and nothing about what the skill says. That stays in `@cira/skill`.
+ * Each implementation answers two questions - is this agent here, and where
+ * does its skill go - and nothing about what the skill says. That stays in
+ * `@cira/skill`.
  */
 export interface SkillInstaller {
   /** As a developer would name it. */
@@ -19,50 +21,73 @@ export interface SkillInstaller {
 export type InstallResult =
   | { ok: true; where: string }
   /**
-   * Not an error: the agent is here but this is not the moment or place to
-   * install for it. Cursor's rules are per project, so running `cira login`
-   * from a home directory is exactly this case.
+   * Not an error: the agent is here but this is not the place to install for
+   * it. Cursor's rules are per project, so running `cira login` from a home
+   * directory is exactly this case.
    */
   | { ok: false; why: string };
 
 /**
- * Where an installer is allowed to look and write.
+ * Where an installer may look and write.
  *
- * Passed in rather than read from the process, so the tests can run every
- * installer against a real temporary directory instead of mocking a
- * filesystem. What these do is write files; a test that does not write files
- * is testing something else.
+ * Passed in rather than read from the process, so tests can run every
+ * installer against a real temporary directory. `path` is here for the same
+ * reason: detection consults it, and a test that inherited the real one would
+ * find whatever happens to be installed on the machine running it.
  */
 export interface SkillEnv {
   home: string;
   cwd: string;
+  path: readonly string[];
 }
 
-/** The markers around Cira's section of a file it does not own. */
-export const BLOCK_START = "<!-- cira:skill:start -->";
-export const BLOCK_END = "<!-- cira:skill:end -->";
+/**
+ * The shared skills directory.
+ *
+ * Codex, Pi and Gemini CLI all read `~/.agents/skills`, so Cira writes there
+ * once instead of into three private directories. It is the agents'
+ * convergence, not Cira's invention - which is the whole reason to prefer it:
+ * the next agent to adopt it needs no code here at all.
+ *
+ * Claude Code is the exception and reads only its own directory, so it still
+ * gets its own copy.
+ */
+export function sharedSkillsDir(env: SkillEnv): string {
+  return join(env.home, ".agents", "skills");
+}
 
 /**
- * Put Cira's section into a file that may already have someone else's
- * instructions in it, and put it in the same place every time.
+ * Write the canonical file into a skills directory, unchanged.
  *
- * Codex keeps global instructions in one `AGENTS.md` that belongs to the
- * developer, so overwriting it would destroy their own work. A delimited block
- * is what makes installing twice a no-op rather than a duplication, and what
- * lets a person delete Cira's part without hunting for where it ends.
+ * Every agent that speaks Agent Skills takes the same `name`/`description`
+ * frontmatter the canonical file already carries, so there is nothing to
+ * adapt and nothing to fork.
  */
-export function mergeBlock(existing: string, contents: string): string {
-  const block = `${BLOCK_START}\n${contents.trim()}\n${BLOCK_END}`;
+export function writeSkill(skillsDir: string, skill: CanonicalSkill): InstallResult {
+  const directory = join(skillsDir, skill.name);
+  mkdirSync(directory, { recursive: true });
 
-  const start = existing.indexOf(BLOCK_START);
-  const end = existing.indexOf(BLOCK_END);
+  const path = join(directory, "SKILL.md");
+  writeFileSync(path, `${skill.source.trimEnd()}\n`);
 
-  if (start !== -1 && end !== -1 && end > start) {
-    const before = existing.slice(0, start);
-    const after = existing.slice(end + BLOCK_END.length);
-    return `${before}${block}${after}`.trimEnd() + "\n";
-  }
+  return { ok: true, where: path };
+}
 
-  if (existing.trim() === "") return `${block}\n`;
-  return `${existing.trimEnd()}\n\n${block}\n`;
+/**
+ * Is this command on the PATH?
+ *
+ * Checked as well as the config directory because an agent can be installed
+ * without having been run yet, and because on WSL a Windows-installed editor
+ * is reachable as a binary while its home directory is on the other side.
+ */
+export function onPath(env: SkillEnv, command: string): boolean {
+  return env.path.some((dir) =>
+    [command, `${command}.exe`, `${command}.cmd`].some((name) =>
+      dir === "" ? false : existsSync(join(dir, name)),
+    ),
+  );
+}
+
+export function systemPath(): readonly string[] {
+  return (process.env["PATH"] ?? "").split(delimiter).filter((p) => p !== "");
 }

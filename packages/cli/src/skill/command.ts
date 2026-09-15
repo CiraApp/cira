@@ -26,7 +26,7 @@ export async function skillCommand(argv: string[]): Promise<number> {
 
   if (agents.length === 0) {
     info(dim("  No supported coding agents detected."));
-    info(dim("  Cira installs into Claude Code, Codex and Cursor."));
+    info(dim("  Cira installs into Claude Code, Codex, Pi, Gemini CLI and Cursor."));
     info("");
     return 0;
   }
@@ -72,9 +72,20 @@ export async function offerSkill(): Promise<void> {
 }
 
 function report(reports: readonly InstallReport[]): void {
+  // Several agents read one shared file, so the path is said once and the
+  // rest are marked as sharing it. Three identical lines would read as three
+  // installs rather than one convergence.
+  const seen = new Set<string>();
+
   for (const entry of reports) {
-    if (entry.result.ok) success(`${entry.agent} ${dim(entry.result.where)}`);
-    else info(`  - ${entry.agent} ${dim(entry.result.why)}`);
+    if (!entry.result.ok) {
+      info(`  - ${entry.agent} ${dim(entry.result.why)}`);
+      continue;
+    }
+
+    const where = entry.result.where;
+    success(`${entry.agent} ${dim(seen.has(where) ? "(same file)" : where)}`);
+    seen.add(where);
   }
 
   const installed = reports.filter((r) => r.result.ok).length;

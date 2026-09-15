@@ -135,11 +135,19 @@ Keep `prod` green.
   the question. Without a terminal - CI, a container - nothing is written at
   all, because a default only means something to someone who could have
   answered.
-- **Codex gets a delimited block, not a file.** `~/.codex/AGENTS.md` belongs to
-  the developer and usually already holds their own instructions, so Cira takes
-  a marked section of it. That is what makes installing twice a no-op instead
-  of a duplication, and lets someone remove Cira's part without guessing where
-  it ends.
+- **The shared skills directory is preferred wherever an agent reads it.**
+  Codex, Pi and Gemini CLI all load `~/.agents/skills`, so Cira writes one file
+  there instead of three private copies, and the next agent to adopt the
+  convention needs no code here at all. Claude Code is the exception - its
+  documentation lists `~/.claude/skills` and nothing else - so it keeps its own
+  copy rather than a file it would never read. Preferring the shared path also
+  avoids a stale private copy outliving the shared one, which matters on Gemini
+  CLI, where `~/.agents/skills` wins when a skill appears in both.
+- **Detection checks the PATH as well as the config directory.** An agent can
+  be installed without ever having been run, and under WSL an editor installed
+  on the Windows side has a reachable binary while its configuration lives
+  across the boundary - which is exactly how Cursor looked absent on the
+  machine this was built on.
 - **Cursor installs per project, because it has nowhere else.** Its global User
   Rules live inside Cursor's own settings rather than a file on disk, so the
   installer writes `.cursor/rules/cira.mdc` into the project you are standing

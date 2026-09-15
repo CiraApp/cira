@@ -142,8 +142,14 @@ needs, not in what Cira wants them to know.
 Declining writes nothing, and `cira skill install` does it later. Nothing is
 installed by a postinstall script: onboarding asks, once, where you can see it.
 
-| Agent       | Where it goes            | Note                                      |
-| ----------- | ------------------------ | ----------------------------------------- |
-| Claude Code | `~/.claude/skills/cira/` | The canonical file, written through       |
-| Codex       | `~/.codex/AGENTS.md`     | A delimited block; your own rules survive |
-| Cursor      | `.cursor/rules/cira.mdc` | Per project - Cursor has no global path   |
+| Agent       | Where it goes            | Note                                    |
+| ----------- | ------------------------ | --------------------------------------- |
+| Claude Code | `~/.claude/skills/cira/` | Reads only its own directory            |
+| Codex       | `~/.agents/skills/cira/` | Shared                                  |
+| Pi          | `~/.agents/skills/cira/` | Shared                                  |
+| Gemini CLI  | `~/.agents/skills/cira/` | Shared, and takes precedence for it     |
+| Cursor      | `.cursor/rules/cira.mdc` | Per project - Cursor has no global path |
+
+Five agents, three files. Codex, Pi and Gemini CLI all read `~/.agents/skills`,
+so Cira writes there once rather than into three private directories - and an
+agent that adopts the same convention later needs no code here at all.
