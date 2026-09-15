@@ -123,12 +123,21 @@ resolved from that app's own deployment.
 
 ## Publishing the CLI
 
+Tag a release and GitHub Actions publishes it:
+
 ```sh
-pnpm --filter @cira/cli build   # tsc, then bundle into bin/cira.js
-cd packages/cli && npm publish
+npm version patch --workspace @cira-app/cli   # or minor / major
+git push --follow-tags
 ```
 
-`@cira/cli` ships as a single self-contained file with **no runtime
+There is no npm token in this repository. `.github/workflows/publish.yml`
+authenticates over OIDC using npm's trusted publishing, which mints a
+short-lived credential for that one run - nothing to leak, nothing to rotate,
+and npm is removing direct publishing by granular token in January 2027 anyway.
+It also attaches provenance, so anyone can verify a release came from this
+repository.
+
+`@cira-app/cli` ships as a single self-contained file with **no runtime
 dependencies**. `@cira/core`, `@cira/deploy`, `@cira/extract` and `@cira/skill`
 are bundled into it rather than published: they are Cira's own internals with
 no consumers outside this repository, and publishing them would mean committing

@@ -122,6 +122,19 @@ Keep `prod` green.
   migration, once nothing reads it. A migration that drops or renames something
   the running code still uses will break production with every step green.
 
+- **The published scope is `@cira-app`, not `@cira`.** An npm scope is either
+  your username or an organisation of exactly that name; `cira` unscoped was
+  already taken by someone else. Only the published package was renamed - the
+  workspace packages keep `@cira/*`, because they are bundled into the CLI and
+  never reach a registry. That is the rename being four lines instead of a
+  migration, and it is the second thing bundling bought.
+- **Publishing happens over OIDC, with no token in the repository.** npm's
+  trusted publishing mints a short-lived credential for one workflow run, so
+  there is nothing to leak and nothing to rotate - and npm removes direct
+  publishing by granular token in January 2027 regardless. Releases are tagged
+  rather than pushed, so shipping to a public registry is never a side effect
+  of merging.
+
 - **The CLI ships as one bundled file, not five packages.** It depends on four
   workspace packages and nothing else, so bundling produces a self-contained
   binary with no runtime dependencies at all. The alternative - publishing

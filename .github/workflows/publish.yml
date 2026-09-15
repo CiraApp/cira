@@ -1,0 +1,55 @@
+name: publish
+
+# Publishing is deliberate, so it is never a side effect of a push. Tag a
+# release, or run it by hand from the Actions tab.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: publish @cira-app/cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Trusted publishing: npm accepts a short-lived OIDC token minted by this
+    # workflow instead of a long-lived secret. There is no npm token in this
+    # repository, nothing to leak, and nothing to rotate - and npm is removing
+    # direct publishing by granular token in January 2027 regardless.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # OIDC publishing needs Node 22.14 or later.
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Node 22 ships npm 10; trusted publishing needs 11.5.1 or later.
+      - name: Use an npm that can publish over OIDC
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The same gate every push gets. A release is not the moment to find out
+      # the tests were red.
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm format
+          pnpm test
+
+      # `prepublishOnly` bundles the CLI, so the artifact can never be stale.
+      - name: Publish
+        working-directory: packages/cli
+        run: npm publish

@@ -11,7 +11,7 @@ import { readUpdateState, writeUpdateState } from "./state.js";
  * is the same answer being offline gives.
  */
 
-const REGISTRY = "https://registry.npmjs.org/@cira%2Fcli/latest";
+const REGISTRY = "https://registry.npmjs.org/@cira-app%2Fcli/latest";
 
 /** Long enough to be useful on a slow connection, short enough to abandon. */
 const CHECK_TIMEOUT_MS = 2500;

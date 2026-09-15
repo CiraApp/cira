@@ -28,12 +28,12 @@ const run = promisify(execFile);
 export type CliUpdater = (version: string) => Promise<void>;
 
 /**
- * Update through npm, because `npm install -g @cira/cli` is what the product
+ * Update through npm, because `npm install -g @cira-app/cli` is what the product
  * tells developers to run. There is deliberately no detection of other package
  * managers: supporting a channel Cira does not publish to would be guessing.
  */
 export const npmUpdater: CliUpdater = async (version) => {
-  await run("npm", ["install", "-g", `@cira/cli@${version}`], {
+  await run("npm", ["install", "-g", `@cira-app/cli@${version}`], {
     timeout: 120_000,
     windowsHide: true,
   });

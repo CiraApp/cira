@@ -22,7 +22,7 @@ export function currentVersion(): string {
         readFileSync(new URL(candidate, import.meta.url), "utf8"),
       ) as { name?: unknown; version?: unknown };
       // Guard against finding some other package.json further up the tree.
-      if (pkg.name !== "@cira/cli") continue;
+      if (pkg.name !== "@cira-app/cli") continue;
       if (typeof pkg.version === "string") return pkg.version;
     } catch {
       // Try the next shape.

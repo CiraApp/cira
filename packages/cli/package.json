@@ -1,5 +1,5 @@
 {
-  "name": "@cira/cli",
+  "name": "@cira-app/cli",
   "version": "0.1.0",
   "description": "Deploy internal software to your company with Cira.",
   "license": "UNLICENSED",

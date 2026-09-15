@@ -18,7 +18,7 @@ export function DeployGuide({
     {
       title: "Install the CLI",
       note: "Once per machine.",
-      command: "npm install -g @cira/cli",
+      command: "npm install -g @cira-app/cli",
     },
     {
       title: "Connect your account",
