@@ -56,7 +56,7 @@ export function AccessPanel({
         </p>
       </div>
 
-      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface">
+      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-[var(--radius-card)] bg-surface shadow-[var(--shadow-rest)]">
         {entries.length === 0 ? (
           <li className="px-5 py-4 text-[14px] text-ink-muted">
             Nobody else can open this yet.

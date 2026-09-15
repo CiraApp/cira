@@ -74,7 +74,7 @@ export function SpaceSwitcher({
       {open ? (
         <div
           role="menu"
-          className="animate-pop-in absolute top-full left-0 z-20 mt-1 w-64 origin-top-left overflow-hidden rounded-2xl border border-border bg-raised p-1.5 shadow-lg shadow-black/[0.07]"
+          className="animate-pop-in absolute top-full left-0 z-20 mt-1 w-64 origin-top-left overflow-hidden rounded-2xl border border-border bg-raised p-1.5 shadow-[var(--shadow-lift)]"
         >
           <p className="px-2.5 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-ink-subtle uppercase">
             Your spaces

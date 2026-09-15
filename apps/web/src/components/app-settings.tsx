@@ -47,7 +47,7 @@ export function AppSettings({
         Settings
       </summary>
 
-      <div className="mt-4 flex flex-col gap-6 rounded-[var(--radius-card)] border border-border bg-surface p-5">
+      <div className="mt-4 flex flex-col gap-6 rounded-[var(--radius-card)] bg-surface shadow-[var(--shadow-rest)] p-5">
         <form action={rename} className="flex flex-col gap-2">
           <label htmlFor="app-name" className="text-[13px] font-medium text-ink">
             Name
@@ -61,7 +61,7 @@ export function AppSettings({
               id="app-name"
               name="name"
               defaultValue={appName}
-              className="min-w-0 flex-1 rounded-xl border border-border bg-canvas px-3.5 py-2 text-[14px] text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/12"
+              className="min-w-0 flex-1 rounded-xl bg-sunken px-3.5 py-2 text-[14px] text-ink outline-none transition-all duration-200 focus:shadow-[0_0_0_2px_var(--color-accent)]"
             />
             <button
               type="submit"
@@ -100,7 +100,7 @@ export function AppSettings({
                   onChange={(e) => setConfirmName(e.target.value)}
                   autoFocus
                   placeholder={appName}
-                  className="min-w-0 flex-1 rounded-xl border border-border bg-canvas px-3.5 py-2 text-[14px] text-ink outline-none placeholder:text-ink-subtle focus:border-failed focus:ring-4 focus:ring-failed/10"
+                  className="min-w-0 flex-1 rounded-xl bg-sunken px-3.5 py-2 text-[14px] text-ink outline-none transition-all duration-200 placeholder:text-ink-subtle focus:shadow-[0_0_0_2px_var(--color-failed)]"
                 />
                 <button
                   type="button"

@@ -86,7 +86,7 @@ export default async function AppPage({
             {resolved.openUrl !== null ? (
               <a
                 href={`/${spaceSlug}/${appSlug}/open`}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[15px] font-medium text-white shadow-[0_4px_14px_-4px_rgba(91,75,214,0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover"
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[15px] font-medium text-white shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-accent)_70%,transparent)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover"
               >
                 Open
                 <span aria-hidden="true">&rarr;</span>
@@ -98,7 +98,7 @@ export default async function AppPage({
             )}
           </div>
 
-          <dl className="mt-9 grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-px overflow-hidden rounded-[var(--radius-card)] border border-border bg-border">
+          <dl className="mt-9 grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-px overflow-hidden rounded-[var(--radius-card)] bg-border shadow-[var(--shadow-rest)]">
             <Fact label="Status">
               <StatusValue state={resolved.state} label={resolved.label} />
             </Fact>

@@ -38,7 +38,7 @@ export function JoinSpace({ spaces, domain }: { spaces: Space[]; domain: string 
           type="button"
           onClick={() => join(space.slug)}
           disabled={pending}
-          className="group flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface px-5 py-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md disabled:translate-y-0 disabled:opacity-60"
+          className="group flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface px-5 py-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] disabled:translate-y-0 disabled:opacity-60"
         >
           <span className="min-w-0">
             <span className="block truncate text-[15px] font-medium text-ink">

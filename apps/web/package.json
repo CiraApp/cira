@@ -11,13 +11,14 @@
   "dependencies": {
     "@cira/core": "workspace:*",
     "@cira/db": "workspace:*",
+    "@cira/deploy": "workspace:*",
     "@clerk/nextjs": "^7.9.2",
     "drizzle-orm": "^0.45.2",
     "next": "^16.3.5",
+    "next-themes": "^0.4.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "zod": "^4.6.5",
-    "@cira/deploy": "workspace:*"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

@@ -52,7 +52,7 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="invite-title"
-            className="animate-pop-in w-full max-w-md rounded-2xl border border-border bg-raised p-6 shadow-2xl shadow-black/15"
+            className="animate-pop-in w-full max-w-md rounded-2xl border border-border bg-raised p-6 shadow-[var(--shadow-lift)]"
           >
             <h2 id="invite-title" className="text-[17px] font-semibold text-ink">
               Invite to this space
@@ -78,7 +78,7 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
                     required
                     autoFocus
                     placeholder="colleague@company.com"
-                    className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-subtle focus:border-accent focus:ring-4 focus:ring-accent/12"
+                    className="w-full rounded-xl bg-surface px-4 py-2.5 text-[14px] text-ink shadow-[var(--shadow-rest)] outline-none transition-all duration-200 placeholder:text-ink-subtle focus:shadow-[0_0_0_2px_var(--color-accent)]"
                   />
 
                   <label htmlFor="invite-role" className="sr-only">
@@ -88,7 +88,7 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
                     id="invite-role"
                     name="role"
                     defaultValue="member"
-                    className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-[14px] text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/12"
+                    className="w-full rounded-xl bg-surface px-4 py-2.5 text-[14px] text-ink shadow-[var(--shadow-rest)] outline-none transition-all duration-200 focus:shadow-[0_0_0_2px_var(--color-accent)]"
                   >
                     <option value="member">Member - can use apps they are given</option>
                     <option value="admin">Admin - can manage apps and invite</option>

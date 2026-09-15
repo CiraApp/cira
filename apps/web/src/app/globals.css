@@ -1,62 +1,110 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /*
- * Cira should read as a calm app library, not a cloud console: warm neutrals
- * rather than blue-grey, generous radii, and one accent reserved for the single
- * primary action on a screen. Each app brings its own colour (lib/app-color),
- * so the chrome stays quiet and lets the apps carry the identity.
+ * Cira is a shelf of apps, and the apps bring the colour.
+ *
+ * Every app carries its own hue (lib/app-color), so the chrome deliberately
+ * does not: it stays near-monochrome and spends its one accent on the single
+ * primary action and on focus. Most software of this kind paints its brand
+ * over everything, which is exactly how an app library starts feeling like an
+ * infrastructure console.
+ *
+ * The neutrals are cool and biased toward the accent rather than a default
+ * mid-grey, so the greys read as chosen and sit under the blue without
+ * arguing with it.
  */
 @theme {
-  --color-canvas: #fbfaf9;
+  --color-canvas: #f0f2f6;
   --color-surface: #ffffff;
   --color-raised: #ffffff;
-  --color-border: #ece9e5;
-  --color-border-strong: #ddd8d2;
+  --color-sunken: #e5e9f0;
+  --color-border: #e4e7ec;
+  --color-border-strong: #d2d7e0;
 
-  --color-ink: #1a1816;
-  --color-ink-muted: #6d6660;
-  --color-ink-subtle: #9c948c;
+  --color-ink: #14171c;
+  --color-ink-muted: #5d6572;
+  --color-ink-subtle: #8b93a1;
 
-  --color-accent: #5b4bd6;
-  --color-accent-hover: #4d3fc4;
-  --color-accent-soft: #f0eeff;
+  --color-accent: #2347e8;
+  --color-accent-hover: #1a39c4;
+  --color-accent-soft: #e8ecfe;
+  --color-accent-ring: #2347e8;
 
-  --color-live: #2f9e63;
-  --color-failed: #d2544a;
-  --color-pending: #c98a2b;
+  /* Semantic, and deliberately separate from the accent. */
+  --color-live: #12875a;
+  --color-failed: #cf3b3b;
+  --color-pending: #b57611;
 
-  --radius-card: 16px;
+  --radius-card: 14px;
 
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", monospace;
 
-  /* One easing for everything, so the whole surface moves with one character. */
+  /* One easing, so the whole surface moves with one character. */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Depth is layered, never a single flat drop. */
+  --shadow-rest: 0 1px 2px rgb(20 23 28 / 0.07), 0 0 0 1px rgb(20 23 28 / 0.08);
+  --shadow-lift: 0 14px 30px -12px rgb(20 23 28 / 0.26), 0 2px 6px rgb(20 23 28 / 0.08);
+}
+
+/*
+ * Dark is designed, not inverted. The ground is a blue-black rather than a
+ * neutral one so it sits in the same family as the accent, surfaces lift by
+ * getting lighter instead of by shadow (shadows do nothing on a dark ground),
+ * and the accent brightens so it still carries on the darker surface.
+ */
+[data-theme="dark"] {
+  --color-canvas: #0e1116;
+  --color-surface: #161a21;
+  --color-raised: #1b2029;
+  --color-sunken: #0a0d11;
+  --color-border: #262c37;
+  --color-border-strong: #39414f;
+
+  --color-ink: #eef1f6;
+  --color-ink-muted: #9aa3b2;
+  --color-ink-subtle: #6b7383;
+
+  --color-accent: #6b8bff;
+  --color-accent-hover: #8aa3ff;
+  --color-accent-soft: #1a2138;
+
+  --color-live: #35c489;
+  --color-failed: #f2726f;
+  --color-pending: #e0a548;
+
+  --shadow-rest: 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-lift: 0 16px 36px -16px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08);
 }
 
 html {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 body {
   background-color: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  /* Manrope's default tracking is loose for interface text. */
+  letter-spacing: -0.006em;
 }
 
 /* Keyboard users get a visible, on-brand ring; pointer users do not. */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-ring);
   outline-offset: 2px;
   border-radius: 8px;
 }
 
-/*
- * Text fields carry their own focus treatment (accent border plus a soft ring),
- * so the blanket outline above would sit outside it and read as a double ring.
- */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
@@ -64,13 +112,45 @@ select:focus-visible {
 }
 
 /*
- * Cards enter in a short stagger so a gallery assembles rather than snapping
- * into place. The delay is set per card from the component.
+ * An app's icon carries a light and a dark rendering of its own hue. The theme
+ * decides here rather than through a utility variant, because an arbitrary
+ * background and its dark counterpart end up at equal specificity and the
+ * wrong one wins silently: a light wash on a dark ground.
+ */
+.app-icon {
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--bg) 86%, white),
+    var(--bg)
+  );
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgb(20 23 28 / 0.07);
+}
+
+[data-theme="dark"] .app-icon {
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--bg-dark) 78%, white 7%),
+    var(--bg-dark)
+  );
+  color: var(--fg-dark);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+/* Digits that sit in columns should line up. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The gallery assembles rather than snapping into place: one orchestrated
+ * moment on arrival, not effects scattered through the page. Every element
+ * below is fully readable at rest, so switching all of it off costs nothing.
  */
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.985);
+    transform: translateY(10px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -90,7 +170,18 @@ select:focus-visible {
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.97);
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sweep-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
@@ -99,37 +190,36 @@ select:focus-visible {
 }
 
 .animate-rise {
-  animation: rise 0.42s var(--ease-out-soft) both;
+  animation: rise 0.5s var(--ease-out-soft) both;
 }
 
 .animate-fade-in {
-  animation: fade-in 0.3s var(--ease-out-soft) both;
+  animation: fade-in 0.32s var(--ease-out-soft) both;
 }
 
 .animate-pop-in {
-  animation: pop-in 0.16s var(--ease-out-soft) both;
+  animation: pop-in 0.18s var(--ease-out-soft) both;
 }
 
-/* A deploying app breathes, so status is legible without reading the label. */
+.animate-sweep-in {
+  animation: sweep-in 0.4s var(--ease-out-soft) both;
+}
+
+/* A deploying app breathes, so state reads without reading the label. */
 @keyframes breathe {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.3;
   }
 }
 
 .animate-breathe {
-  animation: breathe 1.8s ease-in-out infinite;
+  animation: breathe 1.9s ease-in-out infinite;
 }
 
-/*
- * Motion here is decoration, never information: every animated element is
- * already fully readable at its resting state, so turning all of it off costs
- * the viewer nothing.
- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

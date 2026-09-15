@@ -102,6 +102,16 @@ Keep `prod` green.
   click without an invite. Public providers (gmail and friends) can never be
   claimed. This exists because the second employee to sign up was otherwise
   pushed to found a duplicate of their own company.
+- **The apps bring the colour, the chrome does not.** Every app carries its
+  own hue; the interface stays near-monochrome and spends its one accent on the
+  single primary action and on focus. Most software of this kind paints its
+  brand over everything, which is exactly how an app library starts feeling
+  like an infrastructure console. Neutrals are cool and biased toward the
+  accent so they read as chosen rather than inherited.
+- **Dark is designed, not inverted.** The ground is a blue-black in the same
+  family as the accent, surfaces lift by getting lighter rather than by shadow,
+  and every app hue has a separate dark rendering because a wash that glows on
+  paper goes muddy on a dark ground.
 - **Tests run against a real Postgres**, not a fake. The constraints are the
   safety here, so a fake would pass while the real schema rejected the same
   write. They skip rather than fail when no database is offered, so `pnpm test`

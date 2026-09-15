@@ -76,7 +76,7 @@ export function DeploymentHistory({
     <section className="mt-10">
       <h2 className="text-[15px] font-semibold text-ink">Deploys</h2>
 
-      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface">
+      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-[var(--radius-card)] bg-surface shadow-[var(--shadow-rest)]">
         {deploys.map((d) => {
           const isOpen = openId === d.id;
           const result = logs[d.id];

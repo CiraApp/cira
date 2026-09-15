@@ -101,7 +101,7 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
   }, [matches, selected, query, router, spaceSlug, focused]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-4 h-[18px] w-[18px] -translate-y-1/2 text-ink-subtle" />
 
@@ -115,11 +115,11 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
           placeholder="Search apps..."
           aria-label="Search apps"
           autoComplete="off"
-          className="w-full rounded-2xl border border-border bg-surface py-3.5 pr-20 pl-11 text-[15px] text-ink shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-shadow outline-none placeholder:text-ink-subtle focus:border-accent focus:ring-4 focus:ring-accent/12 [&::-webkit-search-cancel-button]:hidden"
+          className="w-full rounded-xl bg-surface py-3.5 pr-20 pl-11 text-[15px] text-ink shadow-[var(--shadow-rest)] transition-all duration-200 outline-none placeholder:text-ink-subtle focus:shadow-[0_0_0_2px_var(--color-accent)] [&::-webkit-search-cancel-button]:hidden"
         />
 
         {shortcutHint !== null && query === "" ? (
-          <kbd className="animate-fade-in pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 rounded-md border border-border bg-canvas px-1.5 py-1 font-sans text-[11px] font-medium text-ink-subtle">
+          <kbd className="animate-fade-in pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 rounded-md bg-sunken px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-ink-subtle">
             {shortcutHint}
           </kbd>
         ) : null}
