@@ -88,6 +88,28 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Before the deploy, never after. Code and schema used to ship on
+      # separate tracks - this one automated, migrations run by hand - and the
+      # failure mode was not a red build but a green one over a broken site:
+      # the first request to touch a missing column is how you find out.
+      #
+      # Safe only because migrations are additive (see "Expand, then contract"
+      # in CHECKLIST.md). There is a window where the previous deployment is
+      # still serving against the new schema, so a migration that removes
+      # something the running code still reads would break production even
+      # though every step here went green.
+      #
+      # Unpooled: Neon's pooler runs PgBouncer in transaction mode, which is
+      # the wrong shape for DDL. Re-running is a no-op - drizzle records what
+      # it has applied and skips it.
+      - name: Migrate the database
+        run: pnpm --filter @cira/db db:migrate
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+
       # VERCEL_TOKEN expires 2026-12-14 (90 days from 2026-09-15). When it
       # lapses, these steps fail with an authentication error rather than
       # anything that mentions expiry, so check the token first.

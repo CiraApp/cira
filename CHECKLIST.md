@@ -108,6 +108,20 @@ Keep `prod` green.
 
 ## Decisions made
 
+- **Migrations run in the pipeline, before the deploy.** They used to be a
+  manual step, which meant code and schema shipped on separate tracks - one
+  automated and one remembered - and made "green means deploy" untrue, because
+  deploying had an unwritten prerequisite. The failure it produces is not a red
+  build; it is a green build over a site that 500s on the first request to
+  touch a column that does not exist yet.
+- **Expand, then contract.** What makes an automatic migration safe is that it
+  is always backward-compatible with the deployment still serving traffic.
+  There is a window, between the migration and the new code going live, where
+  the old code meets the new schema. So: add a table, add a nullable column,
+  add an enum value - deploy - and only remove the old thing in a _later_
+  migration, once nothing reads it. A migration that drops or renames something
+  the running code still uses will break production with every step green.
+
 - **Developers never write a capability manifest.** The whole engine exists so
   that normal code plus `cira deploy` is the entire developer experience. A
   manifest would be a second description of the app that drifts from the first,
