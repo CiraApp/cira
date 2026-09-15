@@ -8,7 +8,9 @@ export function TopBar({ spaceSlug }: { spaceSlug: string }) {
         <Link
           href={`/${spaceSlug}`}
           aria-label="Cira home"
-          className="flex items-center gap-2 rounded-lg transition-opacity hover:opacity-70"
+          // Negative margin keeps the mark where it looks right while giving the
+          // link a thumb-sized area to actually hit.
+          className="-m-2 flex items-center gap-2 rounded-lg p-2 transition-opacity hover:opacity-70"
         >
           <Mark className="h-[22px] w-[22px]" />
           <span className="text-[15px] font-semibold tracking-tight text-ink">cira</span>

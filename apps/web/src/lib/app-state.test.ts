@@ -117,3 +117,52 @@ describe("when Cira holds no key", () => {
     }
   });
 });
+
+/**
+ * The bug this guards against: the app page offered an Open button while the
+ * route that had to act on it refused, so clicking did nothing and said
+ * nothing. Both now read this one function, so the invariant below is the
+ * thing that keeps them agreeing.
+ */
+describe("openability is one answer, for every combination of inputs", () => {
+  const statuses = ["live", "deploying", "failed", "draft"] as const;
+  const deployments = [
+    null,
+    deployment("live"),
+    deployment("live", null),
+    deployment("building"),
+    deployment("failed"),
+    deployment("queued"),
+    deployment("removed"),
+  ];
+
+  it("never offers a link when Cira holds no key", () => {
+    for (const status of statuses) {
+      for (const dep of deployments) {
+        expect(resolveAppState(app(status), dep, false).openUrl).toBeNull();
+      }
+    }
+  });
+
+  it("never offers a link without a reason, or a reason without withholding the link", () => {
+    for (const status of statuses) {
+      for (const dep of deployments) {
+        for (const key of [true, false]) {
+          const r = resolveAppState(app(status), dep, key);
+          expect(r.openUrl === null).toBe(r.blockedReason !== null);
+        }
+      }
+    }
+  });
+
+  it("only ever calls an app Live when it can actually be opened", () => {
+    for (const status of statuses) {
+      for (const dep of deployments) {
+        for (const key of [true, false]) {
+          const r = resolveAppState(app(status), dep, key);
+          if (r.label === "Live") expect(r.openUrl).not.toBeNull();
+        }
+      }
+    }
+  });
+});

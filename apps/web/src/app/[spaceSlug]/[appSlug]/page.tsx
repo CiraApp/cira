@@ -51,7 +51,7 @@ export default async function AppPage({
         <main className="animate-fade-in mx-auto w-full max-w-3xl px-6 py-10">
           <Link
             href={`/${spaceSlug}`}
-            className="group inline-flex items-center gap-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
+            className="group -mx-2 -my-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
           >
             <span
               aria-hidden="true"

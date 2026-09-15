@@ -73,9 +73,13 @@ Keep `prod` green.
 
 ## Phase 10 - Polish + end-to-end tests
 
-- [ ] `create space → invite → create app → grant access → member sees app`
-- [ ] `deploy → app available → employee opens it`
-- [ ] UI polish against the quality bar in spec section 16
+- [x] `create space → invite → create app → grant access → member sees app`,
+      run against a real Postgres in CI
+- [x] `deploy → app available → employee opens it`, verified by hand against a
+      live provider; the permission half is covered by the journey tests
+- [x] No horizontal overflow and no small touch targets at 390, 768 and 1280
+- [ ] A browser-level test of the deploy journey (needs a stable way to drive
+      a real sign-in without the provider's bot check)
 
 ## Decisions made
 
@@ -95,6 +99,10 @@ Keep `prod` green.
   click without an invite. Public providers (gmail and friends) can never be
   claimed. This exists because the second employee to sign up was otherwise
   pushed to found a duplicate of their own company.
+- **Tests run against a real Postgres**, not a fake. The constraints are the
+  safety here, so a fake would pass while the real schema rejected the same
+  write. They skip rather than fail when no database is offered, so `pnpm test`
+  still works on a laptop with nothing running.
 - **Status is reconciled where it is read**, not by a background job. A page
   view re-checks an in-flight deploy against the provider, and a gallery cheaply
   settles deploys too old to still be running without any network call. The
