@@ -73,9 +73,12 @@ Keep `prod` green.
 
 ## Decisions made
 
-- **Host** - Vercel, in the "aumit shiv" Pro team (slug `wave-5c5d`), which
+- **Host** - Vercel, in the "aumit shiv" Pro team, which
   also holds wave. Pro allows commercial use, so the Hobby licensing limit
-  below no longer applies while Cira lives here.
+  below no longer applies while Cira lives here. Live at
+  https://cira-aumitshiv.vercel.app (behind the team's Deployment Protection).
+  Reference the team by id, never by slug: the slug has already changed once
+  and every URL built from it rots silently.
 - **Deploys** - driven from GitHub Actions, gated on the verify job. Vercel's
   Git integration is deliberately NOT connected: it builds on every push
   regardless of CI, so a red pipeline would still ship. `VERCEL_TOKEN` is a
