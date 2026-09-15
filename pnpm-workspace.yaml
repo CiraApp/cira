@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# vitest's bundler needs its postinstall to place the native binary.
+allowBuilds:
+  esbuild: true

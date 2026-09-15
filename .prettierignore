@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+.next/
+pnpm-lock.yaml
+
+# The product spec is kept verbatim as written; do not reflow it.
+docs/spec.md

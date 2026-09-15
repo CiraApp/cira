@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [prod]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck / lint / build / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format
+        run: pnpm format
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
+  deploy:
+    name: deploy
+    needs: verify
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # Cira does not own compute. This step hands the built app to whichever
+      # provider we settle on; until one is chosen and its token is in repo
+      # secrets, it reports that plainly instead of pretending to ship.
+      - name: Deploy to provider
+        run: |
+          echo "::notice::No deployment provider is configured yet."
+          echo "Pick a provider, add its token to repo secrets, and wire it here."
