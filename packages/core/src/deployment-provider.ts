@@ -11,13 +11,26 @@ import type { DeploymentStatus } from "./model.js";
 
 export type Framework = "nextjs";
 
+/**
+ * One file of a project's source, addressed by its own hash.
+ *
+ * Content-addressed rather than a single archive, so redeploying moves only
+ * what changed. Providers that want an archive can assemble one; providers
+ * that deduplicate can skip what they already hold.
+ */
+export interface SourceFile {
+  /** Path relative to the project root, as the build should see it. */
+  path: string;
+  size: number;
+  sha: string;
+}
+
 export interface AppDeploymentInput {
   appId: string;
   spaceSlug: string;
   appSlug: string;
   framework: Framework;
-  /** Path to the packaged source bundle to hand the provider. */
-  sourceArchivePath: string;
+  files: readonly SourceFile[];
   /** Build-time and run-time variables. Never surfaced to a browser. */
   env: Readonly<Record<string, string>>;
 }

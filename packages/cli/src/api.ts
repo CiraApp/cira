@@ -18,7 +18,13 @@ export class ApiError extends Error {
  */
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; token?: string } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    token?: string;
+    /** Send file bytes instead of JSON, addressed by hash. */
+    raw?: { sha: string; body: Buffer };
+  } = {},
 ): Promise<T> {
   const config = readConfig();
   const token = options.token ?? config.token;
@@ -28,10 +34,16 @@ export async function api<T>(
     response = await fetch(`${config.apiUrl}${path}`, {
       method: options.method ?? "GET",
       headers: {
-        "content-type": "application/json",
+        "content-type":
+          options.raw === undefined ? "application/json" : "application/octet-stream",
+        ...(options.raw !== undefined ? { "x-cira-sha": options.raw.sha } : {}),
         ...(token !== undefined ? { authorization: `Bearer ${token}` } : {}),
       },
-      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      ...(options.raw !== undefined
+        ? { body: new Uint8Array(options.raw.body) }
+        : options.body !== undefined
+          ? { body: JSON.stringify(options.body) }
+          : {}),
     });
   } catch {
     throw new ApiError(`Could not reach Cira at ${config.apiUrl}.`, 0);
@@ -42,8 +54,19 @@ export async function api<T>(
   }
 
   if (!response.ok) {
+    // Cira already knows what went wrong and says so in plain words. Throwing
+    // away that sentence for a status code makes the CLI useless to debug.
+    const said = await response
+      .json()
+      .then((body: unknown) =>
+        typeof body === "object" && body !== null && "error" in body
+          ? String((body as { error: unknown }).error)
+          : null,
+      )
+      .catch(() => null);
+
     throw new ApiError(
-      `Cira returned an error (${response.status}) for ${path}.`,
+      said ?? `Cira returned an error (${response.status}).`,
       response.status,
     );
   }

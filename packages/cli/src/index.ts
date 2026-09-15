@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { api, ApiError } from "./api.js";
 import { clearConfig, readConfig } from "./config.js";
+import { deploy } from "./deploy.js";
 import { login } from "./login.js";
 import { detectFramework, readProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
@@ -9,6 +10,7 @@ const USAGE = `
   ${bold("cira")} - deploy software to your company
 
   ${bold("Commands")}
+    deploy     Deploy this folder to your company
     login      Connect this machine to your Cira account
     logout     Forget the stored credential
     whoami     Show who you are signed in as
@@ -66,6 +68,8 @@ async function main(): Promise<number> {
   const command = process.argv[2];
 
   switch (command) {
+    case "deploy":
+      return deploy();
     case "login":
       return login();
     case "logout":

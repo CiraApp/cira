@@ -41,6 +41,9 @@ importers:
       '@cira/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@cira/deploy':
+        specifier: workspace:*
+        version: link:../../packages/deploy
       '@clerk/nextjs':
         specifier: ^7.9.2
         version: 7.9.2(next@16.3.5(@types/node@22.20.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -81,6 +84,9 @@ importers:
       '@cira/core':
         specifier: workspace:*
         version: link:../core
+      '@cira/deploy':
+        specifier: workspace:*
+        version: link:../deploy
 
   packages/core: {}
 
@@ -99,6 +105,12 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+
+  packages/deploy:
+    dependencies:
+      '@cira/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

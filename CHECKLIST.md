@@ -45,21 +45,24 @@ Keep `prod` green.
 
 ## Phase 6 - DeploymentProvider abstraction
 
-- [ ] Provider registry and selection
-- [ ] Status and log plumbing
+- [x] Provider selection in one place, failing loudly when unconfigured
+- [x] Status and log plumbing, with provider states mapped into Cira's
 
 ## Phase 7 - Actual provider deployment
 
-- [ ] Choose the provider (open decision)
-- [ ] Implement it behind `DeploymentProvider`
-- [ ] Wire the CI deploy step
+- [x] Provider chosen: Vercel
+- [x] Implemented behind `DeploymentProvider` (`packages/deploy/src/vercel.ts`)
+- [x] Wire the CI deploy step (for Cira itself)
+- [ ] Point deploys at a dedicated Vercel team, NOT the one holding Cira and
+      wave: this code path creates and deletes projects
 
 ## Phase 8 - `cira deploy` end to end
 
-- [ ] Detect project, validate Next.js
-- [ ] Package and upload source
-- [ ] Deploy, create/update the App record, return the URL
-- [ ] Prompt for access on first deploy; redeploy in place afterwards
+- [x] Detect project, validate Next.js
+- [x] Package and upload source, content-addressed
+- [x] Deploy, create/update the App record, return the URL
+- [x] A new app is visible to its deployer only; widening is deliberate
+- [ ] First real deploy against a live provider (needs the dedicated team)
 
 ## Phase 9 - App management + logs
 
