@@ -1,6 +1,5 @@
 /** Terminal output. Colour only when a real terminal is attached. */
-const useColour =
-  process.stdout.isTTY === true && process.env["NO_COLOR"] === undefined;
+const useColour = process.stdout.isTTY === true && process.env["NO_COLOR"] === undefined;
 
 const wrap = (code: string) => (text: string) =>
   useColour ? `\u001B[${code}m${text}\u001B[0m` : text;
