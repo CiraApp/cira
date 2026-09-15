@@ -23,14 +23,29 @@ apps/
 packages/
   core/       Domain model, permission logic, deployment provider interface
   db/         PostgreSQL schema and migrations
-  deploy/     Deployment provider implementations
-  cli/        The `cira` command
-  ui/         Shared UI components
 ```
+
+`packages/deploy` and `packages/cli` arrive with Phases 6 to 8.
 
 `packages/core` holds no framework and no provider code. Permission checks take
 explicit records and are always run server-side - client-supplied space and user
 ids are never trusted.
+
+## Stack
+
+| Concern  | Choice                                       |
+| -------- | -------------------------------------------- |
+| Web      | Next.js 16, React 19, Tailwind v4            |
+| Database | Neon Postgres                                |
+| ORM      | Drizzle                                      |
+| Identity | Clerk, behind `apps/web/src/lib/identity.ts` |
+| Hosting  | Vercel                                       |
+
+Two seams keep the replaceable parts replaceable. `lib/identity.ts` is the only
+module that imports the auth provider, and `DeploymentProvider` is the only way
+Cira reaches compute. Everything else talks to Cira's own model.
+
+Reasoning for each choice is recorded in [`CHECKLIST.md`](CHECKLIST.md).
 
 ## Development
 
@@ -38,12 +53,19 @@ Requires Node 22+ and pnpm.
 
 ```sh
 pnpm install
-pnpm dev          # run the web app
+cp .env.example .env.local     # then fill in the values
+pnpm --filter @cira/db db:migrate
+pnpm dev                        # run the web app
+
 pnpm typecheck
 pnpm lint
+pnpm format
 pnpm test
 pnpm build
 ```
+
+The build needs no secrets; every page that reads data is server-rendered on
+demand, so CI builds without a database or auth keys.
 
 ## Shipping
 
@@ -55,4 +77,10 @@ preview environments by design - see [`.github/workflows/ci.yml`](.github/workfl
 
 Cira does not own compute. Everything routes through the `DeploymentProvider`
 interface in `packages/core`, so the provider can be replaced without touching
-anything above it. No provider is wired up yet.
+anything above it.
+
+Vercel is the first provider, chosen because V1 targets Next.js only. Deployed
+apps keep Vercel's Deployment Protection on, so their raw URL is not publicly
+reachable; Cira checks permission server-side and proxies through with a bypass
+token. That is the access gateway from spec section 7, without building one.
+The implementation lands in Phase 7.

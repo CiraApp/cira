@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/*
+ * Cira's surface should read as a calm app library, not a cloud console:
+ * warm neutrals rather than blue-grey, generous radii, and one accent that
+ * only ever marks the single primary action on a screen.
+ */
+@theme {
+  --color-canvas: #fbfaf9;
+  --color-surface: #ffffff;
+  --color-border: #ebe8e4;
+  --color-border-strong: #ddd9d4;
+
+  --color-ink: #1c1a18;
+  --color-ink-muted: #706a64;
+  --color-ink-subtle: #9a938c;
+
+  --color-accent: #5b4bd6;
+  --color-accent-hover: #4d3fc4;
+  --color-accent-soft: #f0eeff;
+
+  --color-live: #2f9e63;
+  --color-failed: #d2544a;
+  --color-pending: #c98a2b;
+
+  --radius-card: 14px;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Keyboard users get a visible, on-brand ring; pointer users do not. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
