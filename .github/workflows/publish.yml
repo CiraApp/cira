@@ -49,7 +49,18 @@ jobs:
           pnpm format
           pnpm test
 
+      # Staged, not published. A compromised workflow - a bad dependency in the
+      # build, a compromised action - can upload an artifact but cannot put it
+      # in front of anyone: promoting it is a deliberate click on npmjs.com.
+      # That matters more than usual here, because this CLI writes instructions
+      # into the coding agents on a developer's machine.
+      #
       # `prepublishOnly` bundles the CLI, so the artifact can never be stale.
-      - name: Publish
+      - name: Stage the release
         working-directory: packages/cli
-        run: npm publish
+        run: npm stage publish
+
+      - name: Say what to do next
+        run: |
+          echo "### Staged" >> "$GITHUB_STEP_SUMMARY"
+          echo "Promote it at https://www.npmjs.com/package/@cira-app/cli/access" >> "$GITHUB_STEP_SUMMARY"

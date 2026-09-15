@@ -2,7 +2,23 @@
   "name": "@cira-app/cli",
   "version": "0.1.0",
   "description": "Deploy internal software to your company with Cira.",
+  "keywords": [
+    "cira",
+    "deploy",
+    "internal-tools",
+    "nextjs",
+    "cli"
+  ],
   "license": "UNLICENSED",
+  "homepage": "https://github.com/CiraApp/cira#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CiraApp/cira.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/CiraApp/cira/issues"
+  },
   "type": "module",
   "bin": {
     "cira": "bin/cira.js"
@@ -10,7 +26,8 @@
   "main": "bin/cira.js",
   "files": [
     "bin",
-    "SKILL.md"
+    "SKILL.md",
+    "README.md"
   ],
   "engines": {
     "node": ">=22"

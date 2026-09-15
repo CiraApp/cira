@@ -137,6 +137,12 @@ and npm is removing direct publishing by granular token in January 2027 anyway.
 It also attaches provenance, so anyone can verify a release came from this
 repository.
 
+The workflow **stages** the release rather than publishing it; you promote it
+from the package's page on npmjs.com. A compromised workflow can therefore
+upload an artifact but cannot put it in front of anyone - which matters here,
+because this CLI writes instructions into the coding agents on a developer's
+machine.
+
 `@cira-app/cli` ships as a single self-contained file with **no runtime
 dependencies**. `@cira/core`, `@cira/deploy`, `@cira/extract` and `@cira/skill`
 are bundled into it rather than published: they are Cira's own internals with
