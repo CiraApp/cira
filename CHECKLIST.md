@@ -102,6 +102,12 @@ Keep `prod` green.
   click without an invite. Public providers (gmail and friends) can never be
   claimed. This exists because the second employee to sign up was otherwise
   pushed to found a duplicate of their own company.
+- **Shell, not a page.** A fixed spine on the left holds navigation and the
+  space switcher, a thin header carries what belongs to the current view, and
+  one column scrolls. Navigation lives in exactly one place.
+- **Architectural, not soft.** A 3px cut edge everywhere, hairline borders
+  doing the separating, and depth spent only where something is genuinely
+  lifted. No pills, no bubbles.
 - **The apps bring the colour, the chrome does not.** Every app carries its
   own hue; the interface stays near-monochrome and spends its one accent on the
   single primary action and on focus. Most software of this kind paints its

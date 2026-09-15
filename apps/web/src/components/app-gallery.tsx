@@ -101,9 +101,9 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
   }, [matches, selected, query, router, spaceSlug, focused]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-4 h-[18px] w-[18px] -translate-y-1/2 text-ink-subtle" />
+        <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-subtle" />
 
         <input
           ref={inputRef}
@@ -115,18 +115,18 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
           placeholder="Search apps..."
           aria-label="Search apps"
           autoComplete="off"
-          className="w-full rounded-xl bg-surface py-3.5 pr-20 pl-11 text-[15px] text-ink shadow-[var(--shadow-rest)] transition-all duration-200 outline-none placeholder:text-ink-subtle focus:shadow-[0_0_0_2px_var(--color-accent)] [&::-webkit-search-cancel-button]:hidden"
+          className="w-full rounded-[var(--radius-edge)] border border-line bg-surface py-2.5 pr-20 pl-10 text-[14px] text-ink transition-[border-color,box-shadow] duration-150 outline-none placeholder:text-ink-subtle focus:border-accent focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-accent)_16%,transparent)] [&::-webkit-search-cancel-button]:hidden"
         />
 
         {shortcutHint !== null && query === "" ? (
-          <kbd className="animate-fade-in pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 rounded-md bg-sunken px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-ink-subtle">
+          <kbd className="enter-fade pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded-[2px] border border-line bg-sunken px-1.5 py-[3px] font-mono text-[10px] font-medium text-ink-subtle">
             {shortcutHint}
           </kbd>
         ) : null}
       </div>
 
       {matches.length === 0 ? (
-        <div className="animate-fade-in flex flex-col items-center gap-1 py-14 text-center">
+        <div className="enter-fade flex flex-col items-center gap-1 py-16 text-center">
           <p className="text-[15px] text-ink">
             No apps match &ldquo;{query.trim()}&rdquo;
           </p>
@@ -136,7 +136,7 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
         </div>
       ) : (
         <ul
-          className={`grid auto-rows-fr grid-cols-2 gap-3 transition-opacity duration-150 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 ${
+          className={`grid auto-rows-fr grid-cols-2 gap-3 transition-opacity duration-150 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${
             navigating ? "opacity-60" : ""
           }`}
         >

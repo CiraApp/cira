@@ -1,12 +1,11 @@
 import { appColor, appInitial } from "@/lib/app-color";
 
 /**
- * An app's face.
+ * An app's face: a cut square, not a bubble.
  *
- * Built to read as an icon rather than a letter in a box: a squircle radius,
- * a hairline that catches the edge, and a wash that lifts slightly toward the
- * light. It is the one coloured object on the screen, so it carries the
- * weight the chrome gives up.
+ * It is the one coloured object on the screen, so it carries the weight the
+ * monochrome chrome gives up. The inner hairline is what keeps it reading as a
+ * solid tile rather than a coloured patch.
  */
 export function AppIcon({
   appId,
@@ -22,9 +21,9 @@ export function AppIcon({
   const color = appColor(appId);
 
   const dimensions = {
-    sm: "h-8 w-8 rounded-[9px] text-[13px]",
-    md: "h-12 w-12 rounded-[14px] text-[19px]",
-    lg: "h-16 w-16 rounded-[19px] text-[26px]",
+    sm: "h-7 w-7 text-[11px] rounded-[3px]",
+    md: "h-10 w-10 text-[15px] rounded-[4px]",
+    lg: "h-14 w-14 text-[21px] rounded-[5px]",
   }[size];
 
   return (

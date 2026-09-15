@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { TopBar } from "@/components/top-bar";
+import { AppShell } from "@/components/shell/app-shell";
+import { PageTitle } from "@/components/shell/page-title";
+import { listMySpaces } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
@@ -23,10 +25,11 @@ export default async function AppPage({
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
     const { app, space } = ctx;
-    const [rawDeployment, holdsKey, history] = await Promise.all([
+    const [rawDeployment, holdsKey, history, spaces] = await Promise.all([
       latestDeployment(app.id),
       appHoldsKey(app.id),
       deploymentHistory(app.id),
+      listMySpaces(),
     ]);
 
     // Someone is looking at this app right now, so this is exactly when its
@@ -46,10 +49,12 @@ export default async function AppPage({
     const resolved = resolveAppState(app, deployment, holdsKey);
 
     return (
-      <>
-        <TopBar spaceSlug={spaceSlug} />
-
-        <main className="animate-fade-in mx-auto w-full max-w-3xl px-6 py-10">
+      <AppShell
+        spaceSlug={spaceSlug}
+        spaces={spaces}
+        title={<PageTitle title={app.name} detail={space.name} />}
+      >
+        <div className="enter-fade max-w-3xl">
           <Link
             href={`/${spaceSlug}`}
             className="group -mx-2 -my-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
@@ -135,8 +140,8 @@ export default async function AppPage({
           {manages ? (
             <AppSettings spaceSlug={spaceSlug} appSlug={appSlug} appName={app.name} />
           ) : null}
-        </main>
-      </>
+        </div>
+      </AppShell>
     );
   } catch (error) {
     if (error instanceof NotFoundError) notFound();

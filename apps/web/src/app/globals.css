@@ -3,81 +3,87 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /*
- * Cira is a shelf of apps, and the apps bring the colour.
+ * Cira's interface is architectural: straight edges, hairline rules, and a
+ * near-black ground that the work sits on top of. Dark is the design the
+ * system was drawn for; light is a faithful translation of it, not an
+ * afterthought.
  *
- * Every app carries its own hue (lib/app-color), so the chrome deliberately
- * does not: it stays near-monochrome and spends its one accent on the single
- * primary action and on focus. Most software of this kind paints its brand
- * over everything, which is exactly how an app library starts feeling like an
- * infrastructure console.
- *
- * The neutrals are cool and biased toward the accent rather than a default
- * mid-grey, so the greys read as chosen and sit under the blue without
- * arguing with it.
+ * Colour discipline: the chrome is monochrome and spends its one accent on
+ * the active thing and the primary action. Every app carries its own hue
+ * (lib/app-color), and those are the only other colours on screen.
  */
 @theme {
-  --color-canvas: #f0f2f6;
+  /* Light: the same architecture, rendered on paper. */
+  --color-base: #f4f5f7;
+  --color-panel: #ffffff;
   --color-surface: #ffffff;
   --color-raised: #ffffff;
-  --color-sunken: #e5e9f0;
-  --color-border: #e4e7ec;
-  --color-border-strong: #d2d7e0;
+  --color-sunken: #eaecf0;
+  --color-line: #dfe2e7;
+  --color-line-strong: #c6cbd4;
 
-  --color-ink: #14171c;
-  --color-ink-muted: #5d6572;
-  --color-ink-subtle: #8b93a1;
+  --color-ink: #0c0e12;
+  --color-ink-muted: #545b66;
+  --color-ink-subtle: #858c98;
 
-  --color-accent: #2347e8;
-  --color-accent-hover: #1a39c4;
-  --color-accent-soft: #e8ecfe;
-  --color-accent-ring: #2347e8;
+  --color-accent: #2f5cf5;
+  --color-accent-hover: #244ad4;
+  --color-accent-quiet: #eaeffe;
+  --color-accent-ink: #ffffff;
 
-  /* Semantic, and deliberately separate from the accent. */
-  --color-live: #12875a;
-  --color-failed: #cf3b3b;
-  --color-pending: #b57611;
+  --color-live: #0f8a5f;
+  --color-failed: #cc3838;
+  --color-pending: #b0730f;
 
-  --radius-card: 14px;
+  /*
+   * Lightly softened, never a pill. Three pixels reads as a cut edge rather
+   * than a bubble, and holds its corner at every size on the grid.
+   */
+  --radius-edge: 3px;
 
-  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", monospace;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
-  /* One easing, so the whole surface moves with one character. */
-  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Two curves only: one for things settling, one for things reacting. */
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-snap: cubic-bezier(0.34, 1.4, 0.5, 1);
 
-  /* Depth is layered, never a single flat drop. */
-  --shadow-rest: 0 1px 2px rgb(20 23 28 / 0.07), 0 0 0 1px rgb(20 23 28 / 0.08);
-  --shadow-lift: 0 14px 30px -12px rgb(20 23 28 / 0.26), 0 2px 6px rgb(20 23 28 / 0.08);
+  --shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
+  --shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
+  --shadow-panel: 0 30px 70px -30px rgb(12 14 18 / 0.4), 0 0 0 1px rgb(12 14 18 / 0.1);
 }
 
 /*
- * Dark is designed, not inverted. The ground is a blue-black rather than a
- * neutral one so it sits in the same family as the accent, surfaces lift by
- * getting lighter instead of by shadow (shadows do nothing on a dark ground),
- * and the accent brightens so it still carries on the darker surface.
+ * Dark is the primary design. The ground is close to black with a cold cast so
+ * the accent belongs to it; panels lift by lightening rather than by shadow,
+ * because a shadow on near-black is invisible; and borders do the separating,
+ * which is what keeps the layout reading as drawn rather than floated.
  */
 [data-theme="dark"] {
-  --color-canvas: #0e1116;
-  --color-surface: #161a21;
-  --color-raised: #1b2029;
-  --color-sunken: #0a0d11;
-  --color-border: #262c37;
-  --color-border-strong: #39414f;
+  --color-base: #08090c;
+  --color-panel: #0c0e12;
+  --color-surface: #101318;
+  --color-raised: #161a20;
+  --color-sunken: #050609;
+  --color-line: #1e232b;
+  --color-line-strong: #2d343f;
 
-  --color-ink: #eef1f6;
-  --color-ink-muted: #9aa3b2;
-  --color-ink-subtle: #6b7383;
+  --color-ink: #f0f2f5;
+  --color-ink-muted: #939bab;
+  --color-ink-subtle: #646c7b;
 
-  --color-accent: #6b8bff;
-  --color-accent-hover: #8aa3ff;
-  --color-accent-soft: #1a2138;
+  --color-accent: #5b85ff;
+  --color-accent-hover: #7b9dff;
+  --color-accent-quiet: #121a30;
+  --color-accent-ink: #060a14;
 
-  --color-live: #35c489;
-  --color-failed: #f2726f;
-  --color-pending: #e0a548;
+  --color-live: #2fbd84;
+  --color-failed: #f06d6d;
+  --color-pending: #d79a3c;
 
-  --shadow-rest: 0 0 0 1px rgb(255 255 255 / 0.05);
-  --shadow-lift: 0 16px 36px -16px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-float: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
+  --shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
 }
 
 html {
@@ -91,18 +97,17 @@ html {
 }
 
 body {
-  background-color: var(--color-canvas);
+  background-color: var(--color-base);
   color: var(--color-ink);
   font-family: var(--font-sans);
-  /* Manrope's default tracking is loose for interface text. */
-  letter-spacing: -0.006em;
+  letter-spacing: -0.011em;
 }
 
-/* Keyboard users get a visible, on-brand ring; pointer users do not. */
+/* Keyboard users get a crisp square ring; pointer users get nothing. */
 :focus-visible {
-  outline: 2px solid var(--color-accent-ring);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 8px;
+  border-radius: 2px;
 }
 
 input:focus-visible,
@@ -111,46 +116,28 @@ select:focus-visible {
   outline: none;
 }
 
-/*
- * An app's icon carries a light and a dark rendering of its own hue. The theme
- * decides here rather than through a utility variant, because an arbitrary
- * background and its dark counterpart end up at equal specificity and the
- * wrong one wins silently: a light wash on a dark ground.
- */
-.app-icon {
-  background: linear-gradient(
-    160deg,
-    color-mix(in oklab, var(--bg) 86%, white),
-    var(--bg)
-  );
-  color: var(--fg);
-  box-shadow: inset 0 0 0 1px rgb(20 23 28 / 0.07);
-}
-
-[data-theme="dark"] .app-icon {
-  background: linear-gradient(
-    160deg,
-    color-mix(in oklab, var(--bg-dark) 78%, white 7%),
-    var(--bg-dark)
-  );
-  color: var(--fg-dark);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
-}
-
-/* Digits that sit in columns should line up. */
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
+/* An uppercase label is a structural marker; it needs air to read as one. */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-subtle);
+}
+
 /*
- * The gallery assembles rather than snapping into place: one orchestrated
- * moment on arrival, not effects scattered through the page. Every element
- * below is fully readable at rest, so switching all of it off costs nothing.
+ * Motion. Two jobs only: place things when they arrive, and confirm a touch.
+ * Everything below rests fully visible, so switching all of it off changes
+ * nothing about what can be read.
  */
-@keyframes rise {
+@keyframes enter-up {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translate3d(0, 12px, 0);
   }
   to {
     opacity: 1;
@@ -158,7 +145,7 @@ select:focus-visible {
   }
 }
 
-@keyframes fade-in {
+@keyframes enter-fade {
   from {
     opacity: 0;
   }
@@ -167,21 +154,10 @@ select:focus-visible {
   }
 }
 
-@keyframes pop-in {
+@keyframes enter-scale {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes sweep-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
+    transform: translate3d(0, -6px, 0) scale(0.97);
   }
   to {
     opacity: 1;
@@ -189,35 +165,108 @@ select:focus-visible {
   }
 }
 
-.animate-rise {
-  animation: rise 0.5s var(--ease-out-soft) both;
+@keyframes enter-right {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.32s var(--ease-out-soft) both;
+@keyframes sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(220%);
+  }
 }
 
-.animate-pop-in {
-  animation: pop-in 0.18s var(--ease-out-soft) both;
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
-.animate-sweep-in {
-  animation: sweep-in 0.4s var(--ease-out-soft) both;
+.enter-up {
+  animation: enter-up 0.46s var(--ease-settle) both;
+}
+.enter-fade {
+  animation: enter-fade 0.3s var(--ease-settle) both;
+}
+.enter-scale {
+  animation: enter-scale 0.17s var(--ease-snap) both;
+}
+.enter-right {
+  animation: enter-right 0.34s var(--ease-settle) both;
+}
+.pulse-once {
+  animation: pulse-ring 0.6s var(--ease-settle);
 }
 
-/* A deploying app breathes, so state reads without reading the label. */
+/* A deploying thing breathes, so state reads before the label does. */
 @keyframes breathe {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.3;
+    opacity: 0.25;
   }
 }
+.breathe {
+  animation: breathe 1.8s ease-in-out infinite;
+}
 
-.animate-breathe {
-  animation: breathe 1.9s ease-in-out infinite;
+/* Loading: a light passing across the placeholder, not a throbbing block. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-sunken);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-ink) 7%, transparent),
+    transparent
+  );
+  animation: sheen 1.5s infinite;
+}
+
+/*
+ * An app's icon carries a light and a dark rendering of its own hue. The theme
+ * decides here rather than through a utility variant: an arbitrary background
+ * and its dark counterpart land at equal specificity, and the wrong one wins
+ * silently.
+ */
+.app-icon {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgb(12 14 18 / 0.08);
+}
+[data-theme="dark"] .app-icon {
+  background: var(--bg-dark);
+  color: var(--fg-dark);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.09);
+}
+
+/* Thin scrollbars, so a scrolling panel does not grow a grey slab. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

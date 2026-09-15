@@ -245,3 +245,28 @@ export const cliAuthRequests = pgTable(
     uniqueIndex("cli_auth_user_code_idx").on(t.userCode),
   ],
 );
+
+/**
+ * When someone last opened an app.
+ *
+ * One row per person per app rather than a log: the product needs "what do I
+ * reach for", not an audit trail, and a log would grow without bound for an
+ * answer nobody asks of it.
+ */
+export const appOpens = pgTable(
+  "app_opens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("app_opens_user_app_idx").on(t.userId, t.appId),
+    index("app_opens_user_idx").on(t.userId),
+  ],
+);

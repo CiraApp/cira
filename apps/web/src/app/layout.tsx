@@ -1,17 +1,25 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { JetBrains_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 
-const manrope = Manrope({
+/**
+ * Geist for the interface, Geist Mono for anything literal.
+ *
+ * Chosen for the register the product is aiming at: tight apertures and flat
+ * terminals read as drawn rather than friendly, which is what lets a near-black
+ * ground stay precise instead of going soft.
+ */
+const geist = Geist({
   subsets: ["latin"],
-  variable: "--font-manrope",
+  variable: "--font-geist",
   display: "swap",
 });
-const jetbrains = JetBrains_Mono({
+
+const geistMono = Geist_Mono({
   subsets: ["latin"],
-  variable: "--font-jetbrains",
+  variable: "--font-geist-mono",
   display: "swap",
 });
 
@@ -28,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         // The theme is stamped before paint, so nobody sees a light flash on
         // the way to a dark page.
         suppressHydrationWarning
-        className={`${manrope.variable} ${jetbrains.variable}`}
+        className={`${geist.variable} ${geistMono.variable}`}
       >
         <body className="min-h-dvh antialiased">
           <ThemeProvider>{children}</ThemeProvider>

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { apps, db } from "@cira/db";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
-import { latestDeployment } from "@/lib/queries";
+import { latestDeployment, recordAppOpen } from "@/lib/queries";
 import { resolveAppState } from "@/lib/app-state";
 
 /**
@@ -26,7 +26,8 @@ export async function GET(
   const backToApp = new URL(`/${spaceSlug}/${appSlug}`, origin);
 
   try {
-    const { app } = await requireAppAccess(spaceSlug, appSlug);
+    const ctx = await requireAppAccess(spaceSlug, appSlug);
+    const { app } = ctx;
     const deployment = await latestDeployment(app.id);
 
     // The secret is infrastructure, not part of the app as the product knows
@@ -45,6 +46,10 @@ export async function GET(
     if (resolved.openUrl === null || secret === null) {
       return NextResponse.redirect(backToApp);
     }
+
+    // Recorded here rather than on the app page, because this is the moment
+    // someone actually used the app rather than looked at it.
+    await recordAppOpen(ctx.user.id, app.id);
 
     const target = new URL(resolved.openUrl);
     target.searchParams.set("x-vercel-protection-bypass", secret);

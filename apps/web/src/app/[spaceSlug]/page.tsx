@@ -1,15 +1,17 @@
 import { notFound } from "next/navigation";
 import { AppGallery } from "@/components/app-gallery";
 import { EmptyGallery } from "@/components/empty-gallery";
+import { RecentStrip } from "@/components/recent-strip";
 import { InviteDialog } from "@/components/invite-dialog";
-import { SpaceSwitcher } from "@/components/space-switcher";
-import { TopBar } from "@/components/top-bar";
+import { AppShell } from "@/components/shell/app-shell";
+import { PageTitle } from "@/components/shell/page-title";
 import {
   NotFoundError,
   listMySpaces,
   listVisibleApps,
   requireSpaceMember,
 } from "@/lib/authz";
+import { recentlyOpened } from "@/lib/queries";
 
 export default async function SpacePage({
   params,
@@ -26,25 +28,43 @@ export default async function SpacePage({
       listMySpaces(),
     ]);
 
+    // The shortcut row only earns its place once there is something to skip
+    // past, so it stays hidden until the shelf is big enough to scan.
+    const recentIds =
+      apps.length > 4
+        ? await recentlyOpened(
+            ctx.user.id,
+            apps.map((a) => a.id),
+            6,
+          )
+        : [];
+    const byId = new Map(apps.map((a) => [a.id, a]));
+    const recent = recentIds.flatMap((id) => {
+      const app = byId.get(id);
+      return app === undefined ? [] : [app];
+    });
+
     return (
-      <>
-        <TopBar spaceSlug={spaceSlug} />
-
-        <main className="mx-auto w-full max-w-5xl px-6 py-10">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <SpaceSwitcher spaces={spaces} currentSlug={spaceSlug} />
-            {canInvite ? <InviteDialog spaceSlug={spaceSlug} /> : null}
+      <AppShell
+        spaceSlug={spaceSlug}
+        spaces={spaces}
+        title={
+          <PageTitle
+            title="Apps"
+            detail={`${apps.length} ${apps.length === 1 ? "app" : "apps"} you can open`}
+          />
+        }
+        actions={canInvite ? <InviteDialog spaceSlug={spaceSlug} /> : null}
+      >
+        {apps.length === 0 ? (
+          <EmptyGallery />
+        ) : (
+          <div className="flex flex-col gap-7">
+            <RecentStrip apps={recent} spaceSlug={spaceSlug} />
+            <AppGallery apps={apps} spaceSlug={spaceSlug} />
           </div>
-
-          <div className="mt-7">
-            {apps.length === 0 ? (
-              <EmptyGallery />
-            ) : (
-              <AppGallery apps={apps} spaceSlug={spaceSlug} />
-            )}
-          </div>
-        </main>
-      </>
+        )}
+      </AppShell>
     );
   } catch (error) {
     if (error instanceof NotFoundError) notFound();

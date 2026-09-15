@@ -21,6 +21,14 @@ export interface Space {
   id: SpaceId;
   name: string;
   slug: string;
+  /**
+   * The company's email domain, when its founder had one.
+   *
+   * Anyone with a verified address here joins without an invite, so this is
+   * part of what a space IS rather than a setting hung off it. Null for a
+   * space created from a personal address.
+   */
+  domain: string | null;
   createdAt: Date;
 }
 
