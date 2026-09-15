@@ -39,9 +39,9 @@ Keep `prod` green.
 
 ## Phase 5 - CLI authentication
 
-- [ ] `cira login`
-- [ ] Token storage
-- [ ] `.cira/project.json` local project metadata
+- [x] `cira login` by device code, plus `logout`, `whoami`, `status`
+- [x] Token storage in ~/.cira/config.json, 0600, hashed server-side
+- [x] `.cira/project.json` local project metadata (read/write + framework detection)
 
 ## Phase 6 - DeploymentProvider abstraction
 
@@ -90,6 +90,11 @@ Keep `prod` green.
   click without an invite. Public providers (gmail and friends) can never be
   claimed. This exists because the second employee to sign up was otherwise
   pushed to found a duplicate of their own company.
+- **CLI sign-in** - a device code, not a local callback server, so it behaves
+  the same over SSH and in a container. The CLI holds the secret device code
+  and polls; the person only ever sees a short code, so one read aloud or
+  pasted into chat cannot be exchanged for a token. Tokens are stored only as
+  a SHA-256 hash, making "show it to me again" impossible by construction.
 - **Invites** - a link the inviter sends themselves, bound to one email
   address, single use, seven-day lifetime. No mail provider in V1: an inviter
   who can reach a colleague already has a channel, and binding to an address

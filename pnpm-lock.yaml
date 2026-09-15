@@ -76,6 +76,12 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
 
+  packages/cli:
+    dependencies:
+      '@cira/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/core: {}
 
   packages/db:

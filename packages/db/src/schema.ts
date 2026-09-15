@@ -174,3 +174,62 @@ export const invites = pgTable(
     index("invites_email_idx").on(t.email),
   ],
 );
+
+/**
+ * A long-lived credential held by the `cira` CLI on a developer's machine.
+ *
+ * Only the hash is stored. A stolen database therefore yields no working
+ * tokens, and "show me the token again" is impossible by construction rather
+ * than by policy.
+ */
+export const cliTokens = pgTable(
+  "cli_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256 of the token. Never the token itself. */
+    tokenHash: text("token_hash").notNull(),
+    /** Shown when listing or revoking, e.g. the machine it was created on. */
+    label: text("label").notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cli_tokens_hash_idx").on(t.tokenHash),
+    index("cli_tokens_user_idx").on(t.userId),
+  ],
+);
+
+/**
+ * One in-progress `cira login`.
+ *
+ * The CLI holds the secret device code and polls; the human types only the
+ * short user code. Splitting them means the code a person reads aloud or
+ * pastes into chat cannot itself be exchanged for a token.
+ */
+export const cliAuthRequests = pgTable(
+  "cli_auth_requests",
+  {
+    id: text("id").primaryKey(),
+    /** Secret, held only by the CLI instance that started the login. */
+    deviceCode: text("device_code").notNull(),
+    /** Short and human-typable, e.g. "WXYZ-1234". */
+    userCode: text("user_code").notNull(),
+    label: text("label").notNull(),
+    approvedByUserId: text("approved_by_user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /** Set once the CLI has collected its token, so it can never be collected twice. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cli_auth_device_idx").on(t.deviceCode),
+    uniqueIndex("cli_auth_user_code_idx").on(t.userCode),
+  ],
+);
