@@ -184,7 +184,7 @@ export class VercelProvider implements DeploymentProvider {
     return events
       .map((e) => ({
         timestamp: new Date(e.created ?? e.date ?? Date.now()),
-        message: (e.text ?? e.payload?.text ?? "").trimEnd(),
+        message: stripTerminalCodes(e.text ?? e.payload?.text ?? "").trimEnd(),
       }))
       .filter((line) => line.message !== "");
   }
@@ -200,4 +200,14 @@ export class VercelProvider implements DeploymentProvider {
 function randomBypassSecret(): string {
   const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   return Array.from(randomBytes(32), (b) => alphabet[b % alphabet.length]).join("");
+}
+
+/**
+ * Build logs arrive coloured for a terminal. Those codes are noise in a
+ * browser, so they are removed here, where the provider's formatting is known,
+ * rather than left for every reader to cope with.
+ */
+function stripTerminalCodes(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "");
 }

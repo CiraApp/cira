@@ -38,3 +38,16 @@ export async function appHoldsKey(appId: string): Promise<boolean> {
     row.accessSecret !== ""
   );
 }
+
+/** Every deploy of an app, newest first. */
+export async function deploymentHistory(
+  appId: string,
+  limit = 10,
+): Promise<Deployment[]> {
+  return db()
+    .select()
+    .from(deployments)
+    .where(eq(deployments.appId, appId))
+    .orderBy(desc(deployments.createdAt))
+    .limit(limit);
+}

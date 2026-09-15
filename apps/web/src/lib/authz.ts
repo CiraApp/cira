@@ -11,6 +11,7 @@ import {
 } from "@cira/core";
 import type { App, AppAccess, Membership, Role, Space, User } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
+import { settleAbandonedDeploys } from "@/lib/deployment-sync";
 
 /**
  * Every entry point here resolves the acting user from the session, never from
@@ -95,6 +96,9 @@ export async function listMySpaces(): Promise<Array<Space & { role: Role }>> {
 export async function listVisibleApps(spaceSlug: string): Promise<App[]> {
   const ctx = await requireSpaceMember(spaceSlug);
   const database = db();
+
+  // Nothing in a gallery should claim to be deploying forever.
+  await settleAbandonedDeploys(ctx.space.id);
 
   const spaceApps = await database
     .select()

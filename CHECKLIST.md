@@ -67,8 +67,9 @@ Keep `prod` green.
 
 ## Phase 9 - App management + logs
 
-- [ ] Manage view: Overview, Access, Deployments, Settings
-- [ ] Deployment status and basic build logs
+- [x] Deploy history on the app page, with build logs per deploy
+- [x] Status reconciled where it is read, so nothing spins forever
+- [ ] Rename, delete, and other app settings
 
 ## Phase 10 - Polish + end-to-end tests
 
@@ -94,6 +95,11 @@ Keep `prod` green.
   click without an invite. Public providers (gmail and friends) can never be
   claimed. This exists because the second employee to sign up was otherwise
   pushed to found a duplicate of their own company.
+- **Status is reconciled where it is read**, not by a background job. A page
+  view re-checks an in-flight deploy against the provider, and a gallery cheaply
+  settles deploys too old to still be running without any network call. The
+  moment someone is looking is exactly when the answer has to be true, and it
+  avoids polling for something nobody is watching.
 - **CLI sign-in** - a device code, not a local callback server, so it behaves
   the same over SSH and in a container. The CLI holds the secret device code
   and polls; the person only ever sees a short code, so one read aloud or

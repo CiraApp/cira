@@ -4,7 +4,9 @@ import { TopBar } from "@/components/top-bar";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
-import { appHoldsKey } from "@/lib/queries";
+import { appHoldsKey, deploymentHistory } from "@/lib/queries";
+import { reconcileDeployment } from "@/lib/deployment-sync";
+import { DeploymentHistory } from "@/components/deployment-history";
 import { AccessPanel } from "@/components/access-panel";
 import { latestDeployment } from "@/lib/queries";
 import { appColor, appInitial } from "@/lib/app-color";
@@ -20,10 +22,16 @@ export default async function AppPage({
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
     const { app, space } = ctx;
-    const [deployment, holdsKey] = await Promise.all([
+    const [rawDeployment, holdsKey, history] = await Promise.all([
       latestDeployment(app.id),
       appHoldsKey(app.id),
+      deploymentHistory(app.id),
     ]);
+
+    // Someone is looking at this app right now, so this is exactly when its
+    // status has to be true rather than whatever was last written down.
+    const deployment =
+      rawDeployment === null ? null : await reconcileDeployment(rawDeployment);
 
     // Only someone who can change access is shown it; for everyone else the
     // page stays the simple "open this app" screen it should be.
@@ -100,6 +108,17 @@ export default async function AppPage({
               {deployment === null ? "Not deployed" : deployment.provider}
             </Fact>
           </dl>
+
+          <DeploymentHistory
+            spaceSlug={spaceSlug}
+            appSlug={appSlug}
+            deploys={history.map((d) => ({
+              id: d.id,
+              status: d.id === deployment?.id ? deployment.status : d.status,
+              createdAt: d.createdAt.toISOString(),
+              relative: relativeTime(d.createdAt),
+            }))}
+          />
 
           {access !== null ? (
             <AccessPanel
