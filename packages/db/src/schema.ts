@@ -103,6 +103,18 @@ export const apps = pgTable(
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
+    /** The provider's own handle for this app, so it can be reconfigured later. */
+    providerProjectId: text("provider_project_id"),
+    /**
+     * Lets Cira open a deployed app on an employee's behalf.
+     *
+     * The app itself is unreachable without this, so Cira's own permission
+     * check is the only way in. Held in plain text for now, which is the weak
+     * point: anyone who can read this column can open any app. Encrypting it
+     * needs key management that V1 does not have, and it is worth less than it
+     * looks while the deploy token in the same environment can already do more.
+     */
+    accessSecret: text("access_secret"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

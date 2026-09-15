@@ -120,6 +120,28 @@ export async function deployToSpace(args: {
     };
   }
 
+  // Lock the app down and keep the key. Until this succeeds the app is
+  // reachable only by whoever holds a provider account, which is nobody we
+  // care about, so a failure here is worth recording but not worth failing
+  // the deploy over.
+  if (app.accessSecret === null || app.providerProjectId === null) {
+    try {
+      const secured = await deploymentProvider().secureProject(
+        `${space.slug}-${app.slug}`,
+      );
+      await database
+        .update(apps)
+        .set({
+          providerProjectId: secured.projectId,
+          accessSecret: secured.accessSecret,
+        })
+        .where(eq(apps.id, app.id));
+    } catch {
+      // Left unset: the app page will say it cannot be opened yet rather than
+      // handing anyone a link that does not work.
+    }
+  }
+
   const deploymentId = newId("deployment");
   await database.insert(deployments).values({
     id: deploymentId,

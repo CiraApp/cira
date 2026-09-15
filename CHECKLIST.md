@@ -53,8 +53,9 @@ Keep `prod` green.
 - [x] Provider chosen: Vercel
 - [x] Implemented behind `DeploymentProvider` (`packages/deploy/src/vercel.ts`)
 - [x] Wire the CI deploy step (for Cira itself)
-- [ ] Point deploys at a dedicated Vercel team, NOT the one holding Cira and
-      wave: this code path creates and deletes projects
+- [x] Deploys point at the existing team, on the captain's explicit call. The
+      separate-team argument still stands and is a launch-time item: this code
+      path creates and deletes projects.
 
 ## Phase 8 - `cira deploy` end to end
 
@@ -62,7 +63,7 @@ Keep `prod` green.
 - [x] Package and upload source, content-addressed
 - [x] Deploy, create/update the App record, return the URL
 - [x] A new app is visible to its deployer only; widening is deliberate
-- [ ] First real deploy against a live provider (needs the dedicated team)
+- [x] First real deploy against a live provider, end to end
 
 ## Phase 9 - App management + logs
 
@@ -120,10 +121,15 @@ Keep `prod` green.
   gates access to company software. Clerk sits behind `lib/identity.ts`, the one
   module that imports it, so it stays swappable. Cira still owns Space,
   Membership and AppAccess in its own tables.
-- **App gateway** - Vercel Deployment Protection plus a bypass token, proxied
-  through Cira. Deployed apps are unreachable on their raw URL; Cira checks
-  permission server-side and then proxies. This satisfies spec section 7
-  without building a gateway.
+- **App gateway** - built and working. A deployed app has protection on every
+  URL, so it is unreachable to everyone, and Cira holds the only key. Opening
+  an app goes through Cira, which checks permission and then redirects with a
+  one-time parameter the provider exchanges for a cookie. Employees never need
+  an account with whoever runs the app.
+  The weak point, deliberately accepted for V1: the key is briefly visible in
+  the address bar, and is stored unencrypted. A full proxy would avoid both, at
+  the cost of standing between every request and the app. Worth revisiting
+  before real customer data lives behind it.
 
 ## Still open
 

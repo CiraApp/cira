@@ -4,6 +4,7 @@ import type {
   DeploymentProvider,
   DeploymentResult,
 } from "@cira/core";
+import { randomBytes } from "node:crypto";
 import { toDeploymentStatus } from "./status.js";
 
 export interface VercelConfig {
@@ -119,6 +120,40 @@ export class VercelProvider implements DeploymentProvider {
     };
   }
 
+  /**
+   * Make a deployed app unreachable except through Cira.
+   *
+   * Two steps that only make sense together: protect every URL including
+   * production, then mint a secret Cira can use to let an approved employee
+   * in. Protection without the secret locks everyone out; the secret without
+   * protection secures nothing.
+   */
+  async secureProject(
+    projectName: string,
+  ): Promise<{ projectId: string; accessSecret: string }> {
+    const project = await this.request<{ id: string }>(
+      `/v9/projects/${encodeURIComponent(projectName)}`,
+    );
+
+    await this.request(`/v9/projects/${encodeURIComponent(project.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ssoProtection: { deploymentType: "all" } }),
+    });
+
+    const accessSecret = randomBypassSecret();
+    await this.request(
+      `/v1/projects/${encodeURIComponent(project.id)}/protection-bypass`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ generate: { secret: accessSecret } }),
+      },
+    );
+
+    return { projectId: project.id, accessSecret };
+  }
+
   async getStatus(deploymentId: string): Promise<DeploymentResult> {
     const d = await this.request<{
       id: string;
@@ -159,4 +194,10 @@ export class VercelProvider implements DeploymentProvider {
       method: "DELETE",
     });
   }
+}
+
+/** The provider requires exactly 32 alphanumeric characters. */
+function randomBypassSecret(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  return Array.from(randomBytes(32), (b) => alphabet[b % alphabet.length]).join("");
 }
