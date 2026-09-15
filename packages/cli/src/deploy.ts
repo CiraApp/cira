@@ -24,7 +24,8 @@ interface StatusResponse {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function deploy(): Promise<number> {
+export async function deploy(argv: string[] = []): Promise<number> {
+  const requestedSpace = readFlag(argv, "--space");
   const config = readConfig();
   if (config.token === undefined) {
     fail("Not signed in. Run: cira login");
@@ -52,19 +53,32 @@ export async function deploy(): Promise<number> {
     return 1;
   }
 
-  const spaceSlug = link?.spaceSlug ?? me.spaces[0]?.slug;
-  if (spaceSlug === undefined) {
+  if (me.spaces.length === 0) {
     fail("You are not in a space yet. Open Cira and join or create one first.");
     return 1;
   }
 
-  if (link === null && me.spaces.length > 1) {
-    // Guessing which company to publish someone's work into is not a guess
-    // worth making.
-    fail(
-      "You are in more than one space. Deploy from a linked folder, or ask for --space.",
-    );
-    info(dim(`  Spaces: ${me.spaces.map((s) => s.slug).join(", ")}`));
+  if (requestedSpace !== null && !me.spaces.some((s) => s.slug === requestedSpace)) {
+    fail(`You are not in a space called "${requestedSpace}".`);
+    info(dim(`  You are in: ${me.spaces.map((s) => s.slug).join(", ")}`));
+    return 1;
+  }
+
+  // An explicit choice wins, then the folder's existing link, and only then a
+  // single obvious space. Guessing which company to publish someone's work
+  // into is not a guess worth making.
+  const spaceSlug =
+    requestedSpace ??
+    link?.spaceSlug ??
+    (me.spaces.length === 1 ? me.spaces[0]?.slug : undefined);
+
+  if (spaceSlug === undefined) {
+    fail("You are in more than one space, so tell Cira which one to deploy to.");
+    info("");
+    for (const s of me.spaces) {
+      info(`  cira deploy --space ${s.slug}${dim(`   (${s.name})`)}`);
+    }
+    info("");
     return 1;
   }
 
@@ -173,4 +187,16 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Read `--flag value` or `--flag=value` from the arguments. */
+function readFlag(argv: string[], flag: string): string | null {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === flag) return argv[i + 1] ?? null;
+    if (arg !== undefined && arg.startsWith(`${flag}=`)) {
+      return arg.slice(flag.length + 1);
+    }
+  }
+  return null;
 }

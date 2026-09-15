@@ -11,6 +11,7 @@ const USAGE = `
 
   ${bold("Commands")}
     deploy     Deploy this folder to your company
+               --space <slug>   which space, when you are in more than one
     login      Connect this machine to your Cira account
     logout     Forget the stored credential
     whoami     Show who you are signed in as
@@ -69,7 +70,7 @@ async function main(): Promise<number> {
 
   switch (command) {
     case "deploy":
-      return deploy();
+      return deploy(process.argv.slice(3));
     case "login":
       return login();
     case "logout":
