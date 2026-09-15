@@ -154,6 +154,16 @@ Keep `prod` green.
   refuses storage still renders correctly - it just does not remember. An
   inline script stamps the colours before first paint, so nobody watches a dark
   interface load as a white one.
+- **The colour wheel is in the panel, not in an operating-system window.**
+  `<input type="color">` opens a dialog in the corner of the screen with its
+  own typeface and its own corners, and it covers the very thing you are trying
+  to judge. The wheel replaces it: angle is hue and distance from the middle is
+  saturation, which is what lets a wheel be read without a legend, and
+  lightness gets a track underneath because it is the one axis a wheel cannot
+  show. Choosing happens over the live interface, because the only useful
+  preview of an interface is the interface. The hex field stays alongside it -
+  dragging to find a colour and pasting one the brand already has are different
+  tasks.
 - **Bad contrast is shown, not prevented.** Someone choosing their own colours
   is allowed to choose badly, but the picker says so when the accent drops
   below the 3:1 WCAG floor against the base. Refusing the colour would be

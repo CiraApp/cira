@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   BUILT_IN,
   PRESETS,
+  hexToHsl,
+  hslToHex,
   accentInk,
   contrast,
   isHexColor,
@@ -106,5 +108,38 @@ describe("parseTheme", () => {
     ]) {
       expect(parseTheme(raw)).toBeNull();
     }
+  });
+});
+
+describe("hexToHsl and hslToHex", () => {
+  it("round-trips every preset colour exactly", () => {
+    for (const preset of PRESETS) {
+      for (const hex of [preset.base, preset.accent]) {
+        expect(hslToHex(hexToHsl(hex))).toBe(hex);
+      }
+    }
+  });
+
+  it("round-trips the greys, where hue is undefined", () => {
+    for (const hex of ["#000000", "#ffffff", "#7f7f7f", "#080808"]) {
+      expect(hslToHex(hexToHsl(hex))).toBe(hex);
+    }
+  });
+
+  it("puts the primaries where the wheel expects them", () => {
+    expect(hexToHsl("#ff0000").h).toBeCloseTo(0, 4);
+    expect(hexToHsl("#00ff00").h).toBeCloseTo(120, 4);
+    expect(hexToHsl("#0000ff").h).toBeCloseTo(240, 4);
+  });
+
+  it("reads saturation and lightness off the ends of the range", () => {
+    expect(hexToHsl("#ffffff")).toMatchObject({ s: 0, l: 1 });
+    expect(hexToHsl("#000000")).toMatchObject({ s: 0, l: 0 });
+    expect(hexToHsl("#ff0000")).toMatchObject({ s: 1, l: 0.5 });
+  });
+
+  it("wraps a hue that has run past the top of the wheel", () => {
+    expect(hslToHex({ h: 360, s: 1, l: 0.5 })).toBe("#ff0000");
+    expect(hslToHex({ h: -120, s: 1, l: 0.5 })).toBe("#0000ff");
   });
 });

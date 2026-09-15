@@ -692,6 +692,60 @@ select:focus-visible {
   }
 }
 
+/*
+ * The lightness track under the colour wheel.
+ *
+ * A range input is used rather than a hand-rolled slider because it already
+ * knows about the keyboard, and this is the one axis of a colour that is
+ * genuinely one-dimensional.
+ */
+.track {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.track::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--track);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+.track::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--track);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+.track::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -3px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: transparent;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.45),
+    0 2px 6px rgb(0 0 0 / 0.4);
+}
+.track::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: transparent;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.45),
+    0 2px 6px rgb(0 0 0 / 0.4);
+}
+.track:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* Thin scrollbars, so a scrolling panel does not grow a grey slab. */
 * {
   scrollbar-width: thin;

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { PRESETS, accentContrast, normalizeHex, type Theme } from "@/lib/theme";
+import { ColorWheel } from "./color-wheel";
 import { Portal } from "@/components/ui/portal";
 import { useTheme } from "./theme-provider";
 
@@ -20,6 +21,8 @@ export function ThemePicker() {
   const boxRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  // Which of the two colours the wheel is currently editing.
+  const [target, setTarget] = useState<"base" | "accent">("accent");
 
   // The panel is portalled out of the header, which applies a backdrop filter
   // and would otherwise become its containing block, so its position has to be
@@ -93,7 +96,7 @@ export function ThemePicker() {
             role="dialog"
             aria-label="Interface colours"
             style={{ top: anchor.top, right: anchor.right }}
-            className="enter-scale fixed z-50 w-[288px] rounded-[var(--radius-edge)] border border-line-strong bg-raised p-3 shadow-[var(--shadow-panel)]"
+            className="enter-scale fixed z-50 w-[300px] rounded-[var(--radius-edge)] border border-line-strong bg-raised p-3 shadow-[var(--shadow-panel)]"
           >
             <p className="eyebrow px-0.5">Presets</p>
             <div className="mt-2 grid grid-cols-7 gap-1.5">
@@ -125,18 +128,28 @@ export function ThemePicker() {
               ))}
             </div>
 
-            <div className="mt-4 flex flex-col gap-2.5">
-              <ColorRow
+            <div className="mt-3.5 grid grid-cols-2 gap-1.5">
+              <Target
                 label="Base"
                 value={effective.base}
+                active={target === "base"}
+                onSelect={() => setTarget("base")}
                 onChange={(base) => setTheme({ ...effective, base })}
-                onPreview={(base) => preview({ ...effective, base })}
               />
-              <ColorRow
+              <Target
                 label="Accent"
                 value={effective.accent}
+                active={target === "accent"}
+                onSelect={() => setTarget("accent")}
                 onChange={(accent) => setTheme({ ...effective, accent })}
-                onPreview={(accent) => preview({ ...effective, accent })}
+              />
+            </div>
+
+            <div className="mt-3.5">
+              <ColorWheel
+                value={effective[target]}
+                onPreview={(hex) => preview({ ...effective, [target]: hex })}
+                onCommit={(hex) => setTheme({ ...effective, [target]: hex })}
               />
             </div>
 
@@ -163,28 +176,30 @@ export function ThemePicker() {
 }
 
 /**
- * One colour: a native well for choosing and a hex field for typing.
+ * One of the two colours, as a target for the wheel.
  *
- * `onPreview` fires continuously while the well is dragged and `onChange` only
- * when it settles, so the page follows the pointer without writing a hundred
- * values to storage on the way.
+ * The swatch selects; the hex field types. Both are here because a chosen
+ * colour and a specified colour are different tasks - you drag to find a green
+ * you like, and you paste when the brand already has one.
  */
-function ColorRow({
+function Target({
   label,
   value,
+  active,
+  onSelect,
   onChange,
-  onPreview,
 }: {
   label: string;
   value: string;
+  active: boolean;
+  onSelect: () => void;
   onChange: (hex: string) => void;
-  onPreview: (hex: string) => void;
 }) {
   const id = useId();
   const [text, setText] = useState(value);
 
-  // The field follows the theme when it changes from anywhere else - a preset,
-  // the other row, a reset - but must not fight what is being typed into it.
+  // Follows the theme when it changes from anywhere else - the wheel, a
+  // preset, a reset - but must not fight what is being typed into it.
   useEffect(() => setText(value), [value]);
 
   const commit = (raw: string) => {
@@ -194,32 +209,39 @@ function ColorRow({
   };
 
   return (
-    <div className="flex items-center gap-2.5">
-      <label htmlFor={id} className="w-[46px] shrink-0 text-[12px] text-ink-muted">
-        {label}
-      </label>
+    <div
+      data-active={active ? "true" : undefined}
+      className="flex flex-col gap-1.5 rounded-[var(--radius-edge)] border border-line p-2 transition-colors duration-150 data-[active]:border-accent"
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={active}
+        className="flex items-center gap-2 text-left"
+      >
+        <span
+          aria-hidden="true"
+          style={{ background: value }}
+          className="h-4 w-4 shrink-0 rounded-[2px] ring-1 ring-line-strong ring-inset"
+        />
+        <span className="text-[12px] font-medium text-ink">{label}</span>
+      </button>
 
       <input
         id={id}
-        type="color"
-        value={value}
-        onInput={(event) => onPreview(event.currentTarget.value)}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        className="h-7 w-9 shrink-0 cursor-pointer rounded-[2px] border border-line bg-transparent p-0.5"
-      />
-
-      <input
+        name={`${label.toLowerCase()}-hex`}
         type="text"
         value={text}
         spellCheck={false}
         autoComplete="off"
         aria-label={`${label} colour, hex`}
+        onFocus={onSelect}
         onChange={(event) => setText(event.target.value)}
         onBlur={(event) => commit(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") commit(event.currentTarget.value);
         }}
-        className="field min-w-0 flex-1 px-2 py-1 font-mono text-[11.5px] uppercase"
+        className="field w-full px-1.5 py-1 font-mono text-[11px] uppercase"
       />
     </div>
   );

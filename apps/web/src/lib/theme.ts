@@ -123,6 +123,75 @@ export function accentContrast(theme: Theme): number {
   return contrast(theme.accent, theme.base);
 }
 
+/**
+ * Hue, saturation and lightness, the way a wheel thinks about colour.
+ *
+ * Hue is degrees clockwise from the top of the wheel, so red is 0 and the
+ * value can be handed straight to a conic gradient. Saturation and lightness
+ * are 0 to 1 rather than percentages, because every use here is arithmetic.
+ */
+export interface Hsl {
+  h: number;
+  s: number;
+  l: number;
+}
+
+export function hexToHsl(hex: string): Hsl {
+  const [r255, g255, b255] = channels(hex);
+  const r = r255 / 255;
+  const g = g255 / 255;
+  const b = b255 / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const span = max - min;
+  const l = (max + min) / 2;
+
+  if (span === 0) return { h: 0, s: 0, l };
+
+  const s = span / (1 - Math.abs(2 * l - 1));
+
+  let h: number;
+  if (max === r) h = ((g - b) / span) % 6;
+  else if (max === g) h = (b - r) / span + 2;
+  else h = (r - g) / span + 4;
+
+  h *= 60;
+  if (h < 0) h += 360;
+
+  return { h, s, l };
+}
+
+export function hslToHex({ h, s, l }: Hsl): string {
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const sector = (((h % 360) + 360) % 360) / 60;
+  const second = chroma * (1 - Math.abs((sector % 2) - 1));
+  const lift = l - chroma / 2;
+
+  const rgb: [number, number, number] =
+    sector < 1
+      ? [chroma, second, 0]
+      : sector < 2
+        ? [second, chroma, 0]
+        : sector < 3
+          ? [0, chroma, second]
+          : sector < 4
+            ? [0, second, chroma]
+            : sector < 5
+              ? [second, 0, chroma]
+              : [chroma, 0, second];
+
+  const hex = rgb
+    .map((channel) =>
+      Math.round((channel + lift) * 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("");
+
+  return `#${hex}`;
+}
+
 const STORAGE_KEY = "cira-theme";
 
 /** What the browser stores. Null means "follow the system", the default. */
