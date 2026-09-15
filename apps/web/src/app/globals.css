@@ -47,3 +47,13 @@ body {
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/*
+ * Text fields carry their own focus treatment (accent border plus a soft ring),
+ * so the blanket outline above would sit outside it and read as a double ring.
+ */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}

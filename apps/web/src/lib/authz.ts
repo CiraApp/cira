@@ -2,7 +2,13 @@ import "server-only";
 
 import { and, eq, inArray } from "drizzle-orm";
 import { appAccess, apps, db, memberships, spaces } from "@cira/db";
-import { canAccessApp, canInviteToSpace, canManageApp, visibleApps } from "@cira/core";
+import {
+  canAccessApp,
+  canInviteToSpace,
+  canManageApp,
+  isSlug,
+  visibleApps,
+} from "@cira/core";
 import type { App, AppAccess, Membership, Role, Space, User } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
 
@@ -40,6 +46,10 @@ export interface SpaceContext {
  * forbidden, so the gallery cannot be used to probe which companies exist.
  */
 export async function requireSpaceMember(spaceSlug: string): Promise<SpaceContext> {
+  // Reject anything that cannot be a slug before touching the session or the
+  // database, so a request for a file that does not exist is an honest 404.
+  if (!isSlug(spaceSlug)) throw new NotFoundError("Space");
+
   const user = await requireCurrentUser();
   const database = db();
 
@@ -120,6 +130,8 @@ export async function requireAppAccess(
   spaceSlug: string,
   appSlug: string,
 ): Promise<AppContext> {
+  if (!isSlug(appSlug)) throw new NotFoundError("App");
+
   const ctx = await requireSpaceMember(spaceSlug);
   const database = db();
 

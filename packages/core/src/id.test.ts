@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isId, newId, slugify } from "./id.js";
+import { isId, isSlug, newId, slugify } from "./id.js";
 
 describe("newId", () => {
   it("prefixes by kind and is unique", () => {
@@ -31,5 +31,31 @@ describe("slugify", () => {
 
   it("collapses to empty for input with nothing usable", () => {
     expect(slugify("!!!")).toBe("");
+  });
+});
+
+describe("isSlug", () => {
+  it("accepts what slugify produces", () => {
+    for (const name of ["Acme", "Revenue Dashboard", "Café Métrics"]) {
+      expect(isSlug(slugify(name))).toBe(true);
+    }
+  });
+
+  it("rejects file-like paths that would otherwise hit the space route", () => {
+    for (const path of [
+      "favicon.ico",
+      "robots.txt",
+      "apple-touch-icon.png",
+      ".well-known",
+      "sitemap.xml",
+    ]) {
+      expect(isSlug(path)).toBe(false);
+    }
+  });
+
+  it("rejects empty, uppercase, and malformed slugs", () => {
+    for (const bad of ["", "Acme", "-acme", "acme-", "ac--me", "a b", "a".repeat(49)]) {
+      expect(isSlug(bad)).toBe(false);
+    }
   });
 });

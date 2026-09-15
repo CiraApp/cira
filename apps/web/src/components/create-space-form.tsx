@@ -30,7 +30,7 @@ export function CreateSpaceForm() {
         autoComplete="organization"
         placeholder="Acme"
         aria-describedby={state?.ok === false ? "name-error" : undefined}
-        className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-[15px] text-ink shadow-xs outline-none placeholder:text-ink-subtle focus:border-accent"
+        className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-[15px] text-ink shadow-xs transition-shadow outline-none placeholder:text-ink-subtle focus:border-accent focus:ring-4 focus:ring-accent/12"
       />
 
       {state?.ok === false ? (

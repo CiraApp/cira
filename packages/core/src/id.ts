@@ -38,3 +38,15 @@ export function slugify(input: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
 }
+
+/**
+ * Is this a slug `slugify` could have produced?
+ *
+ * Used to reject paths that cannot name a space or app before they reach the
+ * database or the session. Without it, requests for files that do not exist
+ * (`/favicon.ico`, `/robots.txt`) match the dynamic space route and fail as
+ * server errors instead of honest 404s.
+ */
+export function isSlug(value: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) && value.length <= 48;
+}

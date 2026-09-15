@@ -1,6 +1,7 @@
 import "server-only";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, users } from "@cira/db";
 import { newId } from "@cira/core";
@@ -114,18 +115,17 @@ export async function getCurrentUser(): Promise<User | null> {
   return raced === undefined ? null : toUser(raced);
 }
 
-/** Same as `getCurrentUser`, but throws where a signed-in user is required. */
+/**
+ * The signed-in user, or a redirect to sign-in.
+ *
+ * This is where access is actually enforced. Because every data read goes
+ * through here, a new page cannot ship unprotected by being left out of a
+ * route list; it is protected by the act of reading data.
+ */
 export async function requireCurrentUser(): Promise<User> {
   const user = await getCurrentUser();
-  if (user === null) throw new NotAuthenticatedError();
+  if (user === null) redirect("/sign-in");
   return user;
-}
-
-export class NotAuthenticatedError extends Error {
-  constructor() {
-    super("Not signed in");
-    this.name = "NotAuthenticatedError";
-  }
 }
 
 type UserRow = typeof users.$inferSelect;
