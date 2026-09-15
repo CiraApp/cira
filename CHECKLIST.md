@@ -20,7 +20,7 @@ Keep `prod` green.
 - [x] Create a Space (first-login onboarding, one field, no wizard)
 - [x] Space membership and roles
 - [ ] Invite by email, join through invite link
-- [ ] Logout
+- [x] Logout
 
 ## Phase 3 - App gallery
 
@@ -30,9 +30,11 @@ Keep `prod` green.
 
 ## Phase 4 - Apps + permissions
 
-- [ ] App records scoped to a space
-- [ ] Grant and revoke access (`user`, `space`)
-- [ ] Gallery reflects access rules exactly
+- [x] App records scoped to a space
+- [x] Gallery reflects access rules exactly, verified end to end against a
+      real database: a member sees only granted apps, and an ungranted app or
+      a space they do not belong to returns 404 rather than 403
+- [ ] Grant and revoke access from the UI (`user`, `space`)
 
 ## Phase 5 - CLI authentication
 

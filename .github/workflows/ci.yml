@@ -48,13 +48,41 @@ jobs:
     needs: verify
     if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
+    # The deploy is driven from here rather than from Vercel's Git integration
+    # on purpose. Vercel would build on every push regardless of this workflow,
+    # so a red pipeline would still ship. Gating it on `verify` is what makes
+    # "green means deploy" true.
+    env:
+      VERCEL_ORG_ID: team_qPpeOGgkf62pvo2aAbBMWAQX
+      VERCEL_PROJECT_ID: prj_R6VA3mzvZHtnNJZ7iqQNdjeWpvbG
 
     steps:
-      # Cira does not own compute. This step hands the built app to whichever
-      # provider we settle on; until one is chosen and its token is in repo
-      # secrets, it reports that plainly instead of pretending to ship.
-      - name: Deploy to provider
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # VERCEL_TOKEN expires 2026-12-14 (90 days from 2026-09-15). When it
+      # lapses, these steps fail with an authentication error rather than
+      # anything that mentions expiry, so check the token first.
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@59
+
+      - name: Pull project settings
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
         run: |
-          echo "::notice::No deployment provider is configured yet."
-          echo "Pick a provider, add its token to repo secrets, and wire it here."
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "Deployed: $url"
+          echo "### Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"

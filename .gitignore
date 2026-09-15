@@ -14,6 +14,9 @@ out/
 .env.*
 !.env.example
 
+# Vercel CLI state, including a pulled copy of production environment variables.
+.vercel/
+
 # local cira project metadata
 .cira/
 
