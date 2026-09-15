@@ -35,7 +35,7 @@ Keep `prod` green.
 - [x] Gallery reflects access rules exactly, verified end to end against a
       real database: a member sees only granted apps, and an ungranted app or
       a space they do not belong to returns 404 rather than 403
-- [ ] Grant and revoke access from the UI (`user`, `space`)
+- [x] Grant and revoke access from the UI, picking from space members only
 
 ## Phase 5 - CLI authentication
 

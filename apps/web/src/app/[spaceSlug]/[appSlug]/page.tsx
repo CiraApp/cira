@@ -2,6 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TopBar } from "@/components/top-bar";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
+import { canManageApp } from "@cira/core";
+import { loadAccess } from "@/lib/access-actions";
+import { AccessPanel } from "@/components/access-panel";
 import { latestDeployment } from "@/lib/queries";
 import { appColor, appInitial } from "@/lib/app-color";
 import { resolveAppState } from "@/lib/app-state";
@@ -14,8 +17,18 @@ export default async function AppPage({
   const { spaceSlug, appSlug } = await params;
 
   try {
-    const { app, space } = await requireAppAccess(spaceSlug, appSlug);
+    const ctx = await requireAppAccess(spaceSlug, appSlug);
+    const { app, space } = ctx;
     const deployment = await latestDeployment(app.id);
+
+    // Only someone who can change access is shown it; for everyone else the
+    // page stays the simple "open this app" screen it should be.
+    const manages = canManageApp({
+      userId: ctx.user.id,
+      app,
+      memberships: ctx.memberships,
+    });
+    const access = manages ? await loadAccess(spaceSlug, appSlug) : null;
     const color = appColor(app.id);
     const resolved = resolveAppState(app, deployment);
 
@@ -83,6 +96,17 @@ export default async function AppPage({
               {deployment === null ? "Not deployed" : deployment.provider}
             </Fact>
           </dl>
+
+          {access !== null ? (
+            <AccessPanel
+              spaceSlug={spaceSlug}
+              appSlug={appSlug}
+              spaceName={space.name}
+              entries={access.entries}
+              candidates={access.candidates}
+              hasEveryone={access.entries.some((e) => e.kind === "everyone")}
+            />
+          ) : null}
         </main>
       </>
     );
