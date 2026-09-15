@@ -4,6 +4,7 @@ import { clearConfig, readConfig } from "./config.js";
 import { deploy } from "./deploy.js";
 import { login } from "./login.js";
 import { skillCommand } from "./skill/command.js";
+import { beginUpdateCheck, finishUpdateCheck, updateCommand } from "./update/index.js";
 import { detectFramework, readProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
 
@@ -15,6 +16,7 @@ const USAGE = `
                --space <slug>   which space, when you are in more than one
     login      Connect this machine to your Cira account
     skill      install    Add the Cira Skill to your coding agents
+    update     Update Cira and the Skill copies you approved
     logout     Forget the stored credential
     whoami     Show who you are signed in as
     status     Show what this folder is linked to
@@ -77,6 +79,8 @@ async function main(): Promise<number> {
       return login();
     case "skill":
       return skillCommand(process.argv.slice(3));
+    case "update":
+      return updateCommand();
     case "logout":
       clearConfig();
       success("Signed out.");
@@ -98,11 +102,22 @@ async function main(): Promise<number> {
   }
 }
 
+/**
+ * The update check runs alongside the command, never in front of it.
+ *
+ * Started before the work and read after it, with a short grace period: the
+ * check either finished while the command ran or it is abandoned. `cira
+ * update` does its own fresh check, so it is left out of this one entirely.
+ */
+const passive = process.argv[2] === "update" ? null : beginUpdateCheck();
+
 main()
-  .then((code) => {
+  .then(async (code) => {
     process.exitCode = code;
+    if (passive !== null) await finishUpdateCheck(passive);
   })
-  .catch((error: unknown) => {
+  .catch(async (error: unknown) => {
     fail(error instanceof Error ? error.message : "Something went wrong.");
     process.exitCode = 1;
+    if (passive !== null) await finishUpdateCheck(passive);
   });

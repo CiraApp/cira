@@ -10,6 +10,8 @@ import type { CanonicalSkill } from "@cira/skill";
  * `@cira/skill`.
  */
 export interface SkillInstaller {
+  /** Stable key for local state: `claude-code`, `pi`, and so on. */
+  readonly id: string;
   /** As a developer would name it. */
   readonly name: string;
   /** Does this machine appear to have the agent? */

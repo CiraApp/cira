@@ -153,3 +153,25 @@ installed by a postinstall script: onboarding asks, once, where you can see it.
 Five agents, three files. Codex, Pi and Gemini CLI all read `~/.agents/skills`,
 so Cira writes there once rather than into three private directories - and an
 agent that adopts the same convention later needs no code here at all.
+
+## Staying current
+
+```sh
+cira update
+```
+
+Checks the registry directly, updates the CLI through npm - the mechanism the
+install instruction already uses - and then re-syncs the skill into the agents
+you approved, and only those. An agent installed since is left alone; so is one
+whose auto-update you declined.
+
+Normal commands check quietly at most once every 8 hours, never block on the
+answer, and mention a release only once:
+
+```text
+  Cira 0.2.0 is available.
+  Run `cira update`.
+```
+
+A check that is slow, offline, or hits a registry that has never heard of Cira
+is abandoned without a word.

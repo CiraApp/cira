@@ -122,6 +122,29 @@ Keep `prod` green.
   migration, once nothing reads it. A migration that drops or renames something
   the running code still uses will break production with every step green.
 
+- **Updates are checked beside the command, never in front of it.** The check
+  starts before the work and is read after it with a 100ms grace: it either
+  finished while the command ran or it is abandoned, and the next command looks
+  again. Measured on a forced check, `cira status` went from 0.04s to 0.10s -
+  the grace and nothing more.
+- **The check uses `node:https` rather than `fetch`, to unreference the
+  socket.** With `fetch`, the connection pool outlives the abort and the
+  process lingers after the command is done: a `cira status` was paying ~0.39s
+  for a lookup nobody waited for. This is the only reason the lower-level
+  client is used.
+- **The attempt is recorded before the request, not after.** A passive check is
+  abandoned the moment the command finishes, so writing the timestamp on
+  completion would mean a fast command never recorded having tried - and paid
+  for the same abandoned lookup on every single run.
+- **`cira update` may only touch what was approved.** Consent is recorded when
+  the skill is installed, per agent, and the updater reads it: an agent that
+  appeared on the machine afterwards is not Cira's to write into, and one whose
+  auto-update was declined stays where it is. Finding Cira in a tool nobody
+  agreed to is the thing this whole flow exists to prevent.
+- **A failed CLI update stops there.** Syncing a skill that ships with a
+  release we may or may not now have is guessing about the state of the
+  machine; the existing installation is left alone and said so.
+
 - **One skill file, three installers.** Agents differ in where a skill lives
   and what wrapper it needs, not in what Cira wants them to know, so
   `packages/cira-skill/SKILL.md` is the only copy and the installers adapt

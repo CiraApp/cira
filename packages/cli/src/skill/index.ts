@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { canonicalSkill } from "@cira/skill";
+import { readSkillState, writeSkillState } from "../update/state.js";
 import { claudeCode, codex, geminiCli, pi } from "./agents.js";
 import { cursor } from "./cursor.js";
 import {
@@ -49,6 +50,12 @@ export interface InstallReport {
  */
 export async function installSkill(
   agents: readonly SkillInstaller[],
+  /**
+   * Whether these targets should be kept in sync by `cira update`. Recorded
+   * once, here, so the updater never has to ask again - and never touches an
+   * agent nobody agreed to.
+   */
+  autoUpdate = true,
 ): Promise<InstallReport[]> {
   const skill = canonicalSkill();
   const reports: InstallReport[] = [];
@@ -67,5 +74,32 @@ export async function installSkill(
     }
   }
 
+  remember(agents, reports, autoUpdate);
   return reports;
+}
+
+/**
+ * Record which agents now hold the skill.
+ *
+ * This is the consent `cira update` reads later: an agent appears here only
+ * because the developer accepted an install into it, and `autoUpdate` is how
+ * they said whether Cira may keep it current.
+ */
+function remember(
+  agents: readonly SkillInstaller[],
+  reports: readonly InstallReport[],
+  autoUpdate: boolean,
+): void {
+  const installed = new Set(reports.filter((r) => r.result.ok).map((r) => r.agent));
+  if (installed.size === 0) return;
+
+  const state = readSkillState();
+  const targets = { ...state.targets };
+
+  for (const agent of agents) {
+    if (!installed.has(agent.name)) continue;
+    targets[agent.id] = { installed: true, autoUpdate };
+  }
+
+  writeSkillState({ ...state, skillVersion: canonicalSkill().version, targets });
 }

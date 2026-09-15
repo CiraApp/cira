@@ -23,6 +23,7 @@ import {
  */
 export function cursor(env: SkillEnv): SkillInstaller {
   return {
+    id: "cursor",
     name: "Cursor",
 
     detect: () =>

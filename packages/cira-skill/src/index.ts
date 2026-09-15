@@ -20,9 +20,12 @@ export interface CanonicalSkill {
   body: string;
   /** The canonical file as written, frontmatter included. */
   source: string;
+  /** The release this skill shipped with; CLI and skill share one number. */
+  version: string;
 }
 
 const SKILL_PATH = new URL("../SKILL.md", import.meta.url);
+const MANIFEST = new URL("../package.json", import.meta.url);
 
 /**
  * Read the skill off disk rather than inlining it at build time, so SKILL.md
@@ -37,7 +40,17 @@ export function canonicalSkill(): CanonicalSkill {
     description: parsed.fields["description"] ?? "Build and deploy to Cira.",
     body: parsed.body,
     source,
+    version: packageVersion(),
   };
+}
+
+function packageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(MANIFEST, "utf8")) as { version?: unknown };
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
 }
 
 /**

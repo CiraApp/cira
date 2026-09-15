@@ -25,6 +25,7 @@ export function claudeCode(env: SkillEnv): SkillInstaller {
   const home = process.env["CLAUDE_CONFIG_DIR"] ?? join(env.home, ".claude");
 
   return {
+    id: "claude-code",
     name: "Claude Code",
     detect: () => Promise.resolve(existsSync(home) || onPath(env, "claude")),
     install: (skill: CanonicalSkill): Promise<InstallResult> =>
@@ -37,6 +38,7 @@ export function codex(env: SkillEnv): SkillInstaller {
   const home = process.env["CODEX_HOME"] ?? join(env.home, ".codex");
 
   return {
+    id: "codex",
     name: "Codex",
     detect: () => Promise.resolve(existsSync(home) || onPath(env, "codex")),
     install: (skill: CanonicalSkill): Promise<InstallResult> =>
@@ -47,6 +49,7 @@ export function codex(env: SkillEnv): SkillInstaller {
 /** Pi reads `~/.pi/agent/skills` and the shared directory. */
 export function pi(env: SkillEnv): SkillInstaller {
   return {
+    id: "pi",
     name: "Pi",
     detect: () => Promise.resolve(existsSync(join(env.home, ".pi")) || onPath(env, "pi")),
     install: (skill: CanonicalSkill): Promise<InstallResult> =>
@@ -60,6 +63,7 @@ export function pi(env: SkillEnv): SkillInstaller {
  */
 export function geminiCli(env: SkillEnv): SkillInstaller {
   return {
+    id: "gemini-cli",
     name: "Gemini CLI",
     detect: () =>
       Promise.resolve(existsSync(join(env.home, ".gemini")) || onPath(env, "gemini")),

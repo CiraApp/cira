@@ -17,8 +17,13 @@ export interface CliConfig {
 
 export const DEFAULT_API_URL = "https://cira-aumitshiv.vercel.app";
 
+/** Everything Cira keeps on this machine lives here. */
+export function ciraHome(): string {
+  return process.env["CIRA_HOME"] ?? join(homedir(), ".cira");
+}
+
 function configPath(): string {
-  return join(process.env["CIRA_HOME"] ?? join(homedir(), ".cira"), "config.json");
+  return join(ciraHome(), "config.json");
 }
 
 export function readConfig(): CliConfig {

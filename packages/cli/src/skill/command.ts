@@ -60,7 +60,7 @@ export async function offerSkill(): Promise<void> {
   for (const agent of agents) info(`    ${agent.name}`);
   info("");
 
-  if (!(await confirm("  Install the Cira Skill? [Y/n] "))) {
+  if (!(await confirm("  Install the Cira Skill and keep it updated? [Y/n] "))) {
     info("");
     info(dim("  Left alone. Install later with: cira skill install"));
     info("");
