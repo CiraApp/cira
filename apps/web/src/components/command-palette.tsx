@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
+import { PRESETS } from "@/lib/theme";
+import { useTheme } from "./theme/theme-provider";
 import { spaceIndex, type PaletteApp } from "@/lib/palette-actions";
 import { Portal } from "./ui/portal";
 import { AppIcon } from "./app-icon";
@@ -41,7 +42,7 @@ export function CommandPalette({
   items: NavItem[];
 }) {
   const router = useRouter();
-  const { resolvedTheme, setTheme } = useTheme();
+  const { theme: chosen, setTheme } = useTheme();
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -111,21 +112,24 @@ export function CommandPalette({
       face: <Glyph name="arrow" />,
     }));
 
-    const dark = resolvedTheme === "dark";
-    const interfaceCommands: Command[] = [
-      {
-        id: "theme",
-        label: dark ? "Switch to light mode" : "Switch to dark mode",
-        hint: null,
-        group: "Interface",
-        haystack: "theme appearance light dark mode",
-        run: () => setTheme(dark ? "light" : "dark"),
-        face: <Glyph name={dark ? "sun" : "moon"} />,
-      },
-    ];
+    // Every palette is reachable from here, because a colour scheme is now a
+    // pair of colours rather than a switch, and a command that only toggled
+    // between two of them would be lying about what the product does.
+    const interfaceCommands: Command[] = PRESETS.map((preset) => ({
+      id: `theme:${preset.name}`,
+      label: preset.name,
+      hint:
+        chosen?.base === preset.base && chosen.accent === preset.accent
+          ? "Current colours"
+          : null,
+      group: "Interface",
+      haystack: `${preset.name} theme colours appearance palette`.toLowerCase(),
+      run: () => setTheme({ base: preset.base, accent: preset.accent }),
+      face: <Swatch base={preset.base} accent={preset.accent} />,
+    }));
 
     return [...appCommands, ...navCommands, ...interfaceCommands];
-  }, [apps, items, router, spaceSlug, resolvedTheme, setTheme]);
+  }, [apps, items, router, spaceSlug, chosen, setTheme]);
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -342,13 +346,6 @@ function Glyph({ name, className }: { name: string; className?: string }) {
       </>
     ),
     arrow: <path d="M4 10h12M11.5 5.5 16 10l-4.5 4.5" />,
-    sun: (
-      <>
-        <circle cx="10" cy="10" r="3.4" />
-        <path d="M10 2.6v1.8M10 15.6v1.8M17.4 10h-1.8M4.4 10H2.6M15.2 4.8l-1.3 1.3M6.1 13.9l-1.3 1.3M15.2 15.2l-1.3-1.3M6.1 6.1 4.8 4.8" />
-      </>
-    ),
-    moon: <path d="M16.2 11.9A7 7 0 0 1 8.1 3.8a7 7 0 1 0 8.1 8.1Z" />,
   };
 
   return (
@@ -364,5 +361,21 @@ function Glyph({ name, className }: { name: string; className?: string }) {
     >
       {paths[name]}
     </svg>
+  );
+}
+
+/** A palette, in the shape the interface uses it: ground behind accent. */
+function Swatch({ base, accent }: { base: string; accent: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{ background: base }}
+      className="relative block h-5 w-5 overflow-hidden rounded-[2px] border border-line"
+    >
+      <span
+        className="absolute inset-x-0 bottom-0 h-1.5"
+        style={{ background: accent }}
+      />
+    </span>
   );
 }

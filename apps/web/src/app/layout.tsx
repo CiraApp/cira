@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeProvider } from "@/components/theme/theme-provider";
+import { ThemeScript } from "@/components/theme/theme-script";
 import "./globals.css";
 
 /**
@@ -33,11 +34,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <ClerkProvider afterSignOutUrl="/sign-in">
       <html
         lang="en"
-        // The theme is stamped before paint, so nobody sees a light flash on
+        // The colours are stamped before paint, so nobody sees a light flash on
         // the way to a dark page.
         suppressHydrationWarning
         className={`${geist.variable} ${geistMono.variable}`}
       >
+        <head>
+          <ThemeScript />
+        </head>
         <body className="min-h-dvh antialiased">
           <ThemeProvider>{children}</ThemeProvider>
         </body>

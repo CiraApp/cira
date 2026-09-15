@@ -18,27 +18,35 @@
  * are decoration: every one of them can be removed and the product is intact.
  */
 @theme {
-  /* Light: the same architecture, rendered on paper. */
-  --color-base: #f4f5f7;
-  --color-panel: #ffffff;
-  --color-surface: #ffffff;
-  --color-raised: #ffffff;
-  --color-sunken: #eaecf0;
-  --color-line: #dfe2e7;
-  --color-line-strong: #c6cbd4;
+  /*
+   * Two colours decide the interface: a base and an accent. Everything else -
+   * panels, hairlines, three weights of ink - is mixed from them below, so a
+   * person can hand the product any pair and get a coherent palette rather
+   * than a broken one.
+   *
+   * These names exist here so Tailwind generates `bg-surface`, `text-ink` and
+   * the rest; the values arrive from the two blocks underneath.
+   */
+  --color-base: var(--t-base);
+  --color-panel: var(--t-panel);
+  --color-surface: var(--t-surface);
+  --color-raised: var(--t-raised);
+  --color-sunken: var(--t-sunken);
+  --color-line: var(--t-line);
+  --color-line-strong: var(--t-line-strong);
 
-  --color-ink: #0c0e12;
-  --color-ink-muted: #545b66;
-  --color-ink-subtle: #858c98;
+  --color-ink: var(--t-ink);
+  --color-ink-muted: var(--t-ink-muted);
+  --color-ink-subtle: var(--t-ink-subtle);
 
-  --color-accent: #2f5cf5;
-  --color-accent-hover: #244ad4;
-  --color-accent-quiet: #eaeffe;
-  --color-accent-ink: #ffffff;
+  --color-accent: var(--user-accent);
+  --color-accent-hover: var(--t-accent-hover);
+  --color-accent-quiet: var(--t-accent-quiet);
+  --color-accent-ink: var(--user-accent-ink);
 
-  --color-live: #0f8a5f;
-  --color-failed: #cc3838;
-  --color-pending: #b0730f;
+  --color-live: var(--t-live);
+  --color-failed: var(--t-failed);
+  --color-pending: var(--t-pending);
 
   /*
    * Lightly softened, never a pill. Three pixels reads as a cut edge rather
@@ -58,9 +66,49 @@
   --ease-snap: cubic-bezier(0.34, 1.4, 0.5, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  --shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
-  --shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
-  --shadow-panel: 0 30px 70px -30px rgb(12 14 18 / 0.4), 0 0 0 1px rgb(12 14 18 / 0.1);
+  --shadow-raise: var(--t-shadow-raise);
+  --shadow-float: var(--t-shadow-float);
+  --shadow-panel: var(--t-shadow-panel);
+}
+
+/*
+ * Light: the same architecture, rendered on paper.
+ *
+ * Panels lift toward white, a sunken well goes the other way, and hairlines
+ * and ink move toward black - a rule at rest is a faint stroke of the ink,
+ * which is why the two travel together.
+ *
+ * `--user-base` and `--user-accent` are the only inputs. They are declared
+ * here as Cira's own colours and overridden inline on <html> when someone has
+ * chosen their own, which is why nothing below ever names a literal again.
+ */
+:root {
+  --user-base: #f4f5f7;
+  --user-accent: #2f5cf5;
+  --user-accent-ink: #ffffff;
+
+  --t-base: var(--user-base);
+  --t-panel: color-mix(in oklab, var(--user-base) 25%, #ffffff);
+  --t-surface: color-mix(in oklab, var(--user-base) 15%, #ffffff);
+  --t-raised: color-mix(in oklab, var(--user-base) 5%, #ffffff);
+  --t-sunken: color-mix(in oklab, var(--user-base) 95%, #000000);
+  --t-line: color-mix(in oklab, var(--user-base) 91%, #000000);
+  --t-line-strong: color-mix(in oklab, var(--user-base) 80%, #000000);
+
+  --t-ink: color-mix(in oklab, var(--user-base) 6%, #000000);
+  --t-ink-muted: color-mix(in oklab, var(--user-base) 36%, #000000);
+  --t-ink-subtle: color-mix(in oklab, var(--user-base) 55%, #000000);
+
+  --t-accent-hover: color-mix(in oklab, var(--user-accent) 86%, #000000);
+  --t-accent-quiet: color-mix(in oklab, var(--user-base) 90%, var(--user-accent));
+
+  --t-live: #0f8a5f;
+  --t-failed: #cc3838;
+  --t-pending: #b0730f;
+
+  --t-shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
+  --t-shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
+  --t-shadow-panel: 0 30px 70px -30px rgb(12 14 18 / 0.4), 0 0 0 1px rgb(12 14 18 / 0.1);
 
   /* How hard the atmosphere is turned up. Light gets a whisper of it. */
   --aurora-strength: 0.5;
@@ -68,36 +116,43 @@
 }
 
 /*
- * Dark is the primary design. The ground is close to black with a cold cast so
- * the accent belongs to it; panels lift by lightening rather than by shadow,
- * because a shadow on near-black is invisible; and borders do the separating,
- * which is what keeps the layout reading as drawn rather than floated.
+ * Dark is the design the system was drawn for. Panels lift by lightening
+ * rather than by shadow, because a shadow on near-black is invisible, and the
+ * hairlines lighten with them - here the ink is the pale thing, so a rule
+ * moves with it.
+ *
+ * Which of these two blocks applies is not a preference anyone sets. It is
+ * decided from the base colour itself (lib/theme), because a colour either can
+ * carry pale text or it cannot.
  */
 [data-theme="dark"] {
-  --color-base: #08090c;
-  --color-panel: #0c0e12;
-  --color-surface: #101318;
-  --color-raised: #161a20;
-  --color-sunken: #050609;
-  --color-line: #1e232b;
-  --color-line-strong: #2d343f;
+  --user-base: #08090c;
+  --user-accent: #5b85ff;
+  --user-accent-ink: #0a0a0c;
 
-  --color-ink: #f0f2f5;
-  --color-ink-muted: #939bab;
-  --color-ink-subtle: #646c7b;
+  --t-base: var(--user-base);
+  --t-panel: color-mix(in oklab, var(--user-base) 97%, #ffffff);
+  --t-surface: color-mix(in oklab, var(--user-base) 94%, #ffffff);
+  --t-raised: color-mix(in oklab, var(--user-base) 90%, #ffffff);
+  --t-sunken: color-mix(in oklab, var(--user-base) 92%, #000000);
+  --t-line: color-mix(in oklab, var(--user-base) 89%, #ffffff);
+  --t-line-strong: color-mix(in oklab, var(--user-base) 81%, #ffffff);
 
-  --color-accent: #5b85ff;
-  --color-accent-hover: #7b9dff;
-  --color-accent-quiet: #121a30;
-  --color-accent-ink: #060a14;
+  --t-ink: color-mix(in oklab, var(--user-base) 6%, #ffffff);
+  --t-ink-muted: color-mix(in oklab, var(--user-base) 40%, #ffffff);
+  --t-ink-subtle: color-mix(in oklab, var(--user-base) 60%, #ffffff);
 
-  --color-live: #2fbd84;
-  --color-failed: #f06d6d;
-  --color-pending: #d79a3c;
+  --t-accent-hover: color-mix(in oklab, var(--user-accent) 82%, #ffffff);
+  --t-accent-quiet: color-mix(in oklab, var(--user-base) 84%, var(--user-accent));
 
-  --shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
-  --shadow-float: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
-  --shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
+  --t-live: #2fbd84;
+  --t-failed: #f06d6d;
+  --t-pending: #d79a3c;
+
+  --t-shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --t-shadow-float:
+    0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
+  --t-shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
 
   --aurora-strength: 1;
   --grain-strength: 0.035;

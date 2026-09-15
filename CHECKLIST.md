@@ -136,6 +136,28 @@ Keep `prod` green.
   `slugify` the server will, so it cannot promise an address the server would
   refuse. Onboarding, an invite and the CLI hand-off now share one frame, so
   the three screens someone meets before they have a space cannot drift apart.
+- **Two colours decide the interface, and there is no light/dark switch.**
+  A base and an accent are the only inputs; panels, hairlines and three weights
+  of ink are all mixed from them in CSS, so any pair a person chooses produces
+  a coherent palette rather than a broken one. The mode is not a preference
+  either - it is read off the base, because a colour either can carry pale text
+  or it cannot, and asking someone to tell us which after they have just shown
+  us is the sort of question this product does not ask. Black or white is
+  picked by whichever has more contrast rather than by a luminance threshold: a
+  threshold gets the shipped accent wrong, since #5b85ff sits below the usual
+  midpoint and still takes dark text. The cost is that the two hand-tuned
+  palettes are now derived rather than hand-written, so a few tokens land a
+  shade off where they used to.
+- **The colour choice is personal and local**, stored in the browser next to
+  where the light/dark choice used to live. It is a preference, not company
+  branding: nothing reaches the server, no column was added, and a browser that
+  refuses storage still renders correctly - it just does not remember. An
+  inline script stamps the colours before first paint, so nobody watches a dark
+  interface load as a white one.
+- **Bad contrast is shown, not prevented.** Someone choosing their own colours
+  is allowed to choose badly, but the picker says so when the accent drops
+  below the 3:1 WCAG floor against the base. Refusing the colour would be
+  worse: it is their interface.
 - **The ground is lit, not flat.** An aurora of the accent drifts behind the
   page on a minute-long cycle, a constellation moves in depth above it, and two
   per cent of grain sits over everything. Near-black with nothing happening in
