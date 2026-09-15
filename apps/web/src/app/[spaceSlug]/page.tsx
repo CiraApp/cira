@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppGallery } from "@/components/app-gallery";
 import { EmptyGallery } from "@/components/empty-gallery";
+import { InviteDialog } from "@/components/invite-dialog";
 import { SpaceSwitcher } from "@/components/space-switcher";
 import { TopBar } from "@/components/top-bar";
 import {
@@ -18,7 +19,8 @@ export default async function SpacePage({
   const { spaceSlug } = await params;
 
   try {
-    await requireSpaceMember(spaceSlug);
+    const ctx = await requireSpaceMember(spaceSlug);
+    const canInvite = ctx.role === "admin" || ctx.role === "owner";
     const [apps, spaces] = await Promise.all([
       listVisibleApps(spaceSlug),
       listMySpaces(),
@@ -29,7 +31,10 @@ export default async function SpacePage({
         <TopBar spaceSlug={spaceSlug} />
 
         <main className="mx-auto w-full max-w-5xl px-6 py-10">
-          <SpaceSwitcher spaces={spaces} currentSlug={spaceSlug} />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <SpaceSwitcher spaces={spaces} currentSlug={spaceSlug} />
+            {canInvite ? <InviteDialog spaceSlug={spaceSlug} /> : null}
+          </div>
 
           <div className="mt-7">
             {apps.length === 0 ? (

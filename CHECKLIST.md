@@ -19,7 +19,7 @@ Keep `prod` green.
 
 - [x] Create a Space (first-login onboarding, one field, no wizard)
 - [x] Space membership and roles
-- [ ] Invite by email, join through invite link
+- [x] Invite by link bound to one address, join through it
 - [x] Logout
 
 ## Phase 3 - App gallery
@@ -84,6 +84,10 @@ Keep `prod` green.
   regardless of CI, so a red pipeline would still ship. `VERCEL_TOKEN` is a
   repository secret and expires 2026-12-14; org and project ids are not
   secrets and live in the workflow.
+- **Invites** - a link the inviter sends themselves, bound to one email
+  address, single use, seven-day lifetime. No mail provider in V1: an inviter
+  who can reach a colleague already has a channel, and binding to an address
+  stops a forwarded link letting a stranger into an internal space.
 - **Superseded** - the original plan was the personal Hobby account. No paid plan is
   needed for any phase below. Vercel Authentication can protect production
   domains for free on Hobby as of 2026-09-09 (it previously needed a

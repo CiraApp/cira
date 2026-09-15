@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isId, isSlug, newId, slugify } from "./id.js";
+import { isId, isInviteToken, isSlug, newId, newInviteToken, slugify } from "./id.js";
 
 describe("newId", () => {
   it("prefixes by kind and is unique", () => {
@@ -56,6 +56,20 @@ describe("isSlug", () => {
   it("rejects empty, uppercase, and malformed slugs", () => {
     for (const bad of ["", "Acme", "-acme", "acme-", "ac--me", "a b", "a".repeat(49)]) {
       expect(isSlug(bad)).toBe(false);
+    }
+  });
+});
+
+describe("invite tokens", () => {
+  it("are unguessable and unique", () => {
+    const tokens = new Set(Array.from({ length: 200 }, () => newInviteToken()));
+    expect(tokens.size).toBe(200);
+    for (const t of tokens) expect(isInviteToken(t)).toBe(true);
+  });
+
+  it("reject anything not issued by us", () => {
+    for (const bad of ["", "abc", "z".repeat(64), "a".repeat(63), "a".repeat(65)]) {
+      expect(isInviteToken(bad)).toBe(false);
     }
   });
 });

@@ -7,7 +7,14 @@ import { useEffect, useState } from "react";
  * it rather than reading it. Confirmation is inline and brief; a toast for
  * something this small would be louder than the action.
  */
-export function CopyableCommand({ command }: { command: string }) {
+export function CopyableCommand({
+  command,
+  shell = true,
+}: {
+  command: string;
+  /** A shell prompt marker suits a command, not a URL. */
+  shell?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const [canCopy, setCanCopy] = useState(false);
 
@@ -35,14 +42,14 @@ export function CopyableCommand({ command }: { command: string }) {
 
   const body = (
     <>
-      <span className="text-ink-subtle select-none">$</span>
-      <code className="font-mono text-[13px] text-ink">{command}</code>
+      {shell ? <span className="text-ink-subtle select-none">$</span> : null}
+      <code className="min-w-0 truncate font-mono text-[13px] text-ink">{command}</code>
     </>
   );
 
   if (!canCopy) {
     return (
-      <span className="inline-flex items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5">
+      <span className="flex max-w-full items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5">
         {body}
       </span>
     );
@@ -53,7 +60,7 @@ export function CopyableCommand({ command }: { command: string }) {
       type="button"
       onClick={copy}
       aria-label={copied ? "Copied" : `Copy "${command}"`}
-      className="group inline-flex items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5 transition-colors hover:border-border-strong hover:bg-surface"
+      className="group flex w-full max-w-full items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5 text-left transition-colors hover:border-border-strong hover:bg-surface"
     >
       {body}
       <span className="ml-1 w-[52px] text-left text-[11px] font-medium text-ink-subtle transition-colors group-hover:text-ink-muted">

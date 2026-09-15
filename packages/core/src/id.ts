@@ -50,3 +50,20 @@ export function slugify(input: string): string {
 export function isSlug(value: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) && value.length <= 48;
 }
+
+/**
+ * An unguessable invite token.
+ *
+ * 256 bits from the platform CSPRNG. It is the only thing standing between a
+ * link and membership of a company's space, so it is never derived from an id,
+ * an email, or a timestamp.
+ */
+export function newInviteToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Does this look like a token we issued? Cheap reject before any lookup. */
+export function isInviteToken(value: string): boolean {
+  return /^[0-9a-f]{64}$/.test(value);
+}
