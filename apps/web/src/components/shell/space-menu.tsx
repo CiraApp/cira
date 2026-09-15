@@ -46,7 +46,7 @@ export function SpaceMenu({
     <>
       <span
         aria-hidden="true"
-        className="metal metal-edge flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-edge)] border text-[12px] font-bold"
+        className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-edge)] bg-accent text-[12px] font-bold text-accent-ink"
       >
         {initial}
       </span>

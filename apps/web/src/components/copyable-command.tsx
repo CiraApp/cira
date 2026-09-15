@@ -60,7 +60,7 @@ export function CopyableCommand({
       type="button"
       onClick={copy}
       aria-label={copied ? "Copied" : `Copy "${command}"`}
-      className={`group flex w-full max-w-full items-center gap-2 rounded-[var(--radius-edge)] border px-4 py-2.5 text-left transition-colors duration-150 ${copied ? "metal-edge shimmer bg-[var(--gold-quiet)]" : "border-line bg-sunken hover:border-line-strong"}`}
+      className="group flex w-full max-w-full items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5 text-left transition-colors hover:border-border-strong hover:bg-surface"
     >
       {body}
       <span className="ml-1 w-[52px] text-left text-[11px] font-medium text-ink-subtle transition-colors group-hover:text-ink-muted">

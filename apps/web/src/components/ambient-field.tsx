@@ -3,16 +3,16 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Fine motes drifting through the atmosphere.
+ * The quiet motion behind the product.
  *
- * Deliberately just points. An earlier version drew hairlines between near
- * neighbours, which reads as a network graph — the wrong identity entirely for
- * something meant to suggest air. Without the lines the same motion reads as
- * dust caught in light, which is what it should be.
+ * A slow drift of points with hairlines between near neighbours: enough to
+ * give the ground depth and suggest a system doing something, never enough to
+ * pull the eye off an app card. Canvas rather than DOM nodes, so it costs one
+ * composited layer instead of hundreds of elements the browser has to lay out.
  *
- * Canvas rather than DOM, so it costs one composited layer instead of hundreds
- * of laid-out nodes. It stops when nobody can see it and never starts when the
- * viewer has asked for less motion; the page is complete without it.
+ * It stops when nobody can see it (hidden tab), when the window is small
+ * enough that it would only be noise, and entirely when the viewer has asked
+ * for less motion. It is decoration: the page is complete without it.
  */
 export function AmbientField() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -23,22 +23,26 @@ export function AmbientField() {
 
     const context = canvas.getContext("2d", { alpha: true });
     if (context === null) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reduced.matches) return;
 
     let width = 0;
     let height = 0;
     let frame = 0;
     let running = true;
 
-    type Mote = { x: number; y: number; vx: number; vy: number; r: number; a: number };
-    let motes: Mote[] = [];
+    // Density scales with area rather than being fixed, so a wide monitor is
+    // not sparse and a laptop is not soup.
+    type Point = { x: number; y: number; vx: number; vy: number; r: number };
+    let points: Point[] = [];
 
-    const readGold = () =>
+    const readInk = () =>
       getComputedStyle(document.documentElement)
-        .getPropertyValue("--gold-metal")
-        .trim() || "#c9a961";
+        .getPropertyValue("--color-accent")
+        .trim() || "#5b85ff";
 
-    let gold = readGold();
+    let accent = readInk();
     const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 
     const build = () => {
@@ -49,37 +53,63 @@ export function AmbientField() {
       canvas.height = Math.floor(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      const target = Math.min(90, Math.round((width * height) / 19000));
-      motes = Array.from({ length: target }, () => ({
+      const target = Math.min(130, Math.round((width * height) / 13000));
+      points = Array.from({ length: target }, () => ({
         x: Math.random() * width,
         y: Math.random() * height,
-        // Biased upward and to the right: a consistent direction reads as air
-        // moving, where random directions read as noise.
-        vx: Math.random() * 0.1 + 0.02,
-        vy: -(Math.random() * 0.08 + 0.015),
-        r: Math.random() * 1.1 + 0.35,
-        a: Math.random() * 0.5 + 0.2,
+        vx: (Math.random() - 0.5) * 0.17,
+        vy: (Math.random() - 0.5) * 0.17,
+        r: Math.random() * 1.4 + 0.6,
       }));
-      gold = readGold();
+      accent = readInk();
     };
 
     const draw = () => {
       if (!running) return;
 
       context.clearRect(0, 0, width, height);
-      const ceiling = isDark() ? 0.75 : 0.42;
-      context.fillStyle = gold;
 
-      for (const m of motes) {
-        m.x += m.vx;
-        m.y += m.vy;
+      const dark = isDark();
+      const dotAlpha = dark ? 0.85 : 0.5;
+      const lineAlpha = dark ? 0.3 : 0.16;
+      const reach = 150;
 
-        if (m.x > width + 8) m.x = -8;
-        if (m.y < -8) m.y = height + 8;
+      for (const p of points) {
+        p.x += p.vx;
+        p.y += p.vy;
 
-        context.globalAlpha = m.a * ceiling;
+        // Wrap rather than bounce: bouncing reads as a boundary, and there
+        // shouldn't appear to be one.
+        if (p.x < -10) p.x = width + 10;
+        if (p.x > width + 10) p.x = -10;
+        if (p.y < -10) p.y = height + 10;
+        if (p.y > height + 10) p.y = -10;
+      }
+
+      context.strokeStyle = accent;
+      context.lineWidth = 0.6;
+      for (let i = 0; i < points.length; i += 1) {
+        const a = points[i] as Point;
+        for (let j = i + 1; j < points.length; j += 1) {
+          const b = points[j] as Point;
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const distance = Math.hypot(dx, dy);
+          if (distance > reach) continue;
+
+          context.globalAlpha = (1 - distance / reach) * lineAlpha;
+          context.beginPath();
+          context.moveTo(a.x, a.y);
+          context.lineTo(b.x, b.y);
+          context.stroke();
+        }
+      }
+
+      context.fillStyle = accent;
+      for (const p of points) {
+        context.globalAlpha = dotAlpha;
         context.beginPath();
-        context.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+        context.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         context.fill();
       }
 
@@ -98,17 +128,21 @@ export function AmbientField() {
     };
 
     const onVisibility = () => (document.hidden ? stop() : start());
+    const onResize = () => {
+      build();
+    };
+    const onScheme = () => {
+      accent = readInk();
+    };
 
     build();
     frame = requestAnimationFrame(draw);
 
-    window.addEventListener("resize", build, { passive: true });
+    window.addEventListener("resize", onResize, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
 
-    // The gold differs per theme, so the field has to be told when it moves.
-    const themeWatcher = new MutationObserver(() => {
-      gold = readGold();
-    });
+    // The accent differs per theme, so the field has to be told when it moves.
+    const themeWatcher = new MutationObserver(onScheme);
     themeWatcher.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
@@ -116,7 +150,7 @@ export function AmbientField() {
 
     return () => {
       stop();
-      window.removeEventListener("resize", build);
+      window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibility);
       themeWatcher.disconnect();
     };

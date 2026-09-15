@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         suppressHydrationWarning
         className={`${geist.variable} ${geistMono.variable}`}
       >
-        <body className="theme-fade min-h-dvh antialiased">
+        <body className="min-h-dvh antialiased">
           <ThemeProvider>{children}</ThemeProvider>
         </body>
       </html>

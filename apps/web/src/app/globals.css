@@ -13,101 +13,77 @@
  * (lib/app-color), and those are the only other colours on screen.
  */
 @theme {
-  /*
-   * Light: white marble. Neutrals carry a warm bias so they sit with gold
-   * instead of arguing with it, and the ground is genuinely white, with
-   * hairlines rather than fills doing the separating.
-   */
-  --color-base: #ffffff;
+  /* Light: the same architecture, rendered on paper. */
+  --color-base: #f4f5f7;
   --color-panel: #ffffff;
   --color-surface: #ffffff;
   --color-raised: #ffffff;
-  --color-sunken: #f7f5f0;
-  --color-line: #e9e5db;
-  --color-line-strong: #d5cec0;
+  --color-sunken: #eaecf0;
+  --color-line: #dfe2e7;
+  --color-line-strong: #c6cbd4;
 
-  --color-ink: #14120d;
-  --color-ink-muted: #58534a;
-  --color-ink-subtle: #8b8478;
+  --color-ink: #0c0e12;
+  --color-ink-muted: #545b66;
+  --color-ink-subtle: #858c98;
+
+  --color-accent: #2f5cf5;
+  --color-accent-hover: #244ad4;
+  --color-accent-quiet: #eaeffe;
+  --color-accent-ink: #ffffff;
+
+  --color-live: #0f8a5f;
+  --color-failed: #cc3838;
+  --color-pending: #b0730f;
 
   /*
-   * The gold system.
-   *
-   * Two golds, not one, and the split is the whole point. `--gold` is the one
-   * that has to be READ: deep enough to clear contrast on white as text or an
-   * icon. `--gold-metal` is the one that gets LOOKED AT: the champagne that
-   * reads as brushed metal in a fill, a border or a gradient, and which would
-   * fail as text. Using either in the other's place is how gold interfaces end
-   * up both illegible and cheap.
+   * Lightly softened, never a pill. Three pixels reads as a cut edge rather
+   * than a bubble, and holds its corner at every size on the grid.
    */
-  --gold: #8a6820;
-  --gold-hover: #6f5314;
-  --gold-metal: #c9a961;
-  --gold-muted: #a8873f;
-  --gold-border: #e2d2a8;
-  --gold-highlight: #f7ecd2;
-  --gold-quiet: #fcf8ee;
-  /* Dark on metal, not white: champagne is a light surface, so white on it
-     fails contrast outright, and dark reads as engraved rather than printed. */
-  --gold-ink: #2a1f08;
-
-  --color-accent: var(--gold);
-  --color-accent-hover: var(--gold-hover);
-  --color-accent-quiet: var(--gold-quiet);
-  --color-accent-ink: var(--gold-ink);
-
-  --color-live: #1c7a52;
-  --color-failed: #bc3434;
-  --color-pending: #9a6510;
-
   --radius-edge: 3px;
 
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
+  /* Two curves only: one for things settling, one for things reacting. */
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-snap: cubic-bezier(0.34, 1.4, 0.5, 1);
 
-  --shadow-raise: 0 1px 2px rgb(20 18 13 / 0.05), 0 0 0 1px rgb(20 18 13 / 0.07);
-  --shadow-float: 0 18px 40px -20px rgb(20 18 13 / 0.26), 0 0 0 1px rgb(20 18 13 / 0.09);
-  --shadow-panel: 0 30px 70px -30px rgb(20 18 13 / 0.35), 0 0 0 1px rgb(20 18 13 / 0.1);
+  --shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
+  --shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
+  --shadow-panel: 0 30px 70px -30px rgb(12 14 18 / 0.4), 0 0 0 1px rgb(12 14 18 / 0.1);
 }
 
 /*
- * Dark: black obsidian. The ground is a warm near-black so the gold belongs to
- * it rather than sitting on top, and gold turns luminous rather than merely
- * lighter, because the same champagne that reads as metal on white goes muddy
- * on black.
+ * Dark is the primary design. The ground is close to black with a cold cast so
+ * the accent belongs to it; panels lift by lightening rather than by shadow,
+ * because a shadow on near-black is invisible; and borders do the separating,
+ * which is what keeps the layout reading as drawn rather than floated.
  */
 [data-theme="dark"] {
-  --color-base: #0a0908;
-  --color-panel: #0e0d0b;
-  --color-surface: #121110;
-  --color-raised: #1a1815;
-  --color-sunken: #060505;
-  --color-line: #232019;
-  --color-line-strong: #383227;
+  --color-base: #08090c;
+  --color-panel: #0c0e12;
+  --color-surface: #101318;
+  --color-raised: #161a20;
+  --color-sunken: #050609;
+  --color-line: #1e232b;
+  --color-line-strong: #2d343f;
 
-  --color-ink: #f5f2ea;
-  --color-ink-muted: #9a9387;
-  --color-ink-subtle: #6d675c;
+  --color-ink: #f0f2f5;
+  --color-ink-muted: #939bab;
+  --color-ink-subtle: #646c7b;
 
-  --gold: #e6c97d;
-  --gold-hover: #f3dc9f;
-  --gold-metal: #d8bb74;
-  --gold-muted: #9c8952;
-  --gold-border: #4a3e22;
-  --gold-highlight: #fff7e2;
-  --gold-quiet: #171309;
-  --gold-ink: #120e05;
+  --color-accent: #5b85ff;
+  --color-accent-hover: #7b9dff;
+  --color-accent-quiet: #121a30;
+  --color-accent-ink: #060a14;
 
-  --color-live: #35c489;
-  --color-failed: #f07a7a;
-  --color-pending: #d9a852;
+  --color-live: #2fbd84;
+  --color-failed: #f06d6d;
+  --color-pending: #d79a3c;
 
-  --shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.05);
-  --shadow-float: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.08);
-  --shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.09);
+  --shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-float: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
+  --shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
 }
 
 html {
@@ -125,135 +101,6 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   letter-spacing: -0.011em;
-}
-
-/*
- * Brushed metal, as one reusable surface rather than a gradient pasted at each
- * call site. Five stops off-axis: a bright edge, the body, a darker band where
- * the light rolls off, and back. Chrome effects come from high contrast between
- * stops, so these stay close together and the result reads as metal rather than
- * as foil.
- */
-.metal {
-  background-image: linear-gradient(
-    135deg,
-    var(--gold-highlight) 0%,
-    var(--gold-metal) 34%,
-    var(--gold-muted) 52%,
-    var(--gold-metal) 70%,
-    var(--gold-highlight) 100%
-  );
-  color: var(--gold-ink);
-}
-
-/* A hairline that reads as an edge catching light rather than a drawn border. */
-.metal-edge {
-  border-color: var(--gold-border);
-}
-
-/*
- * A single pass of light across a metal surface, on demand. Used for a
- * confirmed action, never on a loop: a permanent shimmer is jewellery, a
- * single one is feedback.
- */
-@keyframes gold-sweep {
-  from {
-    transform: translateX(-130%) skewX(-18deg);
-  }
-  to {
-    transform: translateX(240%) skewX(-18deg);
-  }
-}
-
-.shimmer {
-  position: relative;
-  overflow: hidden;
-}
-.shimmer::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  width: 42%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklab, var(--gold-highlight) 62%, transparent),
-    transparent
-  );
-  animation: gold-sweep 0.9s var(--ease-settle);
-}
-
-/*
- * Cloud strata.
- *
- * Layered translucent forms that drift at different speeds, which is what
- * makes the parallax: nearer layers travel further in the same time. Painted
- * as radial gradients on composited elements rather than on a canvas, so the
- * whole atmosphere costs transform frames and no per-frame painting at all.
- */
-@keyframes drift-a {
-  0% {
-    transform: translate3d(-4%, 0, 0) scale(1.05);
-  }
-  50% {
-    transform: translate3d(5%, -2.5%, 0) scale(1.12);
-  }
-  100% {
-    transform: translate3d(-4%, 0, 0) scale(1.05);
-  }
-}
-
-@keyframes drift-b {
-  0% {
-    transform: translate3d(3%, 1.5%, 0) scale(1.1);
-  }
-  50% {
-    transform: translate3d(-6%, -1%, 0) scale(1.02);
-  }
-  100% {
-    transform: translate3d(3%, 1.5%, 0) scale(1.1);
-  }
-}
-
-@keyframes drift-c {
-  0% {
-    transform: translate3d(0, 2%, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(4%, -3%, 0) scale(1.08);
-  }
-  100% {
-    transform: translate3d(0, 2%, 0) scale(1);
-  }
-}
-
-.stratum {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
-  will-change: transform;
-}
-.stratum-a {
-  animation: drift-a 62s ease-in-out infinite;
-}
-.stratum-b {
-  animation: drift-b 86s ease-in-out infinite;
-}
-.stratum-c {
-  animation: drift-c 104s ease-in-out infinite;
-}
-
-/*
- * Colour changes ease rather than snap when the theme flips, so the two worlds
- * feel like one surface being lit differently. Only colour: moving anything
- * else would make the whole page appear to reflow.
- */
-.theme-fade,
-.theme-fade * {
-  transition:
-    background-color 0.34s var(--ease-settle),
-    border-color 0.34s var(--ease-settle),
-    color 0.28s var(--ease-settle);
 }
 
 /* Keyboard users get a crisp square ring; pointer users get nothing. */
