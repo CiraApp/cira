@@ -69,7 +69,7 @@ Keep `prod` green.
 
 - [x] Deploy history on the app page, with build logs per deploy
 - [x] Status reconciled where it is read, so nothing spins forever
-- [ ] Rename, delete, and other app settings
+- [x] Rename and delete an app
 
 ## Phase 10 - Polish + end-to-end tests
 
@@ -78,8 +78,11 @@ Keep `prod` green.
 - [x] `deploy → app available → employee opens it`, verified by hand against a
       live provider; the permission half is covered by the journey tests
 - [x] No horizontal overflow and no small touch targets at 390, 768 and 1280
-- [ ] A browser-level test of the deploy journey (needs a stable way to drive
-      a real sign-in without the provider's bot check)
+- [x] The whole journey walked by hand on production: deploy from the CLI,
+      grant an employee access, watch it appear in their gallery, open it, and
+      confirm an app they were not given still bounces them back
+- [ ] That journey as an automated browser test (needs a stable way to drive a
+      real sign-in without the provider's bot check)
 
 ## Decisions made
 

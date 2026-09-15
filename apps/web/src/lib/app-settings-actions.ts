@@ -1,0 +1,136 @@
+"use server";
+
+import { and, eq, ne } from "drizzle-orm";
+import { z } from "zod";
+import { apps, db, deployments } from "@cira/db";
+import { slugify } from "@cira/core";
+import { deploymentProvider } from "@cira/deploy";
+import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+
+export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+const renameInput = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Give the app a name.")
+    .max(60, "That name is too long."),
+});
+
+/**
+ * Rename an app.
+ *
+ * The slug moves with the name, because an app called "Payroll" living at
+ * /revenue-dashboard is its own small lie. The cost is that old links break,
+ * which is why the UI says so before anyone confirms.
+ */
+export async function renameApp(
+  spaceSlug: string,
+  appSlug: string,
+  formData: FormData,
+): Promise<ActionResult<{ appSlug: string }>> {
+  const parsed = renameInput.safeParse({ name: formData.get("name") });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "That name will not work.",
+    };
+  }
+
+  try {
+    const ctx = await requireAppManage(spaceSlug, appSlug);
+    const database = db();
+
+    const base = slugify(parsed.data.name);
+    if (base === "") {
+      return { ok: false, error: "Use at least a couple of letters or numbers." };
+    }
+
+    const [clash] = await database
+      .select({ id: apps.id })
+      .from(apps)
+      .where(
+        and(eq(apps.spaceId, ctx.space.id), eq(apps.slug, base), ne(apps.id, ctx.app.id)),
+      )
+      .limit(1);
+
+    if (clash !== undefined) {
+      return {
+        ok: false,
+        error: `Another app here is already called "${parsed.data.name}".`,
+      };
+    }
+
+    await database
+      .update(apps)
+      .set({ name: parsed.data.name, slug: base, updatedAt: new Date() })
+      .where(eq(apps.id, ctx.app.id));
+
+    return { ok: true, data: { appSlug: base } };
+  } catch (error) {
+    return asError(error);
+  }
+}
+
+/**
+ * Remove an app from Cira and take its deployments down.
+ *
+ * The provider is told first. If that fails the record stays, because an app
+ * Cira has forgotten but which is still serving is worse than one that is
+ * merely still listed: nobody would know to go and stop it.
+ */
+export async function deleteApp(
+  spaceSlug: string,
+  appSlug: string,
+  typedName: string,
+): Promise<ActionResult<null>> {
+  try {
+    const ctx = await requireAppManage(spaceSlug, appSlug);
+
+    // Typing the name is the confirmation. A dialog people dismiss by reflex
+    // is not one.
+    if (typedName.trim() !== ctx.app.name.trim()) {
+      return { ok: false, error: "That name does not match, so nothing was deleted." };
+    }
+
+    const database = db();
+    const rows = await database
+      .select()
+      .from(deployments)
+      .where(eq(deployments.appId, ctx.app.id));
+
+    const live = rows.filter((r) => r.status !== "removed" && r.status !== "failed");
+
+    if (live.length > 0) {
+      try {
+        const provider = deploymentProvider();
+        for (const row of live) {
+          await provider.remove(row.providerDeploymentId);
+        }
+      } catch {
+        return {
+          ok: false,
+          error:
+            "Cira could not take the running app down, so nothing was deleted. Try again shortly.",
+        };
+      }
+    }
+
+    // Deployments and access rows fall away with the app; the schema says so.
+    await database.delete(apps).where(eq(apps.id, ctx.app.id));
+
+    return { ok: true, data: null };
+  } catch (error) {
+    return asError(error);
+  }
+}
+
+function asError(error: unknown): ActionResult<never> {
+  if (error instanceof ForbiddenError) {
+    return { ok: false, error: "You do not have permission to change this app." };
+  }
+  if (error instanceof NotFoundError) {
+    return { ok: false, error: "That app no longer exists." };
+  }
+  throw error;
+}

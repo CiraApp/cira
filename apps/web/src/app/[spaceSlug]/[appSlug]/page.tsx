@@ -8,6 +8,7 @@ import { appHoldsKey, deploymentHistory } from "@/lib/queries";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { AccessPanel } from "@/components/access-panel";
+import { AppSettings } from "@/components/app-settings";
 import { latestDeployment } from "@/lib/queries";
 import { appColor, appInitial } from "@/lib/app-color";
 import { resolveAppState } from "@/lib/app-state";
@@ -129,6 +130,10 @@ export default async function AppPage({
               candidates={access.candidates}
               hasEveryone={access.entries.some((e) => e.kind === "everyone")}
             />
+          ) : null}
+
+          {manages ? (
+            <AppSettings spaceSlug={spaceSlug} appSlug={appSlug} appName={app.name} />
           ) : null}
         </main>
       </>
