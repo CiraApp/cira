@@ -91,6 +91,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
 
+  packages/cira-skill: {}
+
   packages/cli:
     dependencies:
       '@cira/core':
@@ -102,6 +104,9 @@ importers:
       '@cira/extract':
         specifier: workspace:*
         version: link:../extract
+      '@cira/skill':
+        specifier: workspace:*
+        version: link:../cira-skill
 
   packages/core: {}
 

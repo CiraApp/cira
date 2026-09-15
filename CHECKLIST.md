@@ -122,6 +122,30 @@ Keep `prod` green.
   migration, once nothing reads it. A migration that drops or renames something
   the running code still uses will break production with every step green.
 
+- **One skill file, three installers.** Agents differ in where a skill lives
+  and what wrapper it needs, not in what Cira wants them to know, so
+  `packages/cira-skill/SKILL.md` is the only copy and the installers adapt
+  packaging alone. Cursor's `.mdc` frontmatter is the single adaptation any
+  provider forces, and it wraps a body that is byte-identical everywhere - a
+  test asserts that.
+- **The skill is offered, never installed behind your back.** Default yes, one
+  question, at the end of `cira login`. A postinstall script that edited every
+  AI tool on a developer's machine would be faster and would be the wrong
+  trade: this is software that writes into the tools they work in, so they see
+  the question. Without a terminal - CI, a container - nothing is written at
+  all, because a default only means something to someone who could have
+  answered.
+- **Codex gets a delimited block, not a file.** `~/.codex/AGENTS.md` belongs to
+  the developer and usually already holds their own instructions, so Cira takes
+  a marked section of it. That is what makes installing twice a no-op instead
+  of a duplication, and lets someone remove Cira's part without guessing where
+  it ends.
+- **Cursor installs per project, because it has nowhere else.** Its global User
+  Rules live inside Cursor's own settings rather than a file on disk, so the
+  installer writes `.cursor/rules/cira.mdc` into the project you are standing
+  in - and says so plainly when you are not standing in one, rather than
+  leaving a stray `.cursor` folder in a home directory.
+
 - **Developers never write a capability manifest.** The whole engine exists so
   that normal code plus `cira deploy` is the entire developer experience. A
   manifest would be a second description of the app that drifts from the first,

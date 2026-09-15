@@ -3,6 +3,7 @@ import { api, ApiError } from "./api.js";
 import { clearConfig, readConfig } from "./config.js";
 import { deploy } from "./deploy.js";
 import { login } from "./login.js";
+import { skillCommand } from "./skill/command.js";
 import { detectFramework, readProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
 
@@ -13,6 +14,7 @@ const USAGE = `
     deploy     Deploy this folder to your company
                --space <slug>   which space, when you are in more than one
     login      Connect this machine to your Cira account
+    skill      install    Add the Cira Skill to your coding agents
     logout     Forget the stored credential
     whoami     Show who you are signed in as
     status     Show what this folder is linked to
@@ -73,6 +75,8 @@ async function main(): Promise<number> {
       return deploy(process.argv.slice(3));
     case "login":
       return login();
+    case "skill":
+      return skillCommand(process.argv.slice(3));
     case "logout":
       clearConfig();
       success("Signed out.");

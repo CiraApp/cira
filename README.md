@@ -25,6 +25,7 @@ packages/
   db/         PostgreSQL schema and migrations
   deploy/     Deployment provider implementations
   extract/    Reads a repository's shape, for capability analysis
+  cira-skill/ The Cira Skill, as one canonical SKILL.md
   cli/        The `cira` command
 ```
 
@@ -119,3 +120,30 @@ tools - `search_capabilities`, `describe_capability`, `invoke_capability` -
 whatever the company has deployed. A capability can only ever address the app
 it came from: it carries a method and a root-relative path, and the host is
 resolved from that app's own deployment.
+
+## The Cira Skill
+
+Coding agents learn Cira from one file: `packages/cira-skill/SKILL.md`. There is
+no per-agent version - agents differ in where a skill lives and what wrapper it
+needs, not in what Cira wants them to know.
+
+`cira login` offers to install it into whatever it finds, defaulting to yes:
+
+```text
+  Coding agents detected:
+
+    Claude Code
+    Codex
+    Cursor
+
+  Install the Cira Skill? [Y/n]
+```
+
+Declining writes nothing, and `cira skill install` does it later. Nothing is
+installed by a postinstall script: onboarding asks, once, where you can see it.
+
+| Agent       | Where it goes            | Note                                      |
+| ----------- | ------------------------ | ----------------------------------------- |
+| Claude Code | `~/.claude/skills/cira/` | The canonical file, written through       |
+| Codex       | `~/.codex/AGENTS.md`     | A delimited block; your own rules survive |
+| Cursor      | `.cursor/rules/cira.mdc` | Per project - Cursor has no global path   |

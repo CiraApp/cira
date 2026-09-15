@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { api, ApiError } from "./api.js";
 import { readConfig, writeConfig } from "./config.js";
+import { offerSkill } from "./skill/command.js";
 import { bold, dim, fail, info, success } from "./ui.js";
 
 interface StartResponse {
@@ -71,6 +72,11 @@ export async function login(): Promise<number> {
       });
       info("");
       success(`Signed in as ${poll.user?.email ?? "your account"}`);
+
+      // Onboarding continues into the coding agents the developer already
+      // uses. Offered here rather than as an install script, because the one
+      // thing that must not happen is Cira quietly editing their tools.
+      await offerSkill();
       return 0;
     }
 
