@@ -31,7 +31,11 @@ jobs:
           # OIDC publishing needs Node 22.14 or later.
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+          # Deliberately no `registry-url`. It makes setup-node write
+          # `_authToken=${NODE_AUTH_TOKEN}` into an npmrc, and with no token set
+          # that empty value reads to npm as "auth is already configured" - so
+          # it never attempts the OIDC exchange and fails with E401 instead.
+          # npm defaults to registry.npmjs.org anyway.
 
       # Node 22 ships npm 10; trusted publishing needs 11.5.1 or later.
       - name: Use an npm that can publish over OIDC
