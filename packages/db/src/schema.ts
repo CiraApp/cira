@@ -1,5 +1,8 @@
 import {
+  boolean,
+  doublePrecision,
   index,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -32,6 +35,14 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
 ]);
 
 export const accessTypeEnum = pgEnum("access_type", ["user", "space"]);
+
+export const capabilityRiskEnum = pgEnum("capability_risk", [
+  "read",
+  "write",
+  "destructive",
+]);
+
+export const capabilityMethodEnum = pgEnum("capability_method", ["GET", "POST"]);
 
 export const users = pgTable(
   "users",
@@ -268,5 +279,47 @@ export const appOpens = pgTable(
   (t) => [
     uniqueIndex("app_opens_user_app_idx").on(t.userId, t.appId),
     index("app_opens_user_idx").on(t.userId),
+  ],
+);
+
+/**
+ * What an app can do, as discovered from its code when it was deployed.
+ *
+ * Owned by the app, so it inherits the app's access rules exactly: there is no
+ * separate capability-level permission model, and there deliberately is not
+ * one. Someone who cannot open the app cannot see or call what it can do.
+ *
+ * `name` is unique per app because it is how an agent refers to the thing. A
+ * redeploy replaces the set: a capability whose code is gone should stop
+ * existing rather than linger as a target that no longer answers.
+ */
+export const capabilities = pgTable(
+  "capabilities",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    /** Denormalised from the app so a space-wide search is one query. */
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    inputSchema: jsonb("input_schema").notNull(),
+    outputSchema: jsonb("output_schema"),
+    method: capabilityMethodEnum("method").notNull(),
+    /** Root-relative and never a full URL: the host comes from the deployment. */
+    path: text("path").notNull(),
+    risk: capabilityRiskEnum("risk").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("capabilities_app_name_idx").on(t.appId, t.name),
+    index("capabilities_app_idx").on(t.appId),
+    index("capabilities_space_idx").on(t.spaceId),
   ],
 );

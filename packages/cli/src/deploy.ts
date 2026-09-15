@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
-import { collectFiles, readFileBody } from "./files.js";
+import { collectFiles, readFileBody, readSourceFiles } from "./files.js";
+import { extractRepo } from "@cira/extract";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
 
@@ -20,6 +21,12 @@ interface DeployResponse {
 interface StatusResponse {
   status: string;
   url: string | null;
+}
+
+interface CapabilitiesResponse {
+  detected: Array<{ name: string; description: string; risk: string }>;
+  enabled: number;
+  review: number;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -137,6 +144,18 @@ export async function deploy(argv: string[] = []): Promise<number> {
     root,
   );
 
+  // Analysis needs the app id and the code, not a finished deployment, so it
+  // runs while the build is going out. By the time the app is live the answer
+  // is usually already back, and capability detection costs no extra waiting.
+  info(`${dim("Analyzing capabilities...")}`);
+  const analysis = api<CapabilitiesResponse>("/api/cli/capabilities", {
+    method: "POST",
+    body: {
+      appId: started.appId,
+      summary: extractRepo(readSourceFiles(root, files)),
+    },
+  }).catch((error: unknown) => (error instanceof Error ? error : new Error("failed")));
+
   const deadline = Date.now() + 10 * 60 * 1000;
   let last = "";
 
@@ -164,6 +183,8 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info(`  ${bold(`${config.apiUrl}/${started.spaceSlug}/${started.appSlug}`)}`);
       info("");
       info(dim("  Only you can see it. Give people access from that page."));
+
+      await reportCapabilities(await analysis);
       return 0;
     }
 
@@ -199,4 +220,44 @@ function readFlag(argv: string[], flag: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * What Cira found the app can do.
+ *
+ * Reported after the deploy rather than instead of it: capability analysis is
+ * a normal part of shipping, and a deploy that worked is not made a failure by
+ * analysis that did not.
+ */
+async function reportCapabilities(result: CapabilitiesResponse | Error): Promise<void> {
+  if (result instanceof Error) {
+    info("");
+    info(dim(`  Capabilities were not analyzed: ${result.message}`));
+    return;
+  }
+
+  if (result.detected.length === 0) {
+    info("");
+    info(dim("  No capabilities detected in this app."));
+    return;
+  }
+
+  info("");
+  info(`${bold("Capabilities")}`);
+  info("");
+  for (const capability of result.detected) {
+    const mark = capability.risk === "read" ? " " : "!";
+    info(`  ${mark} ${bold(capability.name)}`);
+    info(`    ${dim(capability.description)}`);
+  }
+
+  info("");
+  const parts: string[] = [];
+  if (result.enabled > 0) parts.push(`${result.enabled} enabled`);
+  if (result.review > 0) parts.push(`${result.review} awaiting review`);
+  info(`  ${parts.join(", ")}`);
+  if (result.review > 0) {
+    info(dim("  Anything that writes stays off until someone turns it on."));
+  }
+  info("");
 }

@@ -7,10 +7,12 @@ import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
 import { appHoldsKey, deploymentHistory } from "@/lib/queries";
+import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { AccessPanel } from "@/components/access-panel";
 import { AppSettings } from "@/components/app-settings";
+import { CapabilityPanel } from "@/components/capability-panel";
 import { AppIcon } from "@/components/app-icon";
 import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
@@ -27,11 +29,12 @@ export default async function AppPage({
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
     const { app, space } = ctx;
-    const [rawDeployment, holdsKey, history, spaces] = await Promise.all([
+    const [rawDeployment, holdsKey, history, spaces, capabilities] = await Promise.all([
       latestDeployment(app.id),
       appHoldsKey(app.id),
       deploymentHistory(app.id),
       listMySpaces(),
+      listCapabilitiesForApp(app.id),
     ]);
 
     // Someone is looking at this app right now, so this is exactly when its
@@ -147,6 +150,8 @@ export default async function AppPage({
               {deployment === null ? "Not deployed" : deployment.provider}
             </Fact>
           </dl>
+
+          <CapabilityPanel capabilities={capabilities} canManage={manages} />
 
           <DeploymentHistory
             spaceSlug={spaceSlug}

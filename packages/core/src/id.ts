@@ -13,6 +13,7 @@ export const ID_PREFIXES = {
   access: "acc",
   deployment: "dep",
   invite: "inv",
+  capability: "cap",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

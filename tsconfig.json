@@ -11,6 +11,9 @@
       "path": "./packages/deploy"
     },
     {
+      "path": "./packages/extract"
+    },
+    {
       "path": "./packages/cli"
     }
   ]

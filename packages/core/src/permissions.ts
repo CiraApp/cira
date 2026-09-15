@@ -1,4 +1,5 @@
 import { ROLES, type AppAccess, type Role } from "./model.js";
+import type { Capability } from "./capability.js";
 import type { App, Membership, SpaceId, UserId } from "./model.js";
 
 /**
@@ -100,4 +101,53 @@ export function visibleApps(args: {
 }): App[] {
   const { userId, apps, memberships, access } = args;
   return apps.filter((app) => canAccessApp({ userId, app, memberships, access }));
+}
+
+/**
+ * The capabilities this user may discover.
+ *
+ * Derived from app access and nothing else, which is the whole permission
+ * model for capabilities: a capability is something an app does, so the right
+ * to use it is the right to use the app. Written here, as a pure function over
+ * records, so the registry, the MCP surface and the tests all consult the same
+ * rule rather than three copies of it.
+ */
+export function visibleCapabilities(args: {
+  userId: UserId;
+  capabilities: readonly Capability[];
+  apps: readonly App[];
+  memberships: readonly Membership[];
+  access: readonly AppAccess[];
+}): Capability[] {
+  const { userId, capabilities, apps, memberships, access } = args;
+  const byId = new Map(apps.map((app) => [app.id, app]));
+
+  return capabilities.filter((capability) => {
+    const app = byId.get(capability.appId);
+    if (app === undefined) return false;
+    return canAccessApp({ userId, app, memberships, access });
+  });
+}
+
+/**
+ * May this user actually run this capability?
+ *
+ * Discovery and invocation share one rule and then diverge on exactly one
+ * point: being able to see that an app can do something is not permission to
+ * make it do it while it is switched off.
+ */
+export function canInvokeCapability(args: {
+  userId: UserId;
+  capability: Capability;
+  app: App;
+  memberships: readonly Membership[];
+  access: readonly AppAccess[];
+}): boolean {
+  if (!args.capability.enabled) return false;
+  return canAccessApp({
+    userId: args.userId,
+    app: args.app,
+    memberships: args.memberships,
+    access: args.access,
+  });
 }

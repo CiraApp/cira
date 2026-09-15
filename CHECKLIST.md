@@ -84,7 +84,72 @@ Keep `prod` green.
 - [ ] That journey as an automated browser test (needs a stable way to drive a
       real sign-in without the provider's bot check)
 
+## Capability engine V0
+
+- [x] Capability model in `packages/core`, owned by an app and inheriting its
+      access rules
+- [x] `capabilities` table, replaced wholesale on each deploy
+- [x] Repo extractor for Next.js - App Router, Pages Router, server actions,
+      exported functions, types and zod schemas
+- [x] One structured model call, with every candidate checked back against a
+      route the app was found to serve
+- [x] Publication policy: confident reads auto-enable, writes wait for review,
+      destructive stays off
+- [x] Registry with list / search / get / enable, all through app access
+- [x] Invocation gateway: permission, enabled, input validation, then a call
+      the caller cannot aim
+- [x] MCP endpoint with `search_capabilities`, `describe_capability`,
+      `invoke_capability`
+- [x] `cira deploy` analyzes while the build goes out and reports what it found
+- [x] Capabilities panel on the app page, with a single enable/disable control
+- [ ] The full demo against a real deployed app (needs one deployed through
+      Vercel; the engine itself is covered end to end against a real database
+      and a real HTTP app in `capability-engine.test.ts`)
+
 ## Decisions made
+
+- **Developers never write a capability manifest.** The whole engine exists so
+  that normal code plus `cira deploy` is the entire developer experience. A
+  manifest would be a second description of the app that drifts from the first,
+  and the first is the one that runs.
+- **Routes are the only thing a capability may point at.** They are recovered
+  from file paths and exported handler names, which is the most reliable signal
+  in a Next.js repository, and every candidate the model returns is matched back
+  against that table before it is registered. A capability that cannot be
+  executed is not a capability to surface later; it is a target that would fail
+  or hit something else.
+- **The extractor is a scanner, not a compiler.** The one fact that must be
+  exactly right - the set of routes - comes from paths and handler names, so a
+  parser would improve nothing and would put the TypeScript compiler in the
+  CLI's dependency tree. Everything else it produces is context for a model
+  whose output is checked against those routes anyway.
+- **A capability has no permission model of its own.** It is something an app
+  does, so the right to use it is the right to use the app. One rule beats two
+  that can disagree, and `visibleCapabilities` lives in core so the registry,
+  the MCP surface and the tests all consult the same one.
+- **Nothing can hand the gateway a URL.** A capability stores a method and a
+  root-relative path; the host comes from the app's own deployment row, and the
+  path is re-checked immediately before the call. The test that rewrites the
+  stored path to `https://evil.test` is the one that pins this.
+- **Publication is cautious by default and never re-decides.** A confident read
+  enables itself, a write waits for a person, destructive stays off - and a
+  redeploy keeps whatever that person chose. Re-applying the policy on every
+  deploy would quietly switch a reviewed capability back off, which is the kind
+  of bug nobody notices until an agent stops working.
+- **MCP is an adapter, not the internal standard.** Three fixed tools rather
+  than one per capability: a company's shelf changes whenever somebody deploys,
+  and an agent should not have to re-read a tool list to notice. The protocol
+  is handled directly because what is needed is three JSON-RPC methods, and the
+  SDK's transport wants Node request and response objects a route handler does
+  not have.
+- **Internal trust rides on the key Cira already holds.** A deployed app is
+  unreachable without the provider bypass, so holding it is already proof the
+  caller is Cira; an HMAC header lets an app verify that for itself without Cira
+  running a secrets system to make it possible.
+- **Test databases get a schema each.** Two suites sharing `public` tore down
+  each other's tables mid-run - invisible with one suite, and it would have read
+  as a flake rather than a collision. Each `freshDatabase()` now creates its own
+  namespace and retargets the migrations' `"public".` qualifiers into it.
 
 - **Host** - Vercel, in the "aumit shiv" Pro team, which
   also holds wave. Pro allows commercial use, so the Hobby licensing limit

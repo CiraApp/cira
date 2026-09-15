@@ -19,13 +19,14 @@ to whoever its access rules name. That is the whole mental model.
 
 ```text
 apps/
-  web/        Next.js app - employee gallery and app management
+  web/        Next.js app - employee gallery, app management, MCP endpoint
 packages/
   core/       Domain model, permission logic, deployment provider interface
   db/         PostgreSQL schema and migrations
+  deploy/     Deployment provider implementations
+  extract/    Reads a repository's shape, for capability analysis
+  cli/        The `cira` command
 ```
-
-`packages/deploy` and `packages/cli` arrive with Phases 6 to 8.
 
 `packages/core` holds no framework and no provider code. Permission checks take
 explicit records and are always run server-side - client-supplied space and user
@@ -40,6 +41,7 @@ ids are never trusted.
 | ORM      | Drizzle                                      |
 | Identity | Clerk, behind `apps/web/src/lib/identity.ts` |
 | Hosting  | Vercel                                       |
+| Analysis | Claude, behind `lib/capability-analyzer.ts`  |
 
 Two seams keep the replaceable parts replaceable. `lib/identity.ts` is the only
 module that imports the auth provider, and `DeploymentProvider` is the only way
@@ -84,3 +86,36 @@ apps keep Vercel's Deployment Protection on, so their raw URL is not publicly
 reachable; Cira checks permission server-side and proxies through with a bypass
 token. That is the access gateway from spec section 7, without building one.
 The implementation lands in Phase 7.
+
+## Capabilities
+
+Deploying an app also publishes what it can _do_. Nobody writes a manifest:
+`cira deploy` reads the repository, and Cira works out which routes are
+business operations worth exposing.
+
+```text
+normal Next.js app → cira deploy → routes extracted → analyzed → registered
+                                                                     ↓
+                      agent ── MCP ──→ search → describe → invoke ───┘
+```
+
+Five pieces, each small:
+
+| Piece              | Where                                   | Job                                             |
+| ------------------ | --------------------------------------- | ----------------------------------------------- |
+| Repo extractor     | `packages/extract`                      | Recovers routes, functions and schemas          |
+| Analyzer           | `apps/web/src/lib/capability-analyzer`  | One model call: which of these are operations   |
+| Grounding          | `apps/web/src/lib/capability-grounding` | Refuses anything without a real route behind it |
+| Registry           | `apps/web/src/lib/capabilities`         | Stores them, inherits the app's access rules    |
+| Invocation gateway | `apps/web/src/lib/invoke-capability`    | Checks, validates, and calls the deployed app   |
+
+Publication is deliberately cautious. A confident read-only capability enables
+itself; anything that writes is registered and left off until someone turns it
+on from the app's page, and anything destructive stays off. A redeploy replaces
+the set but never overrides a decision a person already made.
+
+Agents connect over MCP at `/api/mcp` with a `cira login` token, and get three
+tools - `search_capabilities`, `describe_capability`, `invoke_capability` -
+whatever the company has deployed. A capability can only ever address the app
+it came from: it carries a method and a root-relative path, and the host is
+resolved from that app's own deployment.
