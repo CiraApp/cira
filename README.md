@@ -121,6 +121,22 @@ whatever the company has deployed. A capability can only ever address the app
 it came from: it carries a method and a root-relative path, and the host is
 resolved from that app's own deployment.
 
+## Publishing the CLI
+
+```sh
+pnpm --filter @cira/cli build   # tsc, then bundle into bin/cira.js
+cd packages/cli && npm publish
+```
+
+`@cira/cli` ships as a single self-contained file with **no runtime
+dependencies**. `@cira/core`, `@cira/deploy`, `@cira/extract` and `@cira/skill`
+are bundled into it rather than published: they are Cira's own internals with
+no consumers outside this repository, and publishing them would mean committing
+to their names and APIs in public, for nobody.
+
+The canonical `SKILL.md` is copied in beside the bundle, which is where the CLI
+reads it from at runtime.
+
 ## The Cira Skill
 
 Coding agents learn Cira from one file: `packages/cira-skill/SKILL.md`. There is

@@ -94,7 +94,7 @@ importers:
   packages/cira-skill: {}
 
   packages/cli:
-    dependencies:
+    devDependencies:
       '@cira/core':
         specifier: workspace:*
         version: link:../core
@@ -107,6 +107,9 @@ importers:
       '@cira/skill':
         specifier: workspace:*
         version: link:../cira-skill
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
 
   packages/core: {}
 

@@ -8,15 +8,27 @@ import { readFileSync } from "node:fs";
  * mine". Anything more is a problem Cira does not have yet.
  */
 
-const MANIFEST = new URL("../../package.json", import.meta.url);
+/**
+ * The CLI runs from two shapes: compiled to `dist/update/version.js` in this
+ * repository, and bundled to `bin/cira.js` when installed from the registry.
+ * Both sit inside the package, at different depths, so both are tried.
+ */
+const MANIFESTS = ["../package.json", "../../package.json"];
 
 export function currentVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(MANIFEST, "utf8")) as { version?: unknown };
-    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
-  } catch {
-    return "0.0.0";
+  for (const candidate of MANIFESTS) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(new URL(candidate, import.meta.url), "utf8"),
+      ) as { name?: unknown; version?: unknown };
+      // Guard against finding some other package.json further up the tree.
+      if (pkg.name !== "@cira/cli") continue;
+      if (typeof pkg.version === "string") return pkg.version;
+    } catch {
+      // Try the next shape.
+    }
   }
+  return "0.0.0";
 }
 
 /**

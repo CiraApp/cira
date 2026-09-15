@@ -6,6 +6,8 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      // The published CLI bundle: generated output, not source.
+      "packages/cli/bin/**",
       "**/.next/**",
       "**/build/**",
       "**/*.tsbuildinfo",
@@ -13,6 +15,14 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    // Plain ESM build scripts. TypeScript files get Node's globals from the
+    // compiler; these do not, so `no-undef` needs telling what exists.
+    files: ["**/*.mjs"],
+    languageOptions: {
+      globals: { process: "readonly", console: "readonly", URL: "readonly" },
+    },
+  },
   {
     rules: {
       "@typescript-eslint/no-unused-vars": [

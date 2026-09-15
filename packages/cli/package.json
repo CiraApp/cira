@@ -1,20 +1,32 @@
 {
   "name": "@cira/cli",
   "version": "0.1.0",
-  "private": true,
+  "description": "Deploy internal software to your company with Cira.",
+  "license": "UNLICENSED",
   "type": "module",
   "bin": {
-    "cira": "./dist/index.js"
+    "cira": "./bin/cira.js"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./bin/cira.js",
+  "files": [
+    "bin",
+    "SKILL.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc --build"
+    "build": "tsc --build && node scripts/bundle.mjs",
+    "prepublishOnly": "pnpm build"
   },
-  "dependencies": {
+  "devDependencies": {
     "@cira/core": "workspace:*",
     "@cira/deploy": "workspace:*",
     "@cira/extract": "workspace:*",
-    "@cira/skill": "workspace:*"
+    "@cira/skill": "workspace:*",
+    "esbuild": "^0.25.12"
   }
 }

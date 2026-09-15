@@ -37,3 +37,7 @@ CLAUDE.md
 
 # Lavish review artifacts (local screenshots, not part of the product)
 .lavish/
+
+# Bundled CLI output
+packages/cli/bin/
+packages/cli/SKILL.md

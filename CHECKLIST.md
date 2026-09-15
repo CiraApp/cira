@@ -122,6 +122,17 @@ Keep `prod` green.
   migration, once nothing reads it. A migration that drops or renames something
   the running code still uses will break production with every step green.
 
+- **The CLI ships as one bundled file, not five packages.** It depends on four
+  workspace packages and nothing else, so bundling produces a self-contained
+  binary with no runtime dependencies at all. The alternative - publishing
+  `@cira/core`, `@cira/deploy` and `@cira/extract` so npm can resolve them -
+  would put Cira's internals on a public registry under names and APIs we would
+  then owe compatibility to, to serve no one.
+- **Packing and installing is part of building it.** The first bundle had two
+  shebangs: esbuild carries the entry's own through, and the banner added a
+  second on line 2, where it is a syntax error. Nothing in typecheck, lint or
+  the tests could see it - only `npm pack` followed by a real install did.
+
 - **Updates are checked beside the command, never in front of it.** The check
   starts before the work and is read after it with a 100ms grace: it either
   finished while the command ran or it is abandoned, and the next command looks
