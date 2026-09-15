@@ -4,6 +4,7 @@ import { TopBar } from "@/components/top-bar";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
+import { appHoldsKey } from "@/lib/queries";
 import { AccessPanel } from "@/components/access-panel";
 import { latestDeployment } from "@/lib/queries";
 import { appColor, appInitial } from "@/lib/app-color";
@@ -19,7 +20,10 @@ export default async function AppPage({
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
     const { app, space } = ctx;
-    const deployment = await latestDeployment(app.id);
+    const [deployment, holdsKey] = await Promise.all([
+      latestDeployment(app.id),
+      appHoldsKey(app.id),
+    ]);
 
     // Only someone who can change access is shown it; for everyone else the
     // page stays the simple "open this app" screen it should be.
@@ -30,7 +34,7 @@ export default async function AppPage({
     });
     const access = manages ? await loadAccess(spaceSlug, appSlug) : null;
     const color = appColor(app.id);
-    const resolved = resolveAppState(app, deployment);
+    const resolved = resolveAppState(app, deployment, holdsKey);
 
     return (
       <>

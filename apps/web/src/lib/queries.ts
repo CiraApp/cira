@@ -1,7 +1,7 @@
 import "server-only";
 
 import { desc, eq } from "drizzle-orm";
-import { db, deployments } from "@cira/db";
+import { apps, db, deployments } from "@cira/db";
 import type { Deployment } from "@cira/core";
 
 /**
@@ -17,4 +17,24 @@ export async function latestDeployment(appId: string): Promise<Deployment | null
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * Does Cira hold the key that lets it open this app?
+ *
+ * Infrastructure rather than product, so it is answered here and passed in as
+ * a plain yes or no rather than hung off the domain type.
+ */
+export async function appHoldsKey(appId: string): Promise<boolean> {
+  const [row] = await db()
+    .select({ accessSecret: apps.accessSecret })
+    .from(apps)
+    .where(eq(apps.id, appId))
+    .limit(1);
+
+  return (
+    row?.accessSecret !== null &&
+    row?.accessSecret !== undefined &&
+    row.accessSecret !== ""
+  );
 }

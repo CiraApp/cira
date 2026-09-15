@@ -28,9 +28,6 @@ export async function GET(
   try {
     const { app } = await requireAppAccess(spaceSlug, appSlug);
     const deployment = await latestDeployment(app.id);
-    const resolved = resolveAppState(app, deployment);
-
-    if (resolved.openUrl === null) return NextResponse.redirect(backToApp);
 
     // The secret is infrastructure, not part of the app as the product knows
     // it, so it is read here rather than carried through the domain type.
@@ -41,7 +38,13 @@ export async function GET(
       .limit(1);
 
     const secret = row?.accessSecret ?? null;
-    if (secret === null) return NextResponse.redirect(backToApp);
+
+    // Resolved from exactly the inputs the app page uses, so the button and
+    // this route can never disagree about whether the app opens.
+    const resolved = resolveAppState(app, deployment, secret !== null && secret !== "");
+    if (resolved.openUrl === null || secret === null) {
+      return NextResponse.redirect(backToApp);
+    }
 
     const target = new URL(resolved.openUrl);
     target.searchParams.set("x-vercel-protection-bypass", secret);

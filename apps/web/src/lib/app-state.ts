@@ -8,7 +8,13 @@ import type { App, Deployment } from "@cira/core";
  * it has never shipped. Deriving every part of the screen from this single
  * value is what stops a page claiming "Live" above "not deployed".
  */
-export type AppState = "live" | "deploying" | "failed" | "never-deployed";
+export type AppState =
+  | "live"
+  | "deploying"
+  | "failed"
+  | "never-deployed"
+  /** Deployed and running, but Cira holds no key, so it cannot let anyone in. */
+  | "unreachable";
 
 export interface ResolvedApp {
   state: AppState;
@@ -19,7 +25,18 @@ export interface ResolvedApp {
   blockedReason: string | null;
 }
 
-export function resolveAppState(app: App, deployment: Deployment | null): ResolvedApp {
+export function resolveAppState(
+  app: App,
+  deployment: Deployment | null,
+  /**
+   * Whether Cira holds the key to this app.
+   *
+   * Required rather than optional: the page offering an Open button and the
+   * route refusing to act on it is the same bug twice, and a default would let
+   * a caller forget which of the two it is.
+   */
+  ciraHoldsKey: boolean,
+): ResolvedApp {
   const url = deployment?.url ?? null;
 
   if (deployment === null) {
@@ -70,6 +87,18 @@ export function resolveAppState(app: App, deployment: Deployment | null): Resolv
       openUrl: null,
       label: "Never deployed",
       blockedReason: "This app has no address yet.",
+    };
+  }
+
+  // Running, but Cira cannot open it. Saying "Live" and offering a button that
+  // bounces the person back here is worse than admitting it.
+  if (!ciraHoldsKey) {
+    return {
+      state: "unreachable",
+      openUrl: null,
+      label: "Not reachable",
+      blockedReason:
+        "This app is running, but Cira cannot open it yet. Deploy it again with cira deploy to reconnect it.",
     };
   }
 
