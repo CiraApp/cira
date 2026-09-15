@@ -1,3 +1,4 @@
+import { Contour } from "./contour";
 import { CopyableCommand } from "./copyable-command";
 
 /**
@@ -66,9 +67,10 @@ export function DeployGuide({
         ))}
       </ol>
 
-      <aside className="enter-up w-full shrink-0 rounded-[var(--radius-edge)] border border-line bg-surface p-5 lg:w-[310px]">
-        <p className="eyebrow">What happens</p>
-        <ul className="mt-3 flex flex-col gap-3">
+      <aside className="enter-up relative w-full shrink-0 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface p-5 lg:w-[310px]">
+        <Contour className="pointer-events-none absolute -top-3 -right-8 h-24 w-[300px] text-[var(--gold-metal)] opacity-25" />
+        <p className="eyebrow relative">What happens</p>
+        <ul className="relative mt-3 flex flex-col gap-3">
           {[
             [
               "Your folder is packaged",
@@ -83,7 +85,7 @@ export function DeployGuide({
             <li key={title} className="flex gap-2.5">
               <span
                 aria-hidden="true"
-                className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent"
+                className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[var(--gold-metal)]"
               />
               <span className="min-w-0">
                 <span className="block text-[12px] font-medium text-ink">{title}</span>

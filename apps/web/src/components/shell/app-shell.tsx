@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import type { Role, Space } from "@cira/core";
 import { AmbientField } from "@/components/ambient-field";
+import { Atmosphere } from "@/components/atmosphere";
 import { SidebarNav, type NavItem } from "./sidebar-nav";
 import { SpaceMenu } from "./space-menu";
 import { MobileNav } from "./mobile-nav";
@@ -39,6 +40,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-dvh">
+      <Atmosphere />
       <AmbientField />
 
       <aside className="sticky top-0 hidden h-dvh w-[236px] shrink-0 flex-col border-r border-line bg-panel/80 backdrop-blur-xl md:flex">

@@ -36,11 +36,17 @@ export function AppCard({
           "--glow": color.glow,
         } as React.CSSProperties
       }
-      className="enter-up group relative isolate flex h-full min-w-0 flex-col gap-3 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface p-3.5 pb-8 transition-[transform,border-color,box-shadow] duration-200 ease-[var(--ease-settle)] outline-none hover:-translate-y-[3px] hover:border-[rgb(var(--glow)/0.55)] hover:shadow-[0_16px_34px_-20px_rgb(var(--glow)/0.55)] active:translate-y-0 active:duration-75 data-[selected]:-translate-y-[3px] data-[selected]:border-[rgb(var(--glow)/0.8)] data-[selected]:shadow-[0_0_0_1px_rgb(var(--glow)/0.55),0_16px_34px_-20px_rgb(var(--glow)/0.55)]"
+      className="enter-up group relative isolate flex h-full min-w-0 flex-col gap-3 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface p-3.5 pb-8 transition-[transform,border-color,box-shadow] duration-200 ease-[var(--ease-settle)] outline-none hover:-translate-y-[3px] hover:border-[var(--gold-border)] hover:shadow-[0_0_0_1px_var(--gold-border),0_16px_34px_-20px_rgb(var(--glow)/0.5)] active:translate-y-0 active:duration-75 data-[selected]:-translate-y-[3px] data-[selected]:border-[var(--gold)] data-[selected]:shadow-[0_0_0_1px_var(--gold),0_16px_34px_-20px_rgb(var(--glow)/0.5)]"
     >
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-20 bg-[linear-gradient(to_top,rgb(var(--glow)/0.11),transparent)] opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-data-[selected]:opacity-100"
+      />
+
+      {/* Light catching the top lip, which is what makes the edge read as metal. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--gold-highlight),transparent)] opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-data-[selected]:opacity-100"
       />
 
       <div className="flex items-start justify-between gap-3">

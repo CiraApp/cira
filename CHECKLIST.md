@@ -108,6 +108,17 @@ Keep `prod` green.
 - **Architectural, not soft.** A 3px cut edge everywhere, hairline borders
   doing the separating, and depth spent only where something is genuinely
   lifted. No pills, no bubbles.
+- **Metallic gold and cloud.** Gold is the identity, spent only on the active
+  thing, the primary action, focus and the marks that state the brand. The
+  system carries TWO golds and the split is the point: one deep enough to be
+  read as text on white, one champagne that reads as brushed metal in a fill or
+  a gradient and would fail as text. Using either in the other's place is how
+  gold interfaces end up both illegible and cheap.
+- **Cloud, never clouds.** Layered translucent strata drifting at different
+  speeds, plus occasional contour linework where a screen is mostly air. Pure
+  CSS transforms on composited layers, so an ambient background that runs
+  forever costs no per-frame painting. Nothing is a picture, so nothing can
+  look childish.
 - **The apps bring the colour, the chrome does not.** Every app carries its
   own hue; the interface stays near-monochrome and spends its one accent on the
   single primary action and on focus. Most software of this kind paints its
