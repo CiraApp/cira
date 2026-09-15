@@ -1,11 +1,14 @@
 import type { Route } from "next";
 import type { Role, Space } from "@cira/core";
 import { AmbientField } from "@/components/ambient-field";
+import { CommandPalette } from "@/components/command-palette";
 import { SidebarNav, type NavItem } from "./sidebar-nav";
 import { SpaceMenu } from "./space-menu";
 import { MobileNav } from "./mobile-nav";
 import { Wordmark } from "./wordmark";
 import { HeaderControls } from "./header-controls";
+import { HeaderTitle } from "./header-title";
+import { RouteProgress } from "./route-progress";
 
 /**
  * The product shell: a fixed spine on the left, a thin header, and one
@@ -15,6 +18,9 @@ import { HeaderControls } from "./header-controls";
  * what belongs to the current view. On a phone the spine folds into a sheet
  * rather than collapsing to icons, because a row of unlabelled glyphs is a
  * quiz.
+ *
+ * Everything atmospheric is mounted here once - the field, the palette, the
+ * route bar - so a page never has to think about any of it.
  */
 export function AppShell({
   spaceSlug,
@@ -40,8 +46,9 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh">
       <AmbientField />
+      <RouteProgress />
 
-      <aside className="sticky top-0 hidden h-dvh w-[236px] shrink-0 flex-col border-r border-line bg-panel/80 backdrop-blur-xl md:flex">
+      <aside className="sticky top-0 hidden h-dvh w-[236px] shrink-0 flex-col border-r border-line bg-panel/70 backdrop-blur-xl md:flex">
         <div className="flex h-14 items-center border-b border-line px-4">
           <Wordmark href={`/${spaceSlug}` as Route} />
         </div>
@@ -56,13 +63,14 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-[env(safe-area-inset-top,0px)] z-30 flex h-14 items-center gap-3 border-b border-line bg-base/75 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-[env(safe-area-inset-top,0px)] z-30 flex h-14 items-center gap-3 border-b border-line bg-base/70 px-4 backdrop-blur-xl sm:px-6">
           <MobileNav spaceSlug={spaceSlug} spaces={spaces} items={items} />
 
-          <div className="min-w-0 flex-1">{title}</div>
+          <HeaderTitle>{title}</HeaderTitle>
 
           <div className="flex shrink-0 items-center gap-2">
             {actions}
+            <CommandPalette spaceSlug={spaceSlug} items={items} />
             <HeaderControls />
           </div>
         </header>

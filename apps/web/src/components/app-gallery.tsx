@@ -7,9 +7,13 @@ import { AppCard } from "./app-card";
 
 /**
  * The gallery is the product's front door, so it behaves like a launcher
- * rather than a page with a filter box: a shortcut from anywhere, arrows to
- * move, Enter to open. Someone who knows what they want should never need the
- * mouse, and someone who does not should never notice any of it.
+ * rather than a page with a filter box: a keystroke to focus, arrows to move,
+ * Enter to open. Someone who knows what they want should never need the mouse,
+ * and someone who does not should never notice any of it.
+ *
+ * It owns "/" only. The command palette owns the global shortcut, so pressing
+ * it here opens the same launcher it opens everywhere else rather than a
+ * second, subtly different one.
  */
 export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string }) {
   const router = useRouter();
@@ -18,7 +22,6 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [navigating, setNavigating] = useState(false);
-  const [shortcutHint, setShortcutHint] = useState<string | null>(null);
   // Focus lives in state, not read from `document` during render: that would
   // break server rendering and would not re-render when focus moves.
   const [focused, setFocused] = useState(false);
@@ -32,13 +35,6 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
       ),
     );
   }, [apps, query]);
-
-  // Platform is only known in the browser, so the hint appears after mount
-  // rather than risking a server/client mismatch on first paint.
-  useEffect(() => {
-    const mac = /mac|iphone|ipad/i.test(navigator.userAgent);
-    setShortcutHint(mac ? "⌘K" : "Ctrl K");
-  }, []);
 
   // A stale selection after filtering would open the wrong app on Enter.
   useEffect(() => {
@@ -54,13 +50,6 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        inputRef.current?.focus();
-        inputRef.current?.select();
-        return;
-      }
 
       if (typingElsewhere) return;
 
@@ -102,12 +91,13 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-subtle" />
+      <div className="group relative">
+        <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-subtle transition-colors duration-200 group-focus-within:text-accent" />
 
         <input
           ref={inputRef}
           type="search"
+          name="app-search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onFocus={() => setFocused(true)}
@@ -115,12 +105,12 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
           placeholder="Search apps..."
           aria-label="Search apps"
           autoComplete="off"
-          className="w-full rounded-[var(--radius-edge)] border border-line bg-surface py-2.5 pr-20 pl-10 text-[14px] text-ink transition-[border-color,box-shadow] duration-150 outline-none placeholder:text-ink-subtle focus:border-accent focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-accent)_16%,transparent)] [&::-webkit-search-cancel-button]:hidden"
+          className="field py-2.5 pr-12 pl-10 text-[14px] [&::-webkit-search-cancel-button]:hidden"
         />
 
-        {shortcutHint !== null && query === "" ? (
-          <kbd className="enter-fade pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded-[2px] border border-line bg-sunken px-1.5 py-[3px] font-mono text-[10px] font-medium text-ink-subtle">
-            {shortcutHint}
+        {query === "" ? (
+          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded-[2px] border border-line bg-sunken px-1.5 py-[3px] font-mono text-[10px] font-medium text-ink-subtle transition-opacity duration-200 group-focus-within:opacity-0">
+            /
           </kbd>
         ) : null}
       </div>
@@ -136,7 +126,7 @@ export function AppGallery({ apps, spaceSlug }: { apps: App[]; spaceSlug: string
         </div>
       ) : (
         <ul
-          className={`grid auto-rows-fr grid-cols-2 gap-3 transition-opacity duration-150 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${
+          className={`grid auto-rows-fr grid-cols-2 gap-3 transition-opacity duration-150 sm:grid-cols-3 lg:grid-cols-4 ${
             navigating ? "opacity-60" : ""
           }`}
         >

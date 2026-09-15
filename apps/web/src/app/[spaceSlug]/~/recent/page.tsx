@@ -52,7 +52,7 @@ export default async function RecentPage({
             </p>
           </div>
         ) : (
-          <ul className="grid auto-rows-fr grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <ul className="grid auto-rows-fr grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {recent.map((app, index) => (
               <li key={app.id} className="min-w-0">
                 <AppCard app={app} spaceSlug={spaceSlug} index={index} />

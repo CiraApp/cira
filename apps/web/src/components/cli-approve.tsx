@@ -21,7 +21,7 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
 
   if (done !== null) {
     return (
-      <div className="animate-pop-in rounded-2xl border border-border bg-surface px-5 py-6 text-center">
+      <div className="enter-pop rounded-[var(--radius-edge)] border border-line bg-surface px-5 py-6 text-center">
         <p className="text-[15px] font-medium text-ink">You&rsquo;re connected</p>
         <p className="mt-1.5 text-[14px] text-ink-muted">
           Head back to your terminal. You can close this tab.
@@ -44,7 +44,7 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
         autoComplete="off"
         spellCheck={false}
         placeholder="XXXX-XXXX"
-        className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-center font-mono text-[18px] tracking-[0.2em] text-ink uppercase outline-none placeholder:tracking-normal placeholder:text-ink-subtle focus:border-accent focus:ring-4 focus:ring-accent/12"
+        className="field py-3 text-center font-mono text-[18px] tracking-[0.2em] uppercase placeholder:tracking-normal"
       />
 
       {error !== null ? (
@@ -53,11 +53,7 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-xl bg-accent px-5 py-3 text-[15px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-60"
-      >
+      <button type="submit" disabled={pending} className="btn btn-primary btn-lg">
         {pending ? "Connecting..." : "Connect"}
       </button>
 

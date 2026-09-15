@@ -118,6 +118,60 @@ Keep `prod` green.
   family as the accent, surfaces lift by getting lighter rather than by shadow,
   and every app hue has a separate dark rendering because a wash that glows on
   paper goes muddy on a dark ground.
+- **One vocabulary, enforced.** The shell rebuild introduced a new token set and
+  left most of the product spelling the old one, so every screen outside the
+  gallery was asking for colours, radii and shadows that no longer existed and
+  silently rendering with none of them. Buttons and fields are now single
+  classes in `@layer components` rather than utility strings copied between
+  call sites: the layer matters, because a component class written outside it
+  beats the utility meant to override it, which is how a padding utility on a
+  field stops working.
+- **Onboarding is one card with three states**, not a wizard: join the company
+  that is already here, name a new one, or the moment that says it worked.
+  Which one opens is decided by the email domain rather than by asking, because
+  being asked a question the system can already answer is the setup step this
+  screen exists to avoid. The slug preview under the field is the only thing
+  there that is not strictly required: it shows what a space _is_ - a place
+  with an address - without a sentence explaining it, and it runs the same
+  `slugify` the server will, so it cannot promise an address the server would
+  refuse. Onboarding, an invite and the CLI hand-off now share one frame, so
+  the three screens someone meets before they have a space cannot drift apart.
+- **The ground is lit, not flat.** An aurora of the accent drifts behind the
+  page on a minute-long cycle, a constellation moves in depth above it, and two
+  per cent of grain sits over everything. Near-black with nothing happening in
+  it reads as a screen that is off; this is what makes it read as a room. All
+  three are decoration and the product is complete without any of them.
+- **The pointer lights things, rather than selecting them.** A card's border and
+  the wash beneath it brighten where the cursor is, in that app's own hue,
+  painted by a gradient masked into a one-pixel ring. The position is written
+  straight onto the element as a CSS variable, never through React state: it
+  updates every frame of every hover and must not re-render anything.
+- **Motion that is about position.** The sidebar's rail and panel are single
+  elements that slide between rows, measured from live geometry rather than
+  assumed, because a sidebar marks where you are in a structure; five lights
+  switching on and off does not. Cards resolve out of the ground on arrival,
+  the header's title re-enters when the route changes, and a deploy in flight
+  sends out a ring instead of blinking.
+- **The route bar waits before it appears.** Almost every navigation is
+  prefetched and lands in a frame, so the bar holds for 180ms and never shows
+  for those. A progress bar that flashes on every click is what makes an app
+  feel busy rather than quick.
+- **⌘K is a launcher, not a filter.** Cira is a front door before it is a
+  console, so the fastest path to an app does not require first being on the
+  page that lists them. The index is fetched on first open and matched as a
+  subsequence, so "rvd" finds Revenue Dashboard; the gallery keeps "/" for its
+  own in-page search, and there is exactly one global shortcut.
+- **Overlays are portalled, not nested.** The header applies a backdrop filter,
+  and a filtered element becomes the containing block for every `position:
+fixed` descendant. Anything full-screen opened from the chrome - the palette,
+  the invite dialog, the phone's nav sheet - was therefore clipped to the header
+  box. It presents as a backdrop that dims only the top bar and a panel centred
+  on the wrong thing, which looks exactly like a z-index problem and is not one.
+- **Hover states are gated on `(hover: hover)`**, including the hand-written
+  ones, matching what Tailwind does to its own hover utilities. Ungated, a tap
+  on a touch screen leaves a card lit with the rest of its hover state
+  correctly doing nothing. This is invisible in a headless browser, which
+  reports no hover at all and so renders none of it.
 - **Tests run against a real Postgres**, not a fake. The constraints are the
   safety here, so a fake would pass while the real schema rejected the same
   write. They skip rather than fail when no database is offered, so `pnpm test`

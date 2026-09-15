@@ -11,8 +11,10 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { AccessPanel } from "@/components/access-panel";
 import { AppSettings } from "@/components/app-settings";
+import { AppIcon } from "@/components/app-icon";
+import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
-import { appColor, appInitial } from "@/lib/app-color";
+import { appColor } from "@/lib/app-color";
 import { resolveAppState } from "@/lib/app-state";
 
 export default async function AppPage({
@@ -54,63 +56,94 @@ export default async function AppPage({
         spaces={spaces}
         title={<PageTitle title={app.name} detail={space.name} />}
       >
-        <div className="enter-fade max-w-3xl">
+        <div
+          className="max-w-3xl"
+          style={{ "--glow": color.glow } as React.CSSProperties}
+        >
           <Link
             href={`/${spaceSlug}`}
-            className="group -mx-2 -my-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
+            className="group enter-fade -mx-2 -my-1.5 inline-flex items-center gap-1.5 rounded-[var(--radius-edge)] px-2 py-1.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
           >
-            <span
+            <svg
+              viewBox="0 0 12 12"
               aria-hidden="true"
-              className="transition-transform duration-200 group-hover:-translate-x-0.5"
+              className="h-3 w-3 transition-transform duration-300 ease-[var(--ease-spring)] group-hover:-translate-x-0.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              &larr;
-            </span>
+              <path d="M9.5 6h-7M5.5 3l-3 3 3 3" />
+            </svg>
             {space.name}
           </Link>
 
-          <div className="mt-6 flex items-start gap-4">
+          {/*
+            The hero is the one place an app's own colour is allowed to reach
+            past its icon: a wide, faint bloom of the hue behind the name, so
+            the page is unmistakably this app's page and not a template with
+            the name swapped in.
+          */}
+          <header className="enter-up relative mt-5 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface p-6">
             <span
               aria-hidden="true"
-              style={{ backgroundColor: color.bg, color: color.fg }}
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[15px] text-[22px] font-semibold"
-            >
-              {app.icon ?? appInitial(app.name)}
-            </span>
+              className="pointer-events-none absolute -top-24 -left-16 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgb(var(--glow)/0.16),transparent_65%)] blur-xl"
+            />
 
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-ink">
-                {app.name}
-              </h1>
-              {app.description !== null && app.description !== "" ? (
-                <p className="mt-1 text-[15px] text-ink-muted">{app.description}</p>
-              ) : null}
+            <div className="relative flex flex-wrap items-start gap-4">
+              <AppIcon appId={app.id} name={app.name} icon={app.icon} size="lg" />
+
+              <div className="min-w-0 flex-1">
+                <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink">
+                  {app.name}
+                </h1>
+                {app.description !== null && app.description !== "" ? (
+                  <p className="mt-1 text-[13.5px] text-ink-muted">{app.description}</p>
+                ) : null}
+                <div className="mt-2.5">
+                  <StatusDot status={resolved.state} label={resolved.label} />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="mt-7">
-            {resolved.openUrl !== null ? (
-              <a
-                href={`/${spaceSlug}/${appSlug}/open`}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[15px] font-medium text-white shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-accent)_70%,transparent)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover"
-              >
-                Open
-                <span aria-hidden="true">&rarr;</span>
-              </a>
-            ) : (
-              <p className="rounded-xl border border-border bg-surface px-5 py-4 text-[14px] text-ink-muted">
-                {resolved.blockedReason}
-              </p>
-            )}
-          </div>
+            <div className="relative mt-6">
+              {resolved.openUrl !== null ? (
+                <a
+                  href={`/${spaceSlug}/${appSlug}/open`}
+                  className="btn btn-primary btn-lg group"
+                >
+                  Open {app.name}
+                  <svg
+                    viewBox="0 0 12 12"
+                    aria-hidden="true"
+                    className="h-3 w-3 transition-transform duration-300 ease-[var(--ease-spring)] group-hover:translate-x-0.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M2.5 6h7M6.5 3l3 3-3 3" />
+                  </svg>
+                </a>
+              ) : (
+                <p className="rounded-[var(--radius-edge)] border border-dashed border-line-strong bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted">
+                  {resolved.blockedReason}
+                </p>
+              )}
+            </div>
+          </header>
 
-          <dl className="mt-9 grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-px overflow-hidden rounded-[var(--radius-card)] bg-border shadow-[var(--shadow-rest)]">
-            <Fact label="Status">
-              <StatusValue state={resolved.state} label={resolved.label} />
-            </Fact>
+          {/* The hero already states the status in words and in colour, so the
+              fact row answers the two things it does not: when, and by whom. */}
+          <dl className="enter-up mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
             <Fact label="Last deployed">
               {deployment === null ? "Never" : relativeTime(deployment.createdAt)}
             </Fact>
-            <Fact label="Provider">
+            {/* Only a provider's own name is capitalised; the fallback is a
+                sentence, and "Not Deployed" is not how anyone writes it. */}
+            <Fact label="Provider" capitalize={deployment !== null}>
               {deployment === null ? "Not deployed" : deployment.provider}
             </Fact>
           </dl>
@@ -149,33 +182,29 @@ export default async function AppPage({
   }
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * One cell of the fact row. Separated by its own left hairline rather than by
+ * a gap in a coloured parent, so a row that wraps to two lines does not leave
+ * a stripe hanging in the empty half.
+ */
+function Fact({
+  label,
+  capitalize = false,
+  children,
+}: {
+  label: string;
+  /** Only for values that arrive lowercased, like a provider's name. A
+      relative time capitalised word by word reads as "2 Hours Ago". */
+  capitalize?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="bg-surface px-5 py-4">
-      <dt className="text-[11px] font-medium tracking-wide text-ink-subtle uppercase">
-        {label}
-      </dt>
-      <dd className="mt-1.5 text-[14px] text-ink">{children}</dd>
+    <div className="border-l border-line px-4 py-3.5 first:border-l-0">
+      <dt className="eyebrow">{label}</dt>
+      <dd className={`mt-1.5 text-[13px] text-ink ${capitalize ? "capitalize" : ""}`}>
+        {children}
+      </dd>
     </div>
-  );
-}
-
-const STATUS_DOT: Record<string, string> = {
-  live: "bg-live",
-  deploying: "bg-pending animate-breathe",
-  failed: "bg-failed",
-  "never-deployed": "bg-ink-subtle",
-};
-
-function StatusValue({ state, label }: { state: string; label: string }) {
-  return (
-    <span className="flex items-center gap-2">
-      <span
-        aria-hidden="true"
-        className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[state] ?? "bg-ink-subtle"}`}
-      />
-      {label}
-    </span>
   );
 }
 

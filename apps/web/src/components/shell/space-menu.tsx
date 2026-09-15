@@ -67,7 +67,7 @@ export function SpaceMenu({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex w-full items-center gap-2.5 rounded-[var(--radius-edge)] px-2.5 py-2 transition-colors duration-150 hover:bg-sunken"
+        className="flex w-full items-center gap-2.5 rounded-[var(--radius-edge)] px-2.5 py-2 text-left transition-colors duration-150 hover:bg-sunken"
       >
         {face}
         <svg

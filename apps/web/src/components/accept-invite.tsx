@@ -27,7 +27,7 @@ export function AcceptInvite({ token, spaceName }: { token: string; spaceName: s
         type="button"
         onClick={accept}
         disabled={pending}
-        className="rounded-xl bg-accent px-5 py-2.5 text-[15px] font-medium text-white shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-accent)_70%,transparent)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover disabled:translate-y-0 disabled:opacity-60"
+        className="btn btn-primary btn-lg"
       >
         {pending ? "Joining..." : `Join ${spaceName}`}
       </button>

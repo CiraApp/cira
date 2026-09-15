@@ -43,16 +43,28 @@ export function AppSettings({
 
   return (
     <details className="group mt-10">
-      <summary className="cursor-pointer list-none text-[13px] text-ink-muted transition-colors hover:text-ink">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink">
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+          className="h-3 w-3 transition-transform duration-300 ease-[var(--ease-spring)] group-open:rotate-90"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m4.5 2.5 3.5 3.5-3.5 3.5" />
+        </svg>
         Settings
       </summary>
 
-      <div className="mt-4 flex flex-col gap-6 rounded-[var(--radius-card)] bg-surface shadow-[var(--shadow-rest)] p-5">
+      <div className="enter-up mt-4 flex flex-col gap-6 rounded-[var(--radius-edge)] border border-line bg-surface p-5">
         <form action={rename} className="flex flex-col gap-2">
-          <label htmlFor="app-name" className="text-[13px] font-medium text-ink">
+          <label htmlFor="app-name" className="text-[12.5px] font-medium text-ink">
             Name
           </label>
-          <p className="text-[12px] text-ink-subtle">
+          <p className="text-[11.5px] leading-relaxed text-ink-subtle">
             Renaming changes this app&rsquo;s address, so existing links to it will stop
             working.
           </p>
@@ -61,21 +73,17 @@ export function AppSettings({
               id="app-name"
               name="name"
               defaultValue={appName}
-              className="min-w-0 flex-1 rounded-xl bg-sunken px-3.5 py-2 text-[14px] text-ink outline-none transition-all duration-200 focus:shadow-[0_0_0_2px_var(--color-accent)]"
+              className="field flex-1"
             />
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-xl border border-border bg-surface px-3.5 py-2 text-[13px] font-medium text-ink transition-colors hover:border-border-strong hover:bg-canvas disabled:opacity-50"
-            >
+            <button type="submit" disabled={pending} className="btn btn-secondary">
               Rename
             </button>
           </div>
         </form>
 
-        <div className="border-t border-border pt-5">
-          <p className="text-[13px] font-medium text-ink">Delete this app</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-ink-subtle">
+        <div className="border-t border-line pt-5">
+          <p className="text-[12.5px] font-medium text-ink">Delete this app</p>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
             Takes the running app down and removes it from {spaceSlug}. Its deploy history
             goes with it. This cannot be undone.
           </p>
@@ -84,13 +92,13 @@ export function AppSettings({
             <button
               type="button"
               onClick={() => setConfirming(true)}
-              className="mt-3 rounded-xl border border-border px-3.5 py-2 text-[13px] font-medium text-failed transition-colors hover:border-failed hover:bg-failed/5"
+              className="btn btn-secondary mt-3 text-failed hover:border-failed hover:bg-failed/5 hover:text-failed"
             >
               Delete
             </button>
           ) : (
-            <div className="mt-3 flex flex-col gap-2">
-              <label htmlFor="confirm" className="text-[12px] text-ink-muted">
+            <div className="enter-fade mt-3 flex flex-col gap-2">
+              <label htmlFor="confirm" className="text-[11.5px] text-ink-muted">
                 Type <span className="font-medium text-ink">{appName}</span> to confirm.
               </label>
               <div className="flex flex-wrap gap-2">
@@ -100,12 +108,12 @@ export function AppSettings({
                   onChange={(e) => setConfirmName(e.target.value)}
                   autoFocus
                   placeholder={appName}
-                  className="min-w-0 flex-1 rounded-xl bg-sunken px-3.5 py-2 text-[14px] text-ink outline-none transition-all duration-200 placeholder:text-ink-subtle focus:shadow-[0_0_0_2px_var(--color-failed)]"
+                  className="field field-danger flex-1"
                 />
                 <button
                   type="button"
                   onClick={() => setConfirming(false)}
-                  className="rounded-xl px-3 py-2 text-[13px] text-ink-muted transition-colors hover:text-ink"
+                  className="btn btn-ghost"
                 >
                   Cancel
                 </button>
@@ -113,7 +121,7 @@ export function AppSettings({
                   type="button"
                   onClick={remove}
                   disabled={pending || confirmName.trim() !== appName.trim()}
-                  className="rounded-xl bg-failed px-3.5 py-2 text-[13px] font-medium text-white transition-colors disabled:opacity-40"
+                  className="btn btn-danger"
                 >
                   {pending ? "Deleting..." : "Delete for good"}
                 </button>
@@ -123,7 +131,7 @@ export function AppSettings({
         </div>
 
         {error !== null ? (
-          <p role="alert" className="text-[13px] text-failed">
+          <p role="alert" className="text-[12.5px] text-failed">
             {error}
           </p>
         ) : null}

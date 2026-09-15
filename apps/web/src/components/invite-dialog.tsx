@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createInvite, type ActionResult } from "@/lib/invite-actions";
 import { CopyableCommand } from "./copyable-command";
+import { Portal } from "./ui/portal";
 
 /**
  * Inviting is a rare, deliberate act, so it lives behind one button rather
@@ -32,116 +33,139 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
 
   return (
     <>
+      {/* Label and all on a laptop; on a phone the header has a hamburger, a
+          search, a theme switch and an avatar to fit, and a rare action does
+          not get to push the page title out of the room. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-xl border border-border bg-surface px-3.5 py-2 text-[14px] font-medium text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-colors hover:border-border-strong hover:bg-canvas"
+        aria-label="Invite people"
+        className="btn btn-secondary h-[30px] px-2 sm:px-3"
       >
-        Invite people
+        <svg
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+          className="h-3.5 w-3.5 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="6.4" cy="5.6" r="2.6" />
+          <path d="M1.9 13.4c0-2.3 2-3.8 4.5-3.8s4.5 1.5 4.5 3.8" />
+          <path d="M12.6 4.6v3.6M14.4 6.4h-3.6" />
+        </svg>
+        <span className="hidden sm:inline">Invite people</span>
       </button>
 
       {open ? (
-        <div
-          className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center bg-black/25 px-5 pt-[12vh] backdrop-blur-[2px]"
-          onMouseDown={(e) => {
-            if (!dialogRef.current?.contains(e.target as Node)) setOpen(false);
-          }}
-        >
+        <Portal>
           <div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="invite-title"
-            className="animate-pop-in w-full max-w-md rounded-2xl border border-border bg-raised p-6 shadow-[var(--shadow-lift)]"
+            className="enter-fade fixed inset-0 z-50 flex items-start justify-center bg-sunken/70 px-5 pt-[12vh] backdrop-blur-[3px]"
+            onMouseDown={(e) => {
+              if (!dialogRef.current?.contains(e.target as Node)) setOpen(false);
+            }}
           >
-            <h2 id="invite-title" className="text-[17px] font-semibold text-ink">
-              Invite to this space
-            </h2>
+            <div
+              ref={dialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="invite-title"
+              className="enter-pop w-full max-w-md rounded-[var(--radius-edge)] border border-line-strong bg-raised p-6 shadow-[var(--shadow-panel)]"
+            >
+              <h2
+                id="invite-title"
+                className="text-[15px] font-semibold tracking-[-0.01em] text-ink"
+              >
+                Invite to this space
+              </h2>
 
-            {inviteUrl === null ? (
-              <>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-ink-muted">
-                  We&rsquo;ll give you a link to send them. Only the address you enter can
-                  use it.
-                </p>
+              {inviteUrl === null ? (
+                <>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
+                    We&rsquo;ll give you a link to send them. Only the address you enter
+                    can use it.
+                  </p>
 
-                <form action={action} className="mt-5 flex flex-col gap-3">
-                  <input type="hidden" name="spaceSlug" value={spaceSlug} />
+                  <form action={action} className="mt-5 flex flex-col gap-3">
+                    <input type="hidden" name="spaceSlug" value={spaceSlug} />
 
-                  <label htmlFor="invite-email" className="sr-only">
-                    Email address
-                  </label>
-                  <input
-                    id="invite-email"
-                    name="email"
-                    type="email"
-                    required
-                    autoFocus
-                    placeholder="colleague@company.com"
-                    className="w-full rounded-xl bg-surface px-4 py-2.5 text-[14px] text-ink shadow-[var(--shadow-rest)] outline-none transition-all duration-200 placeholder:text-ink-subtle focus:shadow-[0_0_0_2px_var(--color-accent)]"
-                  />
+                    <label htmlFor="invite-email" className="sr-only">
+                      Email address
+                    </label>
+                    <input
+                      id="invite-email"
+                      name="email"
+                      type="email"
+                      required
+                      autoFocus
+                      placeholder="colleague@company.com"
+                      className="field py-2.5 text-[13.5px]"
+                    />
 
-                  <label htmlFor="invite-role" className="sr-only">
-                    Role
-                  </label>
-                  <select
-                    id="invite-role"
-                    name="role"
-                    defaultValue="member"
-                    className="w-full rounded-xl bg-surface px-4 py-2.5 text-[14px] text-ink shadow-[var(--shadow-rest)] outline-none transition-all duration-200 focus:shadow-[0_0_0_2px_var(--color-accent)]"
-                  >
-                    <option value="member">Member - can use apps they are given</option>
-                    <option value="admin">Admin - can manage apps and invite</option>
-                  </select>
+                    <label htmlFor="invite-role" className="sr-only">
+                      Role
+                    </label>
+                    <select
+                      id="invite-role"
+                      name="role"
+                      defaultValue="member"
+                      className="field py-2.5 text-[13.5px]"
+                    >
+                      <option value="member">Member - can use apps they are given</option>
+                      <option value="admin">Admin - can manage apps and invite</option>
+                    </select>
 
-                  {state?.ok === false ? (
-                    <p role="alert" className="text-[13px] text-failed">
-                      {state.error}
-                    </p>
-                  ) : null}
+                    {state?.ok === false ? (
+                      <p role="alert" className="text-[12.5px] text-failed">
+                        {state.error}
+                      </p>
+                    ) : null}
 
-                  <div className="mt-1 flex justify-end gap-2">
+                    <div className="mt-1 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpen(false)}
+                        className="btn btn-ghost"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={pending}
+                        className="btn btn-primary"
+                      >
+                        {pending ? "Creating..." : "Create invite"}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
+                    Send this to {state?.ok === true ? state.data.email : "them"}. It
+                    works once, for that address only, and lapses in a week.
+                  </p>
+
+                  <div className="mt-5">
+                    <CopyableCommand command={inviteUrl} shell={false} />
+                  </div>
+
+                  <div className="mt-5 flex justify-end">
                     <button
                       type="button"
                       onClick={() => setOpen(false)}
-                      className="rounded-xl px-3.5 py-2 text-[14px] text-ink-muted transition-colors hover:text-ink"
+                      className="btn btn-primary"
                     >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={pending}
-                      className="rounded-xl bg-accent px-4 py-2 text-[14px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-60"
-                    >
-                      {pending ? "Creating..." : "Create invite"}
+                      Done
                     </button>
                   </div>
-                </form>
-              </>
-            ) : (
-              <>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-ink-muted">
-                  Send this to {state?.ok === true ? state.data.email : "them"}. It works
-                  once, for that address only, and lapses in a week.
-                </p>
-
-                <div className="mt-5">
-                  <CopyableCommand command={inviteUrl} shell={false} />
-                </div>
-
-                <div className="mt-5 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="rounded-xl bg-accent px-4 py-2 text-[14px] font-medium text-white transition-colors hover:bg-accent-hover"
-                  >
-                    Done
-                  </button>
-                </div>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        </Portal>
       ) : null}
     </>
   );

@@ -7,6 +7,7 @@ import { SidebarNav, type NavItem } from "./sidebar-nav";
 import { SpaceMenu } from "./space-menu";
 import { Wordmark } from "./wordmark";
 import type { Route } from "next";
+import { Portal } from "@/components/ui/portal";
 
 /**
  * The sidebar, folded into a sheet for narrow screens.
@@ -61,26 +62,28 @@ export function MobileNav({
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation"
-            onClick={() => setOpen(false)}
-            className="enter-fade absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-          />
+        <Portal>
+          <div className="fixed inset-0 z-50 md:hidden">
+            <button
+              type="button"
+              aria-label="Close navigation"
+              onClick={() => setOpen(false)}
+              className="enter-fade absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+            />
 
-          <div className="enter-right absolute inset-y-0 left-0 flex w-[264px] flex-col border-r border-line bg-panel">
-            <div className="flex h-14 items-center border-b border-line px-4">
-              <Wordmark href={`/${spaceSlug}` as Route} />
-            </div>
-            <div className="p-2.5">
-              <SpaceMenu spaces={spaces} currentSlug={spaceSlug} />
-            </div>
-            <div className="flex-1 overflow-y-auto px-2.5 pb-4">
-              <SidebarNav items={items} />
+            <div className="enter-right absolute inset-y-0 left-0 flex w-[264px] flex-col border-r border-line bg-panel">
+              <div className="flex h-14 items-center border-b border-line px-4">
+                <Wordmark href={`/${spaceSlug}` as Route} />
+              </div>
+              <div className="p-2.5">
+                <SpaceMenu spaces={spaces} currentSlug={spaceSlug} />
+              </div>
+              <div className="flex-1 overflow-y-auto px-2.5 pb-4">
+                <SidebarNav items={items} />
+              </div>
             </div>
           </div>
-        </div>
+        </Portal>
       ) : null}
     </>
   );

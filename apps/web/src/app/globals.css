@@ -11,6 +11,11 @@
  * Colour discipline: the chrome is monochrome and spends its one accent on
  * the active thing and the primary action. Every app carries its own hue
  * (lib/app-color), and those are the only other colours on screen.
+ *
+ * The ground is not flat. An aurora drifts behind the content, a constellation
+ * moves with the pointer, and a film of grain sits over everything, so the
+ * near-black reads as a lit room rather than a switched-off screen. All three
+ * are decoration: every one of them can be removed and the product is intact.
  */
 @theme {
   /* Light: the same architecture, rendered on paper. */
@@ -44,13 +49,22 @@
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
-  /* Two curves only: one for things settling, one for things reacting. */
+  /*
+   * Three curves. Settle places a thing that has arrived, snap confirms a
+   * touch, and spring is for the one object the pointer is pushing around -
+   * it overshoots, so the interface feels held rather than switched.
+   */
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-snap: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
   --shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
   --shadow-panel: 0 30px 70px -30px rgb(12 14 18 / 0.4), 0 0 0 1px rgb(12 14 18 / 0.1);
+
+  /* How hard the atmosphere is turned up. Light gets a whisper of it. */
+  --aurora-strength: 0.5;
+  --grain-strength: 0.02;
 }
 
 /*
@@ -84,6 +98,34 @@
   --shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
   --shadow-float: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
   --shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
+
+  --aurora-strength: 1;
+  --grain-strength: 0.035;
+}
+
+/*
+ * A real spring, where the browser has one. linear() is a progressive
+ * enhancement: where it is not understood the declaration is dropped and the
+ * bezier above it stands, which is why both are written.
+ */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: linear(
+    0,
+    0.006,
+    0.025 2.8%,
+    0.101 6.1%,
+    0.539 18.9%,
+    0.721 25.3%,
+    0.849 31.5%,
+    0.937 38.1%,
+    0.968 41.8%,
+    0.991 45.7%,
+    1.006 50.1%,
+    1.015 55%,
+    1.017 63.9%,
+    1.001
+  );
 }
 
 html {
@@ -101,6 +143,62 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   letter-spacing: -0.011em;
+}
+
+/*
+ * The aurora. Two wide, very low-opacity washes of the accent that drift on a
+ * minute-long cycle, so the ground is never quite the same colour twice. It is
+ * far below the content and blurred past any edge, so nothing on top of it
+ * has to fight for contrast.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -25%;
+  z-index: -20;
+  pointer-events: none;
+  opacity: var(--aurora-strength);
+  background:
+    radial-gradient(
+      38% 34% at 22% 18%,
+      color-mix(in oklab, var(--color-accent) 22%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      32% 30% at 82% 72%,
+      color-mix(in oklab, var(--color-accent) 14%, transparent),
+      transparent 70%
+    );
+  filter: blur(40px);
+  animation: aurora 48s ease-in-out infinite alternate;
+}
+
+/*
+ * Grain. A film over the whole page at two to three per cent, which is enough
+ * to stop a large flat panel banding and to give near-black a tooth. It sits
+ * above the content and takes no pointer events, so it changes nothing but the
+ * texture.
+ */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: var(--grain-strength);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, -2%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(-2%, 3%, 0) scale(1.03);
+  }
 }
 
 /* Keyboard users get a crisp square ring; pointer users get nothing. */
@@ -130,9 +228,10 @@ select:focus-visible {
 }
 
 /*
- * Motion. Two jobs only: place things when they arrive, and confirm a touch.
- * Everything below rests fully visible, so switching all of it off changes
- * nothing about what can be read.
+ * Motion. Three jobs: place things when they arrive, confirm a touch, and show
+ * the one thing that is genuinely still happening. Everything below rests
+ * fully visible, so switching all of it off changes nothing about what can be
+ * read.
  */
 @keyframes enter-up {
   from {
@@ -142,6 +241,24 @@ select:focus-visible {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/*
+ * The gallery's own entrance. A card resolves out of the ground rather than
+ * sliding in: it comes up, comes into focus, and settles - which is the whole
+ * reason a shelf of company software can feel like an object.
+ */
+@keyframes enter-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.985);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
   }
 }
 
@@ -176,12 +293,49 @@ select:focus-visible {
   }
 }
 
+@keyframes enter-pop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @keyframes sheen {
   from {
     transform: translateX(-120%);
   }
   to {
     transform: translateX(220%);
+  }
+}
+
+/*
+ * The route bar's crawl. It eases out hard so it covers most of the width
+ * almost at once and then barely moves, which is honest about a wait whose
+ * length nothing on this side can know.
+ */
+/* A stroke drawing itself. Used once, on the tick that ends onboarding. */
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.draw {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: draw 0.5s var(--ease-settle) 0.14s forwards;
+}
+
+@keyframes crawl {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 92%;
   }
 }
 
@@ -200,6 +354,9 @@ select:focus-visible {
 .enter-up {
   animation: enter-up 0.46s var(--ease-settle) both;
 }
+.enter-rise {
+  animation: enter-rise 0.55s var(--ease-settle) both;
+}
 .enter-fade {
   animation: enter-fade 0.3s var(--ease-settle) both;
 }
@@ -209,11 +366,39 @@ select:focus-visible {
 .enter-right {
   animation: enter-right 0.34s var(--ease-settle) both;
 }
+.enter-pop {
+  animation: enter-pop 0.26s var(--ease-spring) both;
+}
 .pulse-once {
   animation: pulse-ring 0.6s var(--ease-settle);
 }
 
-/* A deploying thing breathes, so state reads before the label does. */
+/*
+ * A deploying thing sends out a ring, the way a radar sweep does. It reads as
+ * work still going out rather than as a light someone left blinking, and it is
+ * the only looping motion allowed on top of the content.
+ */
+@keyframes ping-out {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+.ping::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: ping-out 1.9s var(--ease-settle) infinite;
+}
+
+/* The older, quieter version: used where a ring would not fit. */
 @keyframes breathe {
   0%,
   100% {
@@ -247,6 +432,74 @@ select:focus-visible {
 }
 
 /*
+ * The pointer-lit border.
+ *
+ * A one-pixel ring painted with a radial gradient centred on the cursor, so
+ * the edge of a card brightens only where the hand is. The ring is a padding
+ * box masked out of itself - the only way to gradient a border without giving
+ * up the element's own background.
+ *
+ * --mx and --my are written straight onto the element by a pointermove
+ * handler, never through React state: this runs on every frame of every hover
+ * and must not re-render anything.
+ */
+.lit-edge {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease-settle);
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgb(var(--glow) / 0.85),
+    transparent 60%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* The wash under the cursor, in the app's own hue. */
+.lit-wash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease-settle);
+  background: radial-gradient(
+    200px circle at var(--mx, 50%) var(--my, 50%),
+    rgb(var(--glow) / 0.16),
+    transparent 62%
+  );
+}
+
+.group[data-selected] .lit-edge,
+.group[data-selected] .lit-wash {
+  opacity: 1;
+}
+
+/*
+ * Gated exactly the way Tailwind gates its own hover utilities. Without the
+ * query a tap on a touch screen lights the edge and leaves it lit, while every
+ * other part of the same hover state correctly does nothing.
+ */
+@media (hover: hover) {
+  .group:hover .lit-edge,
+  .group:hover .lit-wash {
+    opacity: 1;
+  }
+}
+
+/*
  * An app's icon carries a light and a dark rendering of its own hue. The theme
  * decides here rather than through a utility variant: an arbitrary background
  * and its dark counterpart land at equal specificity, and the wrong one wins
@@ -261,6 +514,127 @@ select:focus-visible {
   background: var(--bg-dark);
   color: var(--fg-dark);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.09);
+}
+
+@layer components {
+  /*
+   * Controls.
+   *
+   * Written once here rather than assembled from utilities at every call site:
+   * a product with four hand-rolled versions of "the secondary button" is how a
+   * design system dies, and the difference is visible long before it is
+   * explainable.
+   */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-edge);
+    border: 1px solid transparent;
+    padding: 0.5rem 0.875rem;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition:
+      transform 0.2s var(--ease-spring),
+      background-color 0.15s linear,
+      border-color 0.15s linear,
+      color 0.15s linear,
+      box-shadow 0.25s var(--ease-settle);
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+    transition-duration: 0.07s;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .btn-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+    box-shadow: 0 6px 20px -10px color-mix(in oklab, var(--color-accent) 85%, transparent);
+  }
+  @media (hover: hover) {
+    .btn-primary:hover:not(:disabled) {
+      background: var(--color-accent-hover);
+      box-shadow: 0 10px 26px -10px
+        color-mix(in oklab, var(--color-accent) 95%, transparent);
+    }
+  }
+
+  .btn-secondary {
+    background: var(--color-surface);
+    border-color: var(--color-line);
+    color: var(--color-ink);
+  }
+  @media (hover: hover) {
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--color-line-strong);
+      background: color-mix(in oklab, var(--color-surface) 92%, var(--color-ink));
+    }
+  }
+
+  .btn-ghost {
+    color: var(--color-ink-muted);
+  }
+  @media (hover: hover) {
+    .btn-ghost:hover:not(:disabled) {
+      background: var(--color-sunken);
+      color: var(--color-ink);
+    }
+  }
+
+  .btn-danger {
+    background: var(--color-failed);
+    color: #fff;
+  }
+  @media (hover: hover) {
+    .btn-danger:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+  }
+
+  .btn-lg {
+    padding: 0.65rem 1.15rem;
+    font-size: 14px;
+  }
+
+  /* One field, everywhere. The focus ring is the accent doing its second job. */
+  .field {
+    width: 100%;
+    min-width: 0;
+    border-radius: var(--radius-edge);
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    padding: 0.5rem 0.75rem;
+    font-size: 13.5px;
+    color: var(--color-ink);
+    transition:
+      border-color 0.15s linear,
+      box-shadow 0.2s var(--ease-settle);
+  }
+  .field::placeholder {
+    color: var(--color-ink-subtle);
+  }
+  .field:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 16%, transparent);
+  }
+  .field-danger:focus {
+    border-color: var(--color-failed);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-failed) 16%, transparent);
+  }
+
+  /* A drawn cell: the shape everything on a page is made of. */
+  .panel {
+    border-radius: var(--radius-edge);
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+  }
 }
 
 /* Thin scrollbars, so a scrolling panel does not grow a grey slab. */

@@ -5,14 +5,20 @@ import { useEffect, useRef } from "react";
 /**
  * The quiet motion behind the product.
  *
- * A slow drift of points with hairlines between near neighbours: enough to
- * give the ground depth and suggest a system doing something, never enough to
- * pull the eye off an app card. Canvas rather than DOM nodes, so it costs one
- * composited layer instead of hundreds of elements the browser has to lay out.
+ * A slow drift of points with hairlines between near neighbours, laid out in
+ * depth: a far point is small, dim and barely moves, a near one is brighter
+ * and travels. That is what stops it reading as a flat screensaver.
  *
- * It stops when nobody can see it (hidden tab), when the window is small
- * enough that it would only be noise, and entirely when the viewer has asked
- * for less motion. It is decoration: the page is complete without it.
+ * It answers the pointer. Points inside its reach ease away from it and the
+ * links around it brighten, so the ground acknowledges the hand without ever
+ * chasing it - the displacement is small and it relaxes back the moment the
+ * pointer leaves. The field also drifts against the scroll, at a fraction of a
+ * pixel per pixel, which is the cheapest depth cue there is.
+ *
+ * Canvas rather than DOM nodes, so it costs one composited layer instead of
+ * hundreds of elements the browser has to lay out. It stops when nobody can
+ * see it (hidden tab) and never starts when the viewer has asked for less
+ * motion. It is decoration: the page is complete without it.
  */
 export function AmbientField() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -32,17 +38,38 @@ export function AmbientField() {
     let frame = 0;
     let running = true;
 
-    // Density scales with area rather than being fixed, so a wide monitor is
-    // not sparse and a laptop is not soup.
-    type Point = { x: number; y: number; vx: number; vy: number; r: number };
+    /**
+     * `z` is depth, 0 far to 1 near, and it drives size, brightness, speed and
+     * how much of the parallax and the pointer a point feels. One number, four
+     * jobs: that is what makes the layers hold together.
+     */
+    type Point = {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      z: number;
+      /** Current offset away from the pointer, eased rather than jumped. */
+      ox: number;
+      oy: number;
+    };
     let points: Point[] = [];
 
-    const readInk = () =>
+    // Pointer and scroll are both read as targets and chased, so a flicked
+    // mouse or a thrown scroll arrives as a glide rather than a jump.
+    const pointer = { x: -1e4, y: -1e4, tx: -1e4, ty: -1e4, active: false };
+    let parallax = 0;
+    let parallaxTarget = 0;
+
+    const REACH = 150;
+    const POINTER_REACH = 190;
+
+    const readAccent = () =>
       getComputedStyle(document.documentElement)
         .getPropertyValue("--color-accent")
         .trim() || "#5b85ff";
 
-    let accent = readInk();
+    let accent = readAccent();
     const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 
     const build = () => {
@@ -53,15 +80,22 @@ export function AmbientField() {
       canvas.height = Math.floor(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+      // Density scales with area rather than being fixed, so a wide monitor is
+      // not sparse and a laptop is not soup.
       const target = Math.min(130, Math.round((width * height) / 13000));
-      points = Array.from({ length: target }, () => ({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.17,
-        vy: (Math.random() - 0.5) * 0.17,
-        r: Math.random() * 1.4 + 0.6,
-      }));
-      accent = readInk();
+      points = Array.from({ length: target }, () => {
+        const z = Math.random();
+        return {
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * (0.06 + z * 0.22),
+          vy: (Math.random() - 0.5) * (0.06 + z * 0.22),
+          z,
+          ox: 0,
+          oy: 0,
+        };
+      });
+      accent = readAccent();
     };
 
     const draw = () => {
@@ -72,7 +106,10 @@ export function AmbientField() {
       const dark = isDark();
       const dotAlpha = dark ? 0.85 : 0.5;
       const lineAlpha = dark ? 0.3 : 0.16;
-      const reach = 150;
+
+      pointer.x += (pointer.tx - pointer.x) * 0.12;
+      pointer.y += (pointer.ty - pointer.y) * 0.12;
+      parallax += (parallaxTarget - parallax) * 0.08;
 
       for (const p of points) {
         p.x += p.vx;
@@ -84,32 +121,78 @@ export function AmbientField() {
         if (p.x > width + 10) p.x = -10;
         if (p.y < -10) p.y = height + 10;
         if (p.y > height + 10) p.y = -10;
+
+        // Ease toward the displacement the pointer is asking for, and toward
+        // zero when it is asking for nothing. Same line does both.
+        let wantX = 0;
+        let wantY = 0;
+        if (pointer.active) {
+          const dx = p.x + p.ox - pointer.x;
+          const dy = p.y + p.oy - pointer.y;
+          const distance = Math.hypot(dx, dy);
+          if (distance < POINTER_REACH && distance > 0.01) {
+            const push = (1 - distance / POINTER_REACH) ** 2 * 26 * (0.4 + p.z);
+            wantX = (dx / distance) * push;
+            wantY = (dy / distance) * push;
+          }
+        }
+        p.ox += (wantX - p.ox) * 0.08;
+        p.oy += (wantY - p.oy) * 0.08;
       }
 
+      // Drawn positions, computed once: depth parallax, pointer displacement
+      // and the scroll offset all land here rather than in the physics above.
+      const px = points.map((p) => p.x + p.ox);
+      const py = points.map((p) => p.y + p.oy - parallax * (0.2 + p.z * 0.8));
+
       context.strokeStyle = accent;
-      context.lineWidth = 0.6;
       for (let i = 0; i < points.length; i += 1) {
         const a = points[i] as Point;
+        const ax = px[i] as number;
+        const ay = py[i] as number;
+
         for (let j = i + 1; j < points.length; j += 1) {
           const b = points[j] as Point;
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
-          const distance = Math.hypot(dx, dy);
-          if (distance > reach) continue;
+          const bx = px[j] as number;
+          const by = py[j] as number;
 
-          context.globalAlpha = (1 - distance / reach) * lineAlpha;
+          const dx = ax - bx;
+          const dy = ay - by;
+          const distance = Math.hypot(dx, dy);
+          if (distance > REACH) continue;
+
+          const depth = (a.z + b.z) / 2;
+
+          // A link the pointer is standing on top of is brighter and heavier,
+          // so the hand appears to be lighting the mesh rather than moving it.
+          const mx = (ax + bx) / 2;
+          const my = (ay + by) / 2;
+          const near = pointer.active
+            ? Math.max(0, 1 - Math.hypot(mx - pointer.x, my - pointer.y) / POINTER_REACH)
+            : 0;
+
+          context.globalAlpha =
+            (1 - distance / REACH) * lineAlpha * (0.45 + depth * 0.55) * (1 + near * 2.2);
+          context.lineWidth = 0.5 + near * 0.55;
           context.beginPath();
-          context.moveTo(a.x, a.y);
-          context.lineTo(b.x, b.y);
+          context.moveTo(ax, ay);
+          context.lineTo(bx, by);
           context.stroke();
         }
       }
 
       context.fillStyle = accent;
-      for (const p of points) {
-        context.globalAlpha = dotAlpha;
+      for (let i = 0; i < points.length; i += 1) {
+        const p = points[i] as Point;
+        const x = px[i] as number;
+        const y = py[i] as number;
+        const near = pointer.active
+          ? Math.max(0, 1 - Math.hypot(x - pointer.x, y - pointer.y) / POINTER_REACH)
+          : 0;
+
+        context.globalAlpha = dotAlpha * (0.3 + p.z * 0.7) * (1 + near * 0.9);
         context.beginPath();
-        context.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        context.arc(x, y, 0.5 + p.z * 1.5 + near * 0.6, 0, Math.PI * 2);
         context.fill();
       }
 
@@ -128,17 +211,34 @@ export function AmbientField() {
     };
 
     const onVisibility = () => (document.hidden ? stop() : start());
-    const onResize = () => {
-      build();
+    const onResize = () => build();
+    const onScroll = () => {
+      parallaxTarget = window.scrollY * 0.06;
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      pointer.tx = event.clientX;
+      pointer.ty = event.clientY;
+      if (!pointer.active) {
+        // First sighting: place it rather than glide in from the corner.
+        pointer.x = event.clientX;
+        pointer.y = event.clientY;
+        pointer.active = true;
+      }
+    };
+    const onPointerLeave = () => {
+      pointer.active = false;
     };
     const onScheme = () => {
-      accent = readInk();
+      accent = readAccent();
     };
 
     build();
     frame = requestAnimationFrame(draw);
 
     window.addEventListener("resize", onResize, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    document.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("visibilitychange", onVisibility);
 
     // The accent differs per theme, so the field has to be told when it moves.
@@ -151,6 +251,9 @@ export function AmbientField() {
     return () => {
       stop();
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("visibilitychange", onVisibility);
       themeWatcher.disconnect();
     };

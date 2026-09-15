@@ -48,37 +48,40 @@ export function AccessPanel({
   };
 
   return (
-    <section className="mt-10">
+    <section className="enter-up mt-10">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-[15px] font-semibold text-ink">Access</h2>
-        <p className="text-[13px] text-ink-muted">
+        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Access</h2>
+        <p className="text-[12px] text-ink-subtle">
           {hasEveryone ? "Open to the whole space" : "Only the people listed"}
         </p>
       </div>
 
-      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-[var(--radius-card)] bg-surface shadow-[var(--shadow-rest)]">
+      <ul className="mt-3 divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
         {entries.length === 0 ? (
-          <li className="px-5 py-4 text-[14px] text-ink-muted">
+          <li className="px-4 py-3.5 text-[13px] text-ink-muted">
             Nobody else can open this yet.
           </li>
         ) : (
           entries.map((entry) => (
-            <li key={entry.id} className="flex items-center gap-3 px-5 py-3.5">
+            <li
+              key={entry.id}
+              className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-sunken/40"
+            >
               <span
                 aria-hidden="true"
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-edge)] border text-[12px] font-semibold ${
                   entry.kind === "everyone"
-                    ? "bg-accent-soft text-accent"
-                    : "bg-canvas text-ink-muted"
+                    ? "border-accent/35 bg-accent-quiet text-accent"
+                    : "border-line bg-sunken text-ink-muted"
                 }`}
               >
                 {entry.kind === "everyone" ? "All" : entry.label.charAt(0).toUpperCase()}
               </span>
 
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] text-ink">{entry.label}</span>
+                <span className="block truncate text-[13px] text-ink">{entry.label}</span>
                 {entry.detail !== null ? (
-                  <span className="block truncate text-[12px] text-ink-subtle">
+                  <span className="block truncate text-[11.5px] text-ink-subtle">
                     {entry.detail}
                   </span>
                 ) : null}
@@ -91,12 +94,12 @@ export function AccessPanel({
                   onClick={() =>
                     run(entry.id, () => revokeAccess(spaceSlug, appSlug, entry.id))
                   }
-                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-[13px] text-ink-muted transition-colors hover:bg-canvas hover:text-failed disabled:opacity-50"
+                  className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
                 >
                   {busy === entry.id ? "Removing..." : "Remove"}
                 </button>
               ) : (
-                <span className="shrink-0 px-2.5 text-[12px] text-ink-subtle">
+                <span className="shrink-0 px-2.5 text-[11.5px] text-ink-subtle">
                   Always
                 </span>
               )}
@@ -113,7 +116,7 @@ export function AccessPanel({
             onClick={() =>
               run("everyone", () => grantAccess(spaceSlug, appSlug, { kind: "everyone" }))
             }
-            className="rounded-xl border border-border bg-surface px-3.5 py-2 text-[13px] font-medium text-ink transition-colors hover:border-border-strong hover:bg-canvas disabled:opacity-50"
+            className="btn btn-secondary"
           >
             {busy === "everyone" ? "Adding..." : `Give everyone at ${spaceName} access`}
           </button>
@@ -133,7 +136,7 @@ export function AccessPanel({
               )
             }
             title={member.email}
-            className="rounded-xl border border-dashed border-border-strong px-3.5 py-2 text-[13px] text-ink-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+            className="btn border-dashed border-line-strong text-ink-muted hover:border-accent hover:bg-accent-quiet hover:text-accent"
           >
             {busy === member.userId ? "Adding..." : `+ ${member.name}`}
           </button>
@@ -141,7 +144,7 @@ export function AccessPanel({
       </div>
 
       {error !== null ? (
-        <p role="alert" className="mt-3 text-[13px] text-failed">
+        <p role="alert" className="enter-fade mt-3 text-[12.5px] text-failed">
           {error}
         </p>
       ) : null}

@@ -43,13 +43,15 @@ export function CopyableCommand({
   const body = (
     <>
       {shell ? <span className="text-ink-subtle select-none">$</span> : null}
-      <code className="min-w-0 truncate font-mono text-[13px] text-ink">{command}</code>
+      <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">
+        {command}
+      </code>
     </>
   );
 
   if (!canCopy) {
     return (
-      <span className="flex max-w-full items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5">
+      <span className="flex max-w-full items-center gap-2 rounded-[var(--radius-edge)] border border-line bg-sunken/60 px-3.5 py-2.5">
         {body}
       </span>
     );
@@ -60,10 +62,12 @@ export function CopyableCommand({
       type="button"
       onClick={copy}
       aria-label={copied ? "Copied" : `Copy "${command}"`}
-      className="group flex w-full max-w-full items-center gap-2 rounded-xl border border-border bg-canvas px-4 py-2.5 text-left transition-colors hover:border-border-strong hover:bg-surface"
+      className="group flex w-full max-w-full items-center gap-2 rounded-[var(--radius-edge)] border border-line bg-sunken/60 px-3.5 py-2.5 text-left transition-[border-color,background-color] duration-150 hover:border-line-strong hover:bg-sunken"
     >
       {body}
-      <span className="ml-1 w-[52px] text-left text-[11px] font-medium text-ink-subtle transition-colors group-hover:text-ink-muted">
+      {/* Fixed width and right-aligned, so "Copy" becoming "Copied" does not
+          shove the command sideways. */}
+      <span className="w-[46px] shrink-0 text-right text-[11px] font-medium text-ink-subtle transition-colors duration-150 group-hover:text-ink-muted">
         {copied ? "Copied" : "Copy"}
       </span>
     </button>

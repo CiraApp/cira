@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { fetchBuildLogs, type LogsResult } from "@/lib/log-actions";
+import { StatusDot } from "./status-dot";
 
 export interface DeployRow {
   id: string;
@@ -9,15 +10,6 @@ export interface DeployRow {
   createdAt: string;
   relative: string;
 }
-
-const DOT: Record<string, string> = {
-  live: "bg-live",
-  failed: "bg-failed",
-  removed: "bg-ink-subtle",
-  queued: "bg-pending animate-breathe",
-  building: "bg-pending animate-breathe",
-  deploying: "bg-pending animate-breathe",
-};
 
 const LABEL: Record<string, string> = {
   live: "Deployed",
@@ -45,7 +37,7 @@ export function DeploymentHistory({
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [logs, setLogs] = useState<Record<string, LogsResult>>({});
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const logRef = useRef<HTMLPreElement>(null);
 
   // A failed build is read from the bottom: the error is the last thing that
@@ -73,10 +65,10 @@ export function DeploymentHistory({
   if (deploys.length === 0) return null;
 
   return (
-    <section className="mt-10">
-      <h2 className="text-[15px] font-semibold text-ink">Deploys</h2>
+    <section className="enter-up mt-10">
+      <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Deploys</h2>
 
-      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-[var(--radius-card)] bg-surface shadow-[var(--shadow-rest)]">
+      <ul className="mt-3 divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
         {deploys.map((d) => {
           const isOpen = openId === d.id;
           const result = logs[d.id];
@@ -87,39 +79,40 @@ export function DeploymentHistory({
                 type="button"
                 onClick={() => toggle(d.id)}
                 aria-expanded={isOpen}
-                className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-canvas"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-sunken/50"
               >
-                <span
+                <StatusDot status={d.status} label={LABEL[d.status] ?? d.status} />
+                <span className="flex-1" />
+                <span className="tabular text-[12px] text-ink-subtle">{d.relative}</span>
+                <svg
+                  viewBox="0 0 12 12"
                   aria-hidden="true"
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[d.status] ?? "bg-ink-subtle"}`}
-                />
-                <span className="flex-1 text-[14px] text-ink">
-                  {LABEL[d.status] ?? d.status}
-                </span>
-                <span className="text-[13px] text-ink-subtle">{d.relative}</span>
-                <span
-                  aria-hidden="true"
-                  className={`text-[11px] text-ink-subtle transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                  className={`h-3 w-3 shrink-0 text-ink-subtle transition-transform duration-300 ease-[var(--ease-spring)] ${
+                    isOpen ? "rotate-90" : ""
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  &#9656;
-                </span>
+                  <path d="m4.5 2.5 3.5 3.5-3.5 3.5" />
+                </svg>
               </button>
 
               {isOpen ? (
-                <div className="animate-fade-in border-t border-border bg-canvas px-5 py-4">
-                  {result === undefined && pending ? (
-                    <p className="text-[13px] text-ink-muted">Fetching logs...</p>
-                  ) : result === undefined ? (
-                    <p className="text-[13px] text-ink-muted">Fetching logs...</p>
+                <div className="enter-fade border-t border-line bg-sunken/60 px-4 py-3.5">
+                  {result === undefined ? (
+                    <p className="text-[12.5px] text-ink-muted">Fetching logs...</p>
                   ) : result.ok ? (
                     <pre
                       ref={logRef}
-                      className="max-h-80 overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-ink-muted"
+                      className="max-h-80 overflow-auto font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-muted"
                     >
                       {result.lines.map((l) => l.message).join("\n")}
                     </pre>
                   ) : (
-                    <p className="text-[13px] text-ink-muted">{result.error}</p>
+                    <p className="text-[12.5px] text-ink-muted">{result.error}</p>
                   )}
                 </div>
               ) : null}

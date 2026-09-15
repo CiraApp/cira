@@ -49,7 +49,7 @@ export default async function MembersPage({
         }
         actions={canInvite ? <InviteDialog spaceSlug={spaceSlug} /> : null}
       >
-        <ul className="enter-up divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
+        <ul className="enter-up max-w-[760px] divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
           {people.map((person) => (
             <li
               key={person.user.id}
