@@ -5,9 +5,9 @@
   "license": "UNLICENSED",
   "type": "module",
   "bin": {
-    "cira": "./bin/cira.js"
+    "cira": "bin/cira.js"
   },
-  "main": "./bin/cira.js",
+  "main": "bin/cira.js",
   "files": [
     "bin",
     "SKILL.md"
