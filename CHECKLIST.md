@@ -73,7 +73,15 @@ Keep `prod` green.
 
 ## Decisions made
 
-- **Host** - Vercel, on the personal Hobby account for now. No paid plan is
+- **Host** - Vercel, in the "aumit shiv" Pro team (slug `wave-5c5d`), which
+  also holds wave. Pro allows commercial use, so the Hobby licensing limit
+  below no longer applies while Cira lives here.
+- **Deploys** - driven from GitHub Actions, gated on the verify job. Vercel's
+  Git integration is deliberately NOT connected: it builds on every push
+  regardless of CI, so a red pipeline would still ship. `VERCEL_TOKEN` is a
+  repository secret and expires 2026-12-14; org and project ids are not
+  secrets and live in the workflow.
+- **Superseded** - the original plan was the personal Hobby account. No paid plan is
   needed for any phase below. Vercel Authentication can protect production
   domains for free on Hobby as of 2026-09-09 (it previously needed a
   $150/month add-on), so the access gateway works without paying.
