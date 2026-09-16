@@ -9,27 +9,36 @@ import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const renameInput = z.object({
+const detailsInput = z.object({
   name: z
     .string()
     .trim()
     .min(2, "Give the app a name.")
     .max(60, "That name is too long."),
+  description: z.string().trim().max(140, "That description is too long.").nullable(),
 });
 
 /**
- * Rename an app.
+ * Edit what an app says it is.
  *
- * The slug moves with the name, because an app called "Payroll" living at
- * /revenue-dashboard is its own small lie. The cost is that old links break,
- * which is why the UI says so before anyone confirms.
+ * Name and description together, because they are one thought and a person
+ * correcting a generated description usually wants to adjust the name in the
+ * same breath. The slug moves with the name, because an app called "Payroll"
+ * living at /revenue-dashboard is its own small lie. The cost is that old
+ * links break, which is why the UI says so before anyone confirms.
+ *
+ * An emptied description is stored as null rather than "", so it reads as
+ * absent everywhere and the next deploy is free to fill it in again.
  */
-export async function renameApp(
+export async function updateAppDetails(
   spaceSlug: string,
   appSlug: string,
   formData: FormData,
 ): Promise<ActionResult<{ appSlug: string }>> {
-  const parsed = renameInput.safeParse({ name: formData.get("name") });
+  const parsed = detailsInput.safeParse({
+    name: formData.get("name"),
+    description: formData.get("description"),
+  });
   if (!parsed.success) {
     return {
       ok: false,
@@ -63,7 +72,15 @@ export async function renameApp(
 
     await database
       .update(apps)
-      .set({ name: parsed.data.name, slug: base, updatedAt: new Date() })
+      .set({
+        name: parsed.data.name,
+        slug: base,
+        description:
+          parsed.data.description === null || parsed.data.description === ""
+            ? null
+            : parsed.data.description,
+        updatedAt: new Date(),
+      })
       .where(eq(apps.id, ctx.app.id));
 
     return { ok: true, data: { appSlug: base } };

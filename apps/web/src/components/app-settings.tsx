@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteApp, renameApp } from "@/lib/app-settings-actions";
+import { deleteApp, updateAppDetails } from "@/lib/app-settings-actions";
 
 /**
  * Settings sit behind a disclosure because they are rare and one of them is
@@ -12,23 +12,34 @@ export function AppSettings({
   spaceSlug,
   appSlug,
   appName,
+  appDescription,
 }: {
   spaceSlug: string;
   appSlug: string;
   appName: string;
+  appDescription: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirmName, setConfirmName] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  const rename = (formData: FormData) => {
+  const save = (formData: FormData) => {
     setError(null);
+    setSaved(false);
     startTransition(async () => {
-      const result = await renameApp(spaceSlug, appSlug, formData);
-      if (result.ok) router.replace(`/${spaceSlug}/${result.data.appSlug}`);
-      else setError(result.error);
+      const result = await updateAppDetails(spaceSlug, appSlug, formData);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      // The slug may have moved under us, so this replaces the address even
+      // when it has not: one path out is simpler than two.
+      setSaved(true);
+      router.replace(`/${spaceSlug}/${result.data.appSlug}`);
+      router.refresh();
     });
   };
 
@@ -60,7 +71,7 @@ export function AppSettings({
       </summary>
 
       <div className="enter-up mt-4 flex flex-col gap-6 rounded-[var(--radius-edge)] border border-line bg-surface p-5">
-        <form action={rename} className="flex flex-col gap-2">
+        <form action={save} className="flex flex-col gap-2">
           <label htmlFor="app-name" className="text-[12.5px] font-medium text-ink">
             Name
           </label>
@@ -68,16 +79,40 @@ export function AppSettings({
             Renaming changes this app&rsquo;s address, so existing links to it will stop
             working.
           </p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            <input
-              id="app-name"
-              name="name"
-              defaultValue={appName}
-              className="field flex-1"
-            />
+          <input
+            id="app-name"
+            name="name"
+            defaultValue={appName}
+            className="field mt-1"
+          />
+
+          <label
+            htmlFor="app-description"
+            className="mt-4 text-[12.5px] font-medium text-ink"
+          >
+            Description
+          </label>
+          <p className="text-[11.5px] leading-relaxed text-ink-subtle">
+            One line, shown in the gallery. Cira writes this from the code the first time
+            the app is deployed; edit it and it stays edited.
+          </p>
+          <textarea
+            id="app-description"
+            name="description"
+            rows={2}
+            maxLength={140}
+            defaultValue={appDescription ?? ""}
+            placeholder="What this app is for."
+            className="field mt-1 resize-none"
+          />
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <button type="submit" disabled={pending} className="btn btn-secondary">
-              Rename
+              {pending ? "Saving..." : "Save"}
             </button>
+            {saved && !pending ? (
+              <span className="enter-fade text-[11.5px] text-live">Saved</span>
+            ) : null}
           </div>
         </form>
 

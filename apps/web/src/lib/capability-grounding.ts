@@ -42,6 +42,14 @@ const candidate = z.object({
 });
 
 export const analysis = z.object({
+  /**
+   * What the app is, in one line, for the gallery and the app's own page.
+   *
+   * Asked for in the same call that finds the capabilities because the model
+   * has already read the repository by then: a second call to summarise what
+   * it just analysed would cost a second call and know strictly less.
+   */
+  summary: z.string(),
   capabilities: z.array(candidate),
 });
 
@@ -119,4 +127,5 @@ function readSchema(raw: string): Record<string, unknown> | null {
 }
 
 export type AnalysisResult =
-  { ok: true; capabilities: AnalyzedCapability[] } | { ok: false; error: string };
+  | { ok: true; summary: string; capabilities: AnalyzedCapability[] }
+  | { ok: false; error: string };

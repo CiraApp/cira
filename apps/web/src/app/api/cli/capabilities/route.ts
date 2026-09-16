@@ -120,6 +120,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: analysis.error }, { status: 502 });
   }
 
+  // Written once and then left alone. A description someone has edited is a
+  // human decision, and a later deploy re-running the analyzer is not a reason
+  // to overwrite it - which is also why this checks the column rather than
+  // tracking a flag nobody would remember to set.
+  if (
+    analysis.summary !== "" &&
+    (app.description === null || app.description.trim() === "")
+  ) {
+    await database
+      .update(apps)
+      .set({ description: analysis.summary, updatedAt: new Date() })
+      .where(eq(apps.id, app.id));
+  }
+
   const counts = await replaceCapabilities({
     appId: app.id,
     spaceId: app.spaceId,

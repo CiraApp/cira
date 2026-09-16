@@ -54,6 +54,12 @@ body fields. A zod schema beside the route is the best evidence there is; use it
 Describe each property. Mark a property required only when the route would fail
 without it.
 
+Summary: one sentence, at most 90 characters, saying what the app is for in the
+words a colleague would use - "Invoices, revenue and the monthly close." Not a
+list of its routes, not marketing, no trailing thoughts about the stack. Write
+it even when there are no capabilities worth exposing, because the app still
+appears in the gallery and still has to say what it is.
+
 Never invent a route. Every path you return must appear verbatim in the routes
 you were given, with the method you name listed for it. If an app has no
 capabilities worth exposing, return an empty list - that is a good answer.`;
@@ -64,7 +70,7 @@ export async function analyzeCapabilities(
 ): Promise<AnalysisResult> {
   // Nothing addressable means nothing to expose, and no reason to spend a call
   // finding that out.
-  if (summary.routes.length === 0) return { ok: true, capabilities: [] };
+  if (summary.routes.length === 0) return { ok: true, summary: "", capabilities: [] };
 
   if (process.env["ANTHROPIC_API_KEY"] === undefined) {
     return { ok: false, error: "Cira is not configured to analyze capabilities." };
@@ -96,7 +102,13 @@ export async function analyzeCapabilities(
     return { ok: false, error: "Capability analysis returned nothing usable." };
   }
 
-  return { ok: true, capabilities: keepGrounded(parsed.capabilities, summary) };
+  return {
+    ok: true,
+    // Trimmed and capped here rather than trusted: the length is a request to a
+    // model, and this column is rendered in a card that has one line for it.
+    summary: parsed.summary.trim().slice(0, 140),
+    capabilities: keepGrounded(parsed.capabilities, summary),
+  };
 }
 
 /** The repository, as the model reads it. */

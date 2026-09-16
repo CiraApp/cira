@@ -178,7 +178,12 @@ export default async function AppPage({
           ) : null}
 
           {manages ? (
-            <AppSettings spaceSlug={spaceSlug} appSlug={appSlug} appName={app.name} />
+            <AppSettings
+              spaceSlug={spaceSlug}
+              appSlug={appSlug}
+              appName={app.name}
+              appDescription={app.description}
+            />
           ) : null}
         </div>
       </AppShell>
