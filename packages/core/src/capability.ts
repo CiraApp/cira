@@ -62,6 +62,15 @@ export interface Capability {
   target: CapabilityTarget;
   risk: CapabilityRisk;
   enabled: boolean;
+  /**
+   * Whether the deployed app has answered for this.
+   *
+   * Separate from `enabled` because they say different things. `enabled` is
+   * the decision - policy, or a person's - and `verified` is whether the route
+   * is really there. Both must hold before an agent is offered anything, and
+   * the difference is what lets a page say "checking" rather than "off".
+   */
+  verified: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

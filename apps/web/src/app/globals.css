@@ -464,6 +464,37 @@ select:focus-visible {
   animation: ping-out 1.9s var(--ease-settle) infinite;
 }
 
+/*
+ * A live thing has a pulse.
+ *
+ * Not the ring above, which sweeps out and vanishes to say work is leaving -
+ * this stays close and never goes, the way something running does. Slower and
+ * smaller, so the two read as different states at a glance rather than as the
+ * same animation on a different colour.
+ *
+ * The dot itself holds steady. A dot that dims reads as a fault light, which
+ * is the opposite of what is being said.
+ */
+@keyframes live-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.alive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: live-pulse 2.4s var(--ease-settle) infinite;
+}
+
 /* The older, quieter version: used where a ring would not fit. */
 @keyframes breathe {
   0%,

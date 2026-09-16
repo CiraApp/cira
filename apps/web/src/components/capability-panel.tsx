@@ -10,7 +10,13 @@ import { setCapabilityEnabled } from "@/lib/capability-actions";
  *
  * Grouped by what the app would have to be trusted with rather than by name,
  * because that is the only question worth answering here: the enabled ones are
- * already answering agents, and everything else is waiting on a person.
+ * already answering agents, and everything else is waiting - on a person, or
+ * on the app itself.
+ *
+ * That second wait is worth showing rather than hiding. A capability is found
+ * by reading the code, which can be wrong, so nothing is offered to an agent
+ * until the running app has confirmed it serves the route. That check happens
+ * seconds after a deploy, and during those seconds "off" would be a lie.
  *
  * Nobody wrote any of this. It is the detected set, and the only control is a
  * switch - the spec is explicit that this should not become a moderation
@@ -25,9 +31,9 @@ export function CapabilityPanel({
 }) {
   if (capabilities.length === 0) return null;
 
-  const live = capabilities.filter((c) => c.enabled);
-  const review = capabilities.filter((c) => !c.enabled);
-  const off: typeof capabilities = [];
+  const checking = capabilities.filter((c) => !c.verified);
+  const live = capabilities.filter((c) => c.verified && c.enabled);
+  const review = capabilities.filter((c) => c.verified && !c.enabled);
 
   return (
     <section className="enter-up mt-10">
@@ -42,6 +48,13 @@ export function CapabilityPanel({
 
       <div className="mt-3 flex flex-col gap-4">
         <Group
+          title="Checking"
+          note="Asking the app whether it really serves these."
+          items={checking}
+          canManage={false}
+          busy
+        />
+        <Group
           title="Enabled"
           note="Agents can find and run these."
           items={live}
@@ -51,12 +64,6 @@ export function CapabilityPanel({
           title="Review"
           note="Registered, but off until someone turns them on."
           items={review}
-          canManage={canManage}
-        />
-        <Group
-          title="Disabled"
-          note="Cannot be undone once run, so these stay off."
-          items={off}
           canManage={canManage}
         />
       </div>
@@ -69,18 +76,29 @@ function Group({
   note,
   items,
   canManage,
+  busy = false,
 }: {
   title: string;
   note: string;
   items: Capability[];
   canManage: boolean;
+  /** Still being checked, so the group says so and offers no switch. */
+  busy?: boolean;
 }) {
   if (items.length === 0) return null;
 
   return (
     <div>
       <div className="flex items-baseline gap-2.5">
-        <p className="eyebrow">{title}</p>
+        <p className="eyebrow inline-flex items-center gap-1.5">
+          {busy ? (
+            <span
+              aria-hidden="true"
+              className="ping relative h-[5px] w-[5px] rounded-full bg-pending text-pending"
+            />
+          ) : null}
+          {title}
+        </p>
         <p className="text-[11px] text-ink-subtle">{note}</p>
       </div>
 

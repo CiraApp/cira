@@ -1,18 +1,15 @@
-const STATES: Record<string, { dot: string; label: string; pulse: boolean }> = {
-  live: { dot: "bg-live text-live", label: "Live", pulse: false },
-  deploying: { dot: "bg-pending text-pending", label: "Deploying", pulse: true },
-  building: { dot: "bg-pending text-pending", label: "Building", pulse: true },
-  queued: { dot: "bg-pending text-pending", label: "Queued", pulse: true },
-  failed: { dot: "bg-failed text-failed", label: "Failed", pulse: false },
-  removed: { dot: "bg-ink-subtle text-ink-subtle", label: "Removed", pulse: false },
-  draft: { dot: "bg-ink-subtle text-ink-subtle", label: "Draft", pulse: false },
-  "never-deployed": {
-    dot: "bg-ink-subtle text-ink-subtle",
-    label: "Not deployed",
-    pulse: false,
-  },
-  unreachable: { dot: "bg-pending text-pending", label: "Unreachable", pulse: false },
-};
+const STATES: Record<string, { dot: string; label: string; motion?: "ping" | "alive" }> =
+  {
+    live: { dot: "bg-live text-live", label: "Live", motion: "alive" },
+    deploying: { dot: "bg-pending text-pending", label: "Deploying", motion: "ping" },
+    building: { dot: "bg-pending text-pending", label: "Building", motion: "ping" },
+    queued: { dot: "bg-pending text-pending", label: "Queued", motion: "ping" },
+    failed: { dot: "bg-failed text-failed", label: "Failed" },
+    removed: { dot: "bg-ink-subtle text-ink-subtle", label: "Removed" },
+    draft: { dot: "bg-ink-subtle text-ink-subtle", label: "Draft" },
+    "never-deployed": { dot: "bg-ink-subtle text-ink-subtle", label: "Not deployed" },
+    unreachable: { dot: "bg-pending text-pending", label: "Running" },
+  };
 
 /**
  * State in form as well as words: colour and motion carry it at a glance, and
@@ -20,7 +17,8 @@ const STATES: Record<string, { dot: string; label: string; pulse: boolean }> = {
  *
  * A deploy in flight sends out a ring rather than blinking. A ring reads as
  * work going out; a blink reads as a fault light, which is the opposite of
- * what is happening.
+ * what is happening. A live app keeps a slower, closer pulse - it is not
+ * working, it is running, and those should not look the same.
  */
 export function StatusDot({
   status,
@@ -31,11 +29,7 @@ export function StatusDot({
   label?: string;
   compact?: boolean;
 }) {
-  const state = STATES[status] ?? {
-    dot: "bg-ink-subtle text-ink-subtle",
-    label: status,
-    pulse: false,
-  };
+  const state = STATES[status] ?? { dot: "bg-ink-subtle text-ink-subtle", label: status };
 
   return (
     <span
@@ -45,9 +39,7 @@ export function StatusDot({
     >
       <span
         aria-hidden="true"
-        className={`relative h-[5px] w-[5px] rounded-full ${state.dot} ${
-          state.pulse ? "ping" : ""
-        }`}
+        className={`relative h-[5px] w-[5px] rounded-full ${state.dot} ${state.motion ?? ""}`}
       />
       {label ?? state.label}
     </span>

@@ -28,8 +28,12 @@ interface StatusResponse {
 
 interface CapabilitiesResponse {
   detected: Array<{ name: string; description: string; risk: string }>;
-  enabled: number;
-  review: number;
+}
+
+interface VerifyResponse {
+  verified: number;
+  rejected: number;
+  inconclusive: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -233,8 +237,8 @@ export async function deploy(argv: string[] = []): Promise<number> {
       // route. That can only be asked now, which is why it is not part of the
       // analysis that ran while the build was going out.
       const found = await analysis;
-      await confirmCapabilities(started.appId);
-      await reportCapabilities(found);
+      const confirmed = await confirmCapabilities(started.appId);
+      reportCapabilities(found, confirmed);
       return 0;
     }
 
@@ -286,15 +290,23 @@ function readFlag(argv: string[], flag: string): string | null {
  * did not, and the app's page says plainly which capabilities have been
  * confirmed.
  */
-async function confirmCapabilities(appId: string): Promise<void> {
+async function confirmCapabilities(appId: string): Promise<VerifyResponse | null> {
   try {
-    await api("/api/cli/capabilities/verify", { method: "POST", body: { appId } });
+    return await api<VerifyResponse>("/api/cli/capabilities/verify", {
+      method: "POST",
+      body: { appId },
+    });
   } catch {
-    // Reported on the app's page rather than here.
+    // The app's page says which have been confirmed; a deploy that worked is
+    // not a failure because the check afterwards did not.
+    return null;
   }
 }
 
-async function reportCapabilities(result: CapabilitiesResponse | Error): Promise<void> {
+function reportCapabilities(
+  result: CapabilitiesResponse | Error,
+  confirmed: VerifyResponse | null,
+): void {
   if (result instanceof Error) {
     info("");
     info(dim(`  Capabilities were not analyzed: ${result.message}`));
@@ -317,11 +329,28 @@ async function reportCapabilities(result: CapabilitiesResponse | Error): Promise
   }
 
   info("");
-  const parts: string[] = [];
-  if (result.enabled > 0) parts.push(`${result.enabled} enabled`);
-  if (result.review > 0) parts.push(`${result.review} awaiting review`);
+
+  // What was found and what the app confirmed are different numbers, and
+  // saying only the first would claim more than is true. Reading the code can
+  // be wrong; the app is asked, and anything it will not answer for is dropped.
+  if (confirmed === null) {
+    info(dim("  Not confirmed yet. Open the app in Cira to see which are live."));
+    info("");
+    return;
+  }
+
+  if (confirmed.inconclusive) {
+    info(dim("  This app answers every address, so none could be confirmed."));
+    info("");
+    return;
+  }
+
+  const reads = result.detected.filter((c) => c.risk === "read").length;
+  const parts = [`${confirmed.verified} confirmed by the app`];
+  if (confirmed.rejected > 0) parts.push(`${confirmed.rejected} it does not serve`);
   info(`  ${parts.join(", ")}`);
-  if (result.review > 0) {
+
+  if (confirmed.verified > reads) {
     info(dim("  Anything that writes stays off until someone turns it on."));
   }
   info("");

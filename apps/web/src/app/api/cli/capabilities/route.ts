@@ -92,19 +92,22 @@ export async function POST(request: Request) {
       .where(eq(apps.id, app.id));
   }
 
-  const counts = await replaceCapabilities({
+  await replaceCapabilities({
     appId: app.id,
     spaceId: app.spaceId,
     detected: result.capabilities,
   });
 
+  // Deliberately no count of what is enabled. Nothing is, yet: these are
+  // registered unverified, and whether any of them can be used is settled by
+  // the app itself a moment later. Reporting the policy's answer here would
+  // have said "3 enabled" about three capabilities nobody could call.
   return NextResponse.json({
     detected: result.capabilities.map((c) => ({
       name: c.name,
       description: c.description,
       risk: c.risk,
     })),
-    ...counts,
     // Said plainly, because an analysis that only saw half a repository is
     // worth knowing about when the answer looks thin.
     read: source.included.length,

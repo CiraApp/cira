@@ -379,6 +379,7 @@ function toCapability(row: CapabilityRow): Capability {
     // the panel, the agent surface, invocation - gets the same answer from one
     // rule rather than each remembering to check.
     enabled: row.enabled && row.verifiedAt !== null,
+    verified: row.verifiedAt !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
