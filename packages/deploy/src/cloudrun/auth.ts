@@ -1,30 +1,65 @@
-import { createSign } from "node:crypto";
+import { ExternalAccountClient } from "google-auth-library";
+import { getVercelOidcToken } from "@vercel/oidc";
 
 /**
  * Talking to Google as Cira, and to a Cira app as Cira.
+ *
+ * No key. Google's default policy on new projects refuses service account key
+ * creation, and that push is in the right direction: a key is a long-lived
+ * secret that has to be stored, rotated and kept out of logs forever. Instead
+ * Vercel issues every deployment a short-lived OIDC token, Google is
+ * configured to trust that issuer, and the token is exchanged for one that
+ * works. Nothing long-lived exists, so there is nothing to leak - which is the
+ * same argument docs/secrets.md makes about environment variables.
  *
  * Two different credentials for two different jobs, which is the part worth
  * keeping straight:
  *
  * - An **access token** authorises Cira against Google's own APIs - Cloud
- *   Build, Cloud Run, Storage. It says "this service account may deploy".
- * - An **identity token** authorises Cira against a deployed app. Cloud Run
- *   checks it and refuses everyone else, which is what makes an app
+ *   Build, Cloud Run, Storage. It says "this deployment may deploy".
+ * - An **identity token** authorises Cira against one deployed app. Cloud Run
+ *   checks its audience and refuses everyone else, which is what makes an app
  *   unreachable except through Cira.
  *
- * The second is the direct analogue of Vercel's protection-bypass secret, and
- * it is better in one specific way: it is minted per request and expires, so
- * there is no long-lived shared value sitting in a database column the way
- * `apps.access_secret` does today.
+ * The second replaces Vercel's protection-bypass secret, and is better in one
+ * specific way: minted per request and expiring, rather than a long-lived
+ * value in a database column - which is what `apps.access_secret` is today.
  */
 
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+export interface FederationConfig {
+  projectNumber: string;
+  serviceAccountEmail: string;
+  /** The Workload Identity Pool, `vercel` unless someone renamed it. */
+  poolId: string;
+  providerId: string;
+}
 
-/** The half of a service account key this needs. Never logged, never stored. */
-export interface ServiceAccount {
-  clientEmail: string;
-  privateKey: string;
+const STS_URL = "https://sts.googleapis.com/v1/token";
+const CLOUD_PLATFORM = "https://www.googleapis.com/auth/cloud-platform";
+
+/** What Google knows this pool's provider as. */
+export function audienceFor(config: FederationConfig): string {
+  return (
+    `//iam.googleapis.com/projects/${config.projectNumber}` +
+    `/locations/global/workloadIdentityPools/${config.poolId}` +
+    `/providers/${config.providerId}`
+  );
+}
+
+/**
+ * The principal a Vercel deployment presents itself as.
+ *
+ * Exported because it is the value that has to match a binding on the service
+ * account exactly, and a mismatch fails as a flat permission denial with
+ * nothing naming the subject. Being able to print the expected one turns that
+ * into a diff.
+ */
+export function subjectFor(args: {
+  team: string;
+  project: string;
+  environment: "production" | "preview" | "development";
+}): string {
+  return `owner:${args.team}:project:${args.project}:environment:${args.environment}`;
 }
 
 interface Cached {
@@ -33,135 +68,98 @@ interface Cached {
   expiresAt: number;
 }
 
-/**
- * Parse a service account key JSON.
- *
- * Thrown rather than returned as null: a malformed credential is a
- * misconfiguration that should stop a deploy loudly, not degrade into an
- * unexplained 401 from Google an hour later.
- */
-export function readServiceAccount(json: string): ServiceAccount {
-  let parsed: { client_email?: unknown; private_key?: unknown };
-  try {
-    parsed = JSON.parse(json) as typeof parsed;
-  } catch {
-    throw new Error("The Google service account key is not valid JSON.");
-  }
-
-  const clientEmail = parsed.client_email;
-  const privateKey = parsed.private_key;
-  if (typeof clientEmail !== "string" || typeof privateKey !== "string") {
-    throw new Error(
-      "The Google service account key is missing client_email or private_key.",
-    );
-  }
-
-  // Keys pasted through an environment variable routinely arrive with their
-  // newlines escaped, which fails signing with an error that names neither.
-  return { clientEmail, privateKey: privateKey.replace(/\\n/g, "\n") };
-}
-
-function base64url(input: Buffer | string): string {
-  return Buffer.from(input)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-/**
- * A signed assertion that this service account is who it says it is.
- *
- * `scope` asks for access to Google's APIs; `targetAudience` asks instead for
- * an identity token addressed to one app. Exactly one of them is set, because
- * Google treats the two as different requests and quietly returns the wrong
- * kind of token if both appear.
- */
-export function buildAssertion(
-  account: ServiceAccount,
-  claim: { scope: string } | { targetAudience: string },
-  now: Date = new Date(),
-): string {
-  const issued = Math.floor(now.getTime() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const payload = {
-    iss: account.clientEmail,
-    aud: TOKEN_URL,
-    iat: issued,
-    // An hour is Google's maximum; a shorter life would mean re-signing more
-    // often for no benefit, since the assertion never leaves this process.
-    exp: issued + 3600,
-    ...claim,
-  };
-
-  const unsigned = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`;
-  const signature = createSign("RSA-SHA256").update(unsigned).sign(account.privateKey);
-  return `${unsigned}.${base64url(signature)}`;
-}
-
-/**
- * Tokens, fetched on demand and reused until they are nearly out.
- *
- * Cached per audience: an access token for Google and an identity token for
- * each app are different values with different lifetimes, and sharing one slot
- * between them would hand an app a token meant for Cloud Build.
- */
 export class GoogleTokens {
+  private readonly client;
   private readonly cache = new Map<string, Cached>();
 
-  constructor(private readonly account: ServiceAccount) {}
+  constructor(private readonly config: FederationConfig) {
+    const client = ExternalAccountClient.fromJSON({
+      type: "external_account",
+      audience: audienceFor(config),
+      subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+      token_url: STS_URL,
+      service_account_impersonation_url:
+        `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/` +
+        `${config.serviceAccountEmail}:generateAccessToken`,
+      subject_token_supplier: {
+        // Vercel mints this per deployment and it expires on its own. Locally
+        // it arrives through `vercel env pull`, so `next dev` can deploy too.
+        getSubjectToken: () => getVercelOidcToken(),
+      },
+    });
+
+    if (client === null) {
+      throw new Error("Could not build a Google federated credential.");
+    }
+    this.client = client;
+  }
 
   /** For Google's own APIs. */
-  async accessToken(
-    scope = "https://www.googleapis.com/auth/cloud-platform",
-  ): Promise<string> {
-    return this.fetchToken(`scope:${scope}`, { scope }, "access_token");
-  }
-
-  /**
-   * For one deployed app. The audience is the service's own URL, so a token
-   * minted for one app is rejected by every other.
-   */
-  async identityToken(serviceUrl: string): Promise<string> {
-    return this.fetchToken(
-      `aud:${serviceUrl}`,
-      { targetAudience: serviceUrl },
-      "id_token",
-    );
-  }
-
-  private async fetchToken(
-    key: string,
-    claim: { scope: string } | { targetAudience: string },
-    field: "access_token" | "id_token",
-  ): Promise<string> {
-    const held = this.cache.get(key);
+  async accessToken(): Promise<string> {
+    const held = this.cache.get("access");
     // Sixty seconds of headroom: a token that expires in flight fails the
     // request it was fetched for.
     if (held !== undefined && held.expiresAt > Date.now() + 60_000) return held.token;
 
-    const response = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: GRANT,
-        assertion: buildAssertion(this.account, claim),
-      }),
-    });
+    this.client.scopes = [CLOUD_PLATFORM];
+    const { token, res } = await this.client.getAccessToken();
+    if (typeof token !== "string" || token === "") {
+      throw new Error("Google returned no usable access token.");
+    }
+
+    const lifetime = readLifetime(res) ?? 3600;
+    this.cache.set("access", { token, expiresAt: Date.now() + lifetime * 1000 });
+    return token;
+  }
+
+  /**
+   * For one deployed app.
+   *
+   * The audience is the service's own URL, so a token minted for one app is
+   * rejected by every other - which is the whole of Cira's access model on
+   * Cloud Run. Impersonation is done explicitly rather than through the
+   * client's ID-token helper, because that helper wants its own audience at
+   * construction time and this needs a different one per app.
+   */
+  async identityToken(serviceUrl: string): Promise<string> {
+    const key = `id:${serviceUrl}`;
+    const held = this.cache.get(key);
+    if (held !== undefined && held.expiresAt > Date.now() + 60_000) return held.token;
+
+    const access = await this.accessToken();
+    const response = await fetch(
+      `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/` +
+        `${encodeURIComponent(this.config.serviceAccountEmail)}:generateIdToken`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${access}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ audience: serviceUrl, includeEmail: true }),
+      },
+    );
 
     if (!response.ok) {
       // Google's body can echo the assertion, so it is not passed through.
-      throw new Error(`Google refused the service account (${response.status}).`);
+      throw new Error(`Google refused an identity token (${response.status}).`);
     }
 
-    const body = (await response.json()) as Record<string, unknown>;
-    const token = body[field];
-    if (typeof token !== "string") {
-      throw new Error("Google returned no usable token.");
+    const body = (await response.json()) as { token?: unknown };
+    if (typeof body.token !== "string") {
+      throw new Error("Google returned no usable identity token.");
     }
 
-    const lifetime = typeof body["expires_in"] === "number" ? body["expires_in"] : 3600;
-    this.cache.set(key, { token, expiresAt: Date.now() + lifetime * 1000 });
-    return token;
+    // Identity tokens are an hour; the cache is trimmed short of that.
+    this.cache.set(key, { token: body.token, expiresAt: Date.now() + 3600 * 1000 });
+    return body.token;
   }
+}
+
+function readLifetime(res: unknown): number | null {
+  if (typeof res !== "object" || res === null) return null;
+  const data = (res as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return null;
+  const expires = (data as { expires_in?: unknown }).expires_in;
+  return typeof expires === "number" ? expires : null;
 }

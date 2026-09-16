@@ -15,6 +15,8 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@cira/core": "workspace:*"
+    "@cira/core": "workspace:*",
+    "@vercel/oidc": "^3.8.7",
+    "google-auth-library": "^11.0.2"
   }
 }
