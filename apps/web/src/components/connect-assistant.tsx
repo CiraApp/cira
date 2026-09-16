@@ -281,13 +281,18 @@ function Copyable({
   );
 }
 
-type ClientId = "claude-code" | "cursor" | "other";
+type ClientId = "claude-code" | "claude-desktop" | "cursor" | "other";
 
 const CLIENTS: Array<{ id: ClientId; name: string; hint: string }> = [
   {
     id: "claude-code",
     name: "Claude Code",
     hint: "Run this in a terminal. Or let the CLI do every assistant on this machine at once: cira mcp connect",
+  },
+  {
+    id: "claude-desktop",
+    name: "Claude Desktop",
+    hint: "Customize > Connectors > Add custom connector. Paste the endpoint above, set Authentication to No sign-in, then under Request headers choose authorization and paste this value. Keep the word Bearer and the space: Claude sends it exactly as typed. The Request headers section is in beta, so it may not be there yet.",
   },
   { id: "cursor", name: "Cursor", hint: "Add this to ~/.cursor/mcp.json." },
   {
@@ -300,7 +305,11 @@ const CLIENTS: Array<{ id: ClientId; name: string; hint: string }> = [
 function snippet(client: ClientId, endpoint: string, token: string): string {
   switch (client) {
     case "claude-code":
-      return `claude mcp add --transport http cira ${endpoint} \\\n  --header "Authorization: Bearer ${token}"`;
+      return `claude mcp add --scope user --transport http cira ${endpoint} \\\n  --header "Authorization: Bearer ${token}"`;
+    // Desktop takes a header value rather than a command, and sends it
+    // verbatim, so the scheme is part of what gets copied.
+    case "claude-desktop":
+      return `Bearer ${token}`;
     case "cursor":
       return `{
   "mcpServers": {
