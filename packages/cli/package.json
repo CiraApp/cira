@@ -43,7 +43,6 @@
   "devDependencies": {
     "@cira/core": "workspace:*",
     "@cira/deploy": "workspace:*",
-    "@cira/extract": "workspace:*",
     "@cira/skill": "workspace:*",
     "esbuild": "^0.25.12"
   }

@@ -11,9 +11,6 @@
       "path": "./packages/deploy"
     },
     {
-      "path": "./packages/extract"
-    },
-    {
       "path": "./packages/cira-skill"
     },
     {

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { shouldUpload, type BundleFile } from "@cira/deploy/packaging";
 
@@ -44,35 +44,4 @@ export function collectFiles(root: string): BundleFile[] {
 
   walk(root);
   return found.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-/**
- * The same files, with their text, for capability analysis.
- *
- * Read from disk a second time rather than kept from `collectFiles`, because
- * the deploy bundle is hashes and sizes and holding every file's contents in
- * memory to save one pass would be the wrong trade in a CLI.
- *
- * Only what the extractor can read: a repository's images and fonts say
- * nothing about what it does.
- */
-export function readSourceFiles(
-  root: string,
-  files: readonly BundleFile[],
-): Array<{ path: string; text: string }> {
-  const wanted = files.filter(
-    (file) => file.path === "package.json" || /\.(ts|tsx|js|jsx|mjs)$/.test(file.path),
-  );
-
-  const out: Array<{ path: string; text: string }> = [];
-  for (const file of wanted) {
-    // A file big enough to be a bundle is not a file anyone wrote.
-    if (file.size > 400_000) continue;
-    try {
-      out.push({ path: file.path, text: readFileSync(join(root, file.path), "utf8") });
-    } catch {
-      // Unreadable here is the same as absent: analysis is best effort.
-    }
-  }
-  return out;
 }

@@ -20,25 +20,32 @@ import type { AppId, SpaceId } from "./model.js";
 export type JsonSchema = Record<string, unknown>;
 
 /**
- * What invoking this actually does, graded by what it would cost to be wrong.
+ * Whether invoking this only looks, or changes something.
  *
- * `read` returns information. `write` changes something an employee could
- * undo. `destructive` removes or moves something that cannot simply be put
- * back. The grade decides publication (see `publicationFor`), so it is the
- * one judgement the analyzer must be conservative about.
+ * Two grades, because exactly one decision turns on them: a `read` may be
+ * called by an agent unattended, and everything else waits for a person. There
+ * used to be a third, `destructive`, meant to mark the frightening ones - but
+ * it was withheld identically to `write`, so it decided nothing, and three
+ * careful readings of the same endpoint disagreed about which it was. A label
+ * people learn to ignore is worse than no label; the description says what an
+ * operation does, and that warns better than a word ever did.
  */
-export type CapabilityRisk = "read" | "write" | "destructive";
+export type CapabilityRisk = "read" | "write";
 
 /**
  * Where the capability lives in the app.
  *
- * Only HTTP for V0, and only a method and a path: never a full URL. The host
- * is resolved at invocation time from the app's own deployment, which is what
+ * Only HTTP, and only a method and a path: never a full URL. The host is
+ * resolved at invocation time from the app's own deployment, which is what
  * makes it impossible for a target to point anywhere but the app it belongs to.
  */
+export const CAPABILITY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+
+export type CapabilityMethod = (typeof CAPABILITY_METHODS)[number];
+
 export interface CapabilityTarget {
   type: "http";
-  method: "GET" | "POST";
+  method: CapabilityMethod;
   /** Root-relative, always starting with `/`. */
   path: string;
 }
@@ -54,8 +61,6 @@ export interface Capability {
   outputSchema: JsonSchema | null;
   target: CapabilityTarget;
   risk: CapabilityRisk;
-  /** The analyzer's own confidence, 0 to 1. */
-  confidence: number;
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -65,32 +70,26 @@ export interface Capability {
  * Whether a freshly detected capability may be used without anyone looking at
  * it first.
  *
- * Reading is recoverable and writing is not, so the two are treated
- * differently by default rather than by configuration. A confident read-only
- * capability is the only thing that turns itself on; everything else is
- * registered, visible, and switched off until a person decides otherwise.
+ * Reading is recoverable and writing is not, so a read turns itself on and
+ * everything else is registered, visible, and switched off until a person
+ * decides otherwise.
  *
- * Deliberately a pure function of the two facts analysis produces, so the
- * policy can be read in one place and tested without a database.
+ * It used to also weigh the analyzer's confidence in itself. It no longer
+ * needs to: a capability is not stored at all until the deployed app has
+ * answered for it, and an app confirming its own route is better evidence than
+ * a number the analyzer chose.
+ *
+ * Deliberately a pure function of the one fact that matters, so the policy can
+ * be read in one place and tested without a database.
  */
-export function publicationFor(args: { risk: CapabilityRisk; confidence: number }): {
+export function publicationFor(args: { risk: CapabilityRisk }): {
   enabled: boolean;
-  reason: "auto" | "review" | "destructive";
+  reason: "auto" | "review";
 } {
-  if (args.risk === "destructive") return { enabled: false, reason: "destructive" };
-  if (args.risk === "write") return { enabled: false, reason: "review" };
-  if (args.confidence >= AUTO_ENABLE_CONFIDENCE) {
-    return { enabled: true, reason: "auto" };
-  }
-  return { enabled: false, reason: "review" };
+  return args.risk === "read"
+    ? { enabled: true, reason: "auto" }
+    : { enabled: false, reason: "review" };
 }
-
-/**
- * How sure the analyzer has to be before a read-only capability is live
- * without review. High enough that a guess does not qualify, low enough that
- * the common case does not need a human.
- */
-export const AUTO_ENABLE_CONFIDENCE = 0.75;
 
 /**
  * A capability name an agent can refer to and a person can read.
@@ -144,9 +143,7 @@ export interface Reconciliation<T> {
  * never quietly switch it back on, which is exactly what would happen if the
  * publication policy were applied again on every deploy.
  */
-export function reconcileCapabilities<
-  T extends { name: string; risk: CapabilityRisk; confidence: number },
->(
+export function reconcileCapabilities<T extends { name: string; risk: CapabilityRisk }>(
   existing: readonly { id: string; name: string; enabled: boolean }[],
   detected: readonly T[],
 ): Reconciliation<T> {
@@ -164,9 +161,7 @@ export function reconcileCapabilities<
   for (const item of detected) {
     const prior = previous.get(item.name);
     const enabled =
-      prior === undefined
-        ? publicationFor({ risk: item.risk, confidence: item.confidence }).enabled
-        : prior.enabled;
+      prior === undefined ? publicationFor({ risk: item.risk }).enabled : prior.enabled;
 
     if (enabled) result.enabledCount += 1;
     else result.reviewCount += 1;

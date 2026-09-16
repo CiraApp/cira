@@ -1,10 +1,9 @@
 import { basename } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
-import { collectFiles, readSourceFiles } from "./files.js";
+import { collectFiles } from "./files.js";
 import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
-import { extractRepo } from "@cira/extract";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { checkBundle } from "@cira/deploy/packaging";
@@ -192,16 +191,14 @@ export async function deploy(argv: string[] = []): Promise<number> {
     root,
   );
 
-  // Analysis needs the app id and the code, not a finished deployment, so it
-  // runs while the build is going out. By the time the app is live the answer
-  // is usually already back, and capability detection costs no extra waiting.
+  // Cira reads the source itself, out of the archive just uploaded, so there
+  // is nothing to send but its name. Started while the build is going out: by
+  // the time the app is live the answer is usually already back, and finding
+  // out what an app can do costs no extra waiting.
   info(`${dim("Analyzing capabilities...")}`);
   const analysis = api<CapabilitiesResponse>("/api/cli/capabilities", {
     method: "POST",
-    body: {
-      appId: started.appId,
-      summary: extractRepo(readSourceFiles(root, files)),
-    },
+    body: { appId: started.appId, sourceId },
   }).catch((error: unknown) => (error instanceof Error ? error : new Error("failed")));
 
   const deadline = Date.now() + 10 * 60 * 1000;
@@ -232,7 +229,12 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info("");
       info(dim("  Only you can see it. Give people access from that page."));
 
-      await reportCapabilities(await analysis);
+      // Nothing is published until the app itself confirms it serves the
+      // route. That can only be asked now, which is why it is not part of the
+      // analysis that ran while the build was going out.
+      const found = await analysis;
+      await confirmCapabilities(started.appId);
+      await reportCapabilities(found);
       return 0;
     }
 
@@ -277,6 +279,21 @@ function readFlag(argv: string[], flag: string): string | null {
  * a normal part of shipping, and a deploy that worked is not made a failure by
  * analysis that did not.
  */
+/**
+ * Ask Cira to check the capabilities against the app that is now running.
+ *
+ * Quiet on failure. A deploy that worked is not made a failure by a check that
+ * did not, and the app's page says plainly which capabilities have been
+ * confirmed.
+ */
+async function confirmCapabilities(appId: string): Promise<void> {
+  try {
+    await api("/api/cli/capabilities/verify", { method: "POST", body: { appId } });
+  } catch {
+    // Reported on the app's page rather than here.
+  }
+}
+
 async function reportCapabilities(result: CapabilitiesResponse | Error): Promise<void> {
   if (result instanceof Error) {
     info("");

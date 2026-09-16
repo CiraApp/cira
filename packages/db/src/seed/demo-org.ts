@@ -231,7 +231,6 @@ interface CapabilitySpec {
   method: "GET" | "POST";
   path: string;
   risk: CapabilityRisk;
-  confidence: number;
   input: Record<string, unknown>;
   output: Record<string, unknown> | null;
 }
@@ -276,7 +275,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/incidents",
         risk: "read",
-        confidence: 0.94,
         input: object({ severity: str("Filter to one severity, e.g. sev1.") }),
         output: object({ incidents: { type: "array", items: object({}) } }),
       },
@@ -286,7 +284,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/incidents/detail",
         risk: "read",
-        confidence: 0.91,
         input: object({ incidentId: str("The incident to read.") }, ["incidentId"]),
         output: null,
       },
@@ -296,7 +293,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/on-call",
         risk: "read",
-        confidence: 0.88,
         input: object({ rotation: str("Rotation name, e.g. platform-primary.") }),
         output: object({ name: str("Who is on call."), until: str("ISO timestamp.") }),
       },
@@ -306,7 +302,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/incidents/acknowledge",
         risk: "write",
-        confidence: 0.86,
         input: object({ incidentId: str("The incident to take.") }, ["incidentId"]),
         output: null,
       },
@@ -316,7 +311,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/page",
         risk: "write",
-        confidence: 0.82,
         input: object({ rotation: str("Rotation to page."), reason: str("Why.") }, [
           "rotation",
           "reason",
@@ -340,7 +334,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/revenue",
         risk: "read",
-        confidence: 0.95,
         input: object({ month: str("Month as YYYY-MM.") }, ["month"]),
         output: object({ total: num("Recognised revenue."), currency: str("ISO code.") }),
       },
@@ -350,7 +343,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/invoices",
         risk: "read",
-        confidence: 0.93,
         input: object({
           month: str("Month as YYYY-MM."),
           status: str("paid, open or overdue."),
@@ -363,7 +355,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/invoices/detail",
         risk: "read",
-        confidence: 0.9,
         input: object({ invoiceId: str("The invoice to read.") }, ["invoiceId"]),
         output: null,
       },
@@ -373,7 +364,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/invoices/mark-paid",
         risk: "write",
-        confidence: 0.84,
         input: object(
           { invoiceId: str("The invoice."), reference: str("Payment reference.") },
           ["invoiceId"],
@@ -385,8 +375,7 @@ const DEMO_APPS: DemoApp[] = [
         description: "Refund a paid invoice in full or in part.",
         method: "POST",
         path: "/api/refunds",
-        risk: "destructive",
-        confidence: 0.79,
+        risk: "write",
         input: object(
           { invoiceId: str("The invoice."), amount: num("Amount to refund.") },
           ["invoiceId", "amount"],
@@ -408,7 +397,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/onboarding/status",
         risk: "read",
-        confidence: 0.92,
         input: object({ email: str("The new hire's work address.") }, ["email"]),
         output: object({
           complete: bool("Everything done?"),
@@ -421,7 +409,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/onboarding/tasks",
         risk: "read",
-        confidence: 0.89,
         input: object({ team: str("Limit to one team.") }),
         output: null,
       },
@@ -431,7 +418,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/onboarding/complete",
         risk: "write",
-        confidence: 0.85,
         input: object({ taskId: str("The task.") }, ["taskId"]),
         output: null,
       },
@@ -441,7 +427,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/equipment/request",
         risk: "write",
-        confidence: 0.8,
         input: object({ email: str("Who it is for."), item: str("What to order.") }, [
           "email",
           "item",
@@ -463,7 +448,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/accounts/search",
         risk: "read",
-        confidence: 0.93,
         input: object({ query: str("Name or domain.") }, ["query"]),
         output: null,
       },
@@ -473,7 +457,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/accounts/health",
         risk: "read",
-        confidence: 0.9,
         input: object({ accountId: str("The account.") }, ["accountId"]),
         output: object({
           score: num("0 to 100."),
@@ -486,7 +469,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/renewals",
         risk: "read",
-        confidence: 0.87,
         input: object({ withinDays: num("How far ahead to look.") }),
         output: null,
       },
@@ -496,7 +478,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/accounts/touchpoint",
         risk: "write",
-        confidence: 0.83,
         input: object({ accountId: str("The account."), note: str("What happened.") }, [
           "accountId",
           "note",
@@ -518,7 +499,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/tickets",
         risk: "read",
-        confidence: 0.94,
         input: object({ priority: str("Limit to one priority.") }),
         output: null,
       },
@@ -528,7 +508,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/tickets/detail",
         risk: "read",
-        confidence: 0.91,
         input: object({ ticketId: str("The ticket.") }, ["ticketId"]),
         output: null,
       },
@@ -538,7 +517,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/tickets/assign",
         risk: "write",
-        confidence: 0.86,
         input: object(
           { ticketId: str("The ticket."), assignee: str("Their work address.") },
           ["ticketId", "assignee"],
@@ -551,7 +529,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/tickets/escalate",
         risk: "write",
-        confidence: 0.81,
         input: object(
           { ticketId: str("The ticket."), reason: str("Why it cannot wait.") },
           ["ticketId", "reason"],
@@ -573,7 +550,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/datasets/search",
         risk: "read",
-        confidence: 0.95,
         input: object({ query: str("What to look for.") }, ["query"]),
         output: null,
       },
@@ -583,7 +559,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/datasets/schema",
         risk: "read",
-        confidence: 0.92,
         input: object({ dataset: str("Fully qualified name.") }, ["dataset"]),
         output: null,
       },
@@ -593,7 +568,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/queries/run",
         risk: "read",
-        confidence: 0.76,
         input: object({ queryId: str("The saved query.") }, ["queryId"]),
         output: null,
       },
@@ -603,7 +577,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/datasets/refresh",
         risk: "write",
-        confidence: 0.79,
         input: object({ dataset: str("What to rebuild.") }, ["dataset"]),
         output: null,
       },
@@ -623,7 +596,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/requests",
         risk: "read",
-        confidence: 0.93,
         input: object({ system: str("Limit to one system.") }),
         output: null,
       },
@@ -633,7 +605,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/requests/detail",
         risk: "read",
-        confidence: 0.9,
         input: object({ requestId: str("The request.") }, ["requestId"]),
         output: null,
       },
@@ -643,7 +614,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/requests/approve",
         risk: "write",
-        confidence: 0.85,
         input: object({ requestId: str("The request.") }, ["requestId"]),
         output: null,
       },
@@ -652,8 +622,7 @@ const DEMO_APPS: DemoApp[] = [
         description: "Remove someone's access to a system immediately.",
         method: "POST",
         path: "/api/access/revoke",
-        risk: "destructive",
-        confidence: 0.83,
+        risk: "write",
         input: object({ email: str("Whose access."), system: str("Which system.") }, [
           "email",
           "system",
@@ -675,7 +644,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/customers/lookup",
         risk: "read",
-        confidence: 0.94,
         input: object({ query: str("Email or account id.") }, ["query"]),
         output: null,
       },
@@ -685,7 +653,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/subscriptions",
         risk: "read",
-        confidence: 0.91,
         input: object({ accountId: str("The account.") }, ["accountId"]),
         output: null,
       },
@@ -695,7 +662,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/subscriptions/change-plan",
         risk: "write",
-        confidence: 0.82,
         input: object(
           { subscriptionId: str("The subscription."), plan: str("The new plan.") },
           ["subscriptionId", "plan"],
@@ -707,8 +673,7 @@ const DEMO_APPS: DemoApp[] = [
         description: "Erase a customer's records for a deletion request.",
         method: "POST",
         path: "/api/customers/delete",
-        risk: "destructive",
-        confidence: 0.88,
+        risk: "write",
         input: object({ accountId: str("The account to erase.") }, ["accountId"]),
         output: null,
       },
@@ -727,7 +692,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/flags",
         risk: "read",
-        confidence: 0.96,
         input: object({ environment: str("production or staging.") }),
         output: null,
       },
@@ -737,7 +701,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/flags/detail",
         risk: "read",
-        confidence: 0.92,
         input: object({ flag: str("The flag key.") }, ["flag"]),
         output: null,
       },
@@ -747,7 +710,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "POST",
         path: "/api/flags/rollout",
         risk: "write",
-        confidence: 0.84,
         input: object({ flag: str("The flag key."), percent: num("0 to 100.") }, [
           "flag",
           "percent",
@@ -759,8 +721,7 @@ const DEMO_APPS: DemoApp[] = [
         description: "Turn a flag off everywhere and delete its rollout.",
         method: "POST",
         path: "/api/flags/kill",
-        risk: "destructive",
-        confidence: 0.86,
+        risk: "write",
         input: object({ flag: str("The flag key.") }, ["flag"]),
         output: null,
       },
@@ -779,7 +740,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/people/search",
         risk: "read",
-        confidence: 0.96,
         input: object({ query: str("Name, team or title.") }, ["query"]),
         output: null,
       },
@@ -789,7 +749,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/teams",
         risk: "read",
-        confidence: 0.94,
         input: object({ team: str("The team's name.") }, ["team"]),
         output: null,
       },
@@ -799,7 +758,6 @@ const DEMO_APPS: DemoApp[] = [
         method: "GET",
         path: "/api/roles",
         risk: "read",
-        confidence: 0.9,
         input: object({ team: str("Limit to one team.") }),
         output: null,
       },
@@ -963,14 +921,13 @@ export async function seedDemoOrg(
       method: capability.method,
       path: capability.path,
       risk: capability.risk,
-      confidence: capability.confidence,
-      // The product's own policy, not a hand-picked flag: reads that analysis
-      // is sure of are live, writes wait for a person, and nothing destructive
-      // is ever on by default.
-      enabled: publicationFor({
-        risk: capability.risk,
-        confidence: capability.confidence,
-      }).enabled,
+      // The product's own policy, not a hand-picked flag: reads are live and
+      // anything that changes something waits for a person.
+      enabled: publicationFor({ risk: capability.risk }).enabled,
+      // Seeded apps are not deployed, so nothing could have confirmed these.
+      // Stamped anyway, because a demo with everything greyed out shows
+      // nothing.
+      verifiedAt: new Date(),
     })),
   );
   await database.insert(capabilities).values(capabilityRows);

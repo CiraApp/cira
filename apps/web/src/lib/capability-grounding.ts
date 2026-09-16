@@ -1,6 +1,10 @@
 import { z } from "zod";
-import type { RepoSummary } from "@cira/extract";
-import { isCapabilityName, isSafeTargetPath } from "@cira/core";
+import {
+  CAPABILITY_METHODS,
+  isCapabilityName,
+  isSafeTargetPath,
+  type CapabilityMethod,
+} from "@cira/core";
 
 /**
  * The half of capability analysis that has to be correct rather than merely
@@ -8,10 +12,18 @@ import { isCapabilityName, isSafeTargetPath } from "@cira/core";
  *
  * Separated from the model call so it can be tested without one, and because
  * the two really are different jobs: the analyzer supplies judgement, this
- * decides what Cira is willing to act on. Nothing here asks a model anything.
+ * decides what Cira is willing to store. Nothing here asks a model anything.
+ *
+ * It used to also check every path against a list of routes an extractor had
+ * found, which was the strongest rule in the engine right up until it became
+ * wrong. A served path is frequently assembled rather than written down - a
+ * router mounted under a prefix from a constant - so the full path appears
+ * nowhere in the source, and checking for it verbatim would reject exactly the
+ * answers that took the most work to get right. What confirms a path now is
+ * the deployed app, which is the only thing that knows for certain.
  */
 
-const RISKS = ["read", "write", "destructive"] as const;
+const RISKS = ["read", "write"] as const;
 
 const candidate = z.object({
   name: z
@@ -20,25 +32,24 @@ const candidate = z.object({
   description: z
     .string()
     .describe("One sentence an employee would understand. No implementation detail."),
-  method: z.enum(["GET", "POST"]),
+  method: z.enum(CAPABILITY_METHODS),
   path: z
     .string()
-    .describe("The route path exactly as given in the routes list, e.g. /api/revenue"),
+    .describe("The path as the app serves it, root-relative, e.g. /api/v1/revenue"),
   inputSchema: z
     .string()
     .describe(
       "JSON Schema for the input, serialised as a JSON string. An object schema, " +
-        "with a property per query parameter or body field the route reads. " +
+        "with a property per query, path or body parameter the route reads. " +
         'Use {"type":"object","properties":{},"required":[]} when it takes none.',
     ),
-  outputSchema: z
+  risk: z.enum(RISKS),
+  probe: z
     .string()
     .describe(
-      "JSON Schema for the response, serialised as a JSON string, or an empty string.",
+      "For a read only: an example input safe to send, as a JSON object string. " +
+        "Empty string for a write, which is never called to test it.",
     ),
-  risk: z.enum(RISKS),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string().describe("One line, internal only. Why this is a capability."),
 });
 
 export const analysis = z.object({
@@ -56,25 +67,30 @@ export const analysis = z.object({
 export interface AnalyzedCapability {
   name: string;
   description: string;
-  method: "GET" | "POST";
+  method: CapabilityMethod;
   path: string;
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown> | null;
   risk: (typeof RISKS)[number];
-  confidence: number;
+  /** Example input, for reads. Used once, to ask the app whether this exists. */
+  probe?: Record<string, unknown> | undefined;
 }
 
+export type AnalysisResult =
+  | { ok: true; summary: string; capabilities: AnalyzedCapability[] }
+  | { ok: false; error: string };
+
 /**
- * Drop every candidate that is not anchored in the extracted repository.
+ * Keep the candidates Cira could act on, and drop the rest.
  *
- * Exported so the rule can be tested without a model in the loop, because it
- * is the rule that makes the whole engine safe to turn on.
+ * Not a check that the model told the truth - only the app can settle that.
+ * This is the narrower question of whether a candidate is even well formed:
+ * a name an agent can ask for, a path that cannot escape the app it belongs
+ * to, and a schema that parses.
  */
 export function keepGrounded(
   candidates: readonly z.infer<typeof candidate>[],
-  summary: RepoSummary,
 ): AnalyzedCapability[] {
-  const routes = new Map(summary.routes.map((route) => [route.path, route]));
   const kept: AnalyzedCapability[] = [];
   const taken = new Set<string>();
 
@@ -83,49 +99,34 @@ export function keepGrounded(
     if (taken.has(item.name)) continue;
     if (!isSafeTargetPath(item.path)) continue;
 
-    // The target must be a route this app was found to serve, answering the
-    // method named. Anything else is a capability with nowhere to go.
-    const route = routes.get(item.path);
-    if (route === undefined) continue;
-    if (!(route.methods as readonly string[]).includes(item.method)) continue;
-
     const inputSchema = readSchema(item.inputSchema);
     if (inputSchema === null) continue;
 
+    taken.add(item.name);
     kept.push({
       name: item.name,
-      description: item.description.trim().slice(0, 400),
+      description: item.description.trim(),
       method: item.method,
       path: item.path,
       inputSchema,
-      outputSchema: readSchema(item.outputSchema),
+      outputSchema: null,
       risk: item.risk,
-      confidence: Math.min(1, Math.max(0, item.confidence)),
+      probe: item.risk === "read" ? (readSchema(item.probe) ?? {}) : undefined,
     });
-    taken.add(item.name);
   }
 
   return kept;
 }
 
-/**
- * Schemas travel as strings because a model asked for free-form nested JSON
- * returns something shaped like a schema rather than a schema. Parsed here,
- * and anything that is not an object schema is refused rather than repaired.
- */
+/** A JSON object, or null for anything that is not one. */
 function readSchema(raw: string): Record<string, unknown> | null {
-  const text = raw.trim();
-  if (text === "") return null;
+  if (raw.trim() === "") return null;
   try {
-    const value: unknown = JSON.parse(text);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-    const schema = value as Record<string, unknown>;
-    return schema["type"] === "object" ? schema : null;
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
 }
-
-export type AnalysisResult =
-  | { ok: true; summary: string; capabilities: AnalyzedCapability[] }
-  | { ok: false; error: string };

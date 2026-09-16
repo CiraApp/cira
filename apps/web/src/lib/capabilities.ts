@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
@@ -172,6 +172,8 @@ export async function replaceCapabilities(args: {
       id: capabilities.id,
       name: capabilities.name,
       enabled: capabilities.enabled,
+      method: capabilities.method,
+      path: capabilities.path,
     })
     .from(capabilities)
     .where(eq(capabilities.appId, args.appId));
@@ -194,8 +196,8 @@ export async function replaceCapabilities(args: {
     method: detected.method,
     path: detected.path,
     risk: detected.risk,
-    confidence: detected.confidence,
     enabled,
+    probe: detected.probe ?? null,
     updatedAt: new Date(),
   });
 
@@ -205,10 +207,25 @@ export async function replaceCapabilities(args: {
       .values({ id: newId("capability"), ...columns(entry.detected, entry.enabled) });
   }
 
+  const before = new Map(existing.map((row) => [row.id, row]));
+
   for (const entry of plan.update) {
+    const prior = before.get(entry.id);
+    // A capability whose target moved has not been confirmed at its new
+    // address, so its stamp is cleared and the app is asked again. One whose
+    // target is unchanged keeps it, because clearing it would take every
+    // working capability away for the seconds between deploying and checking.
+    const moved =
+      prior === undefined ||
+      prior.method !== entry.detected.method ||
+      prior.path !== entry.detected.path;
+
     await database
       .update(capabilities)
-      .set(columns(entry.detected, entry.enabled))
+      .set({
+        ...columns(entry.detected, entry.enabled),
+        ...(moved ? { verifiedAt: null } : {}),
+      })
       .where(eq(capabilities.id, entry.id));
   }
 
@@ -216,6 +233,44 @@ export async function replaceCapabilities(args: {
 }
 
 /** Every capability on an app, for the app's own page. */
+/**
+ * Record what the deployed app said about the capabilities credited to it.
+ *
+ * Those it will not answer for are deleted rather than kept and flagged: a
+ * capability nothing serves is not a finding, it is a mistake, and leaving it
+ * in the table means every reader has to know to skip it.
+ */
+export async function recordVerification(args: {
+  appId: string;
+  verified: readonly string[];
+  rejected: readonly string[];
+}): Promise<void> {
+  const database = db();
+
+  if (args.rejected.length > 0) {
+    await database
+      .delete(capabilities)
+      .where(
+        and(
+          eq(capabilities.appId, args.appId),
+          inArray(capabilities.name, [...args.rejected]),
+        ),
+      );
+  }
+
+  if (args.verified.length > 0) {
+    await database
+      .update(capabilities)
+      .set({ verifiedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(capabilities.appId, args.appId),
+          inArray(capabilities.name, [...args.verified]),
+        ),
+      );
+  }
+}
+
 export async function listCapabilitiesForApp(appId: string): Promise<Capability[]> {
   const rows = await db()
     .select()
@@ -314,9 +369,16 @@ function toCapability(row: CapabilityRow): Capability {
     inputSchema: row.inputSchema as Record<string, unknown>,
     outputSchema: (row.outputSchema as Record<string, unknown> | null) ?? null,
     target: { type: "http", method: row.method, path: row.path },
-    risk: row.risk,
-    confidence: row.confidence,
-    enabled: row.enabled,
+    // Rows written before the grade was narrowed can still say `destructive`.
+    // It was always withheld exactly as a write was, so reading it as one
+    // loses nothing and keeps a single meaning in the rest of the code.
+    risk: row.risk === "read" ? "read" : "write",
+    // Unverified is not enabled, whatever the policy decided. Publication is
+    // settled when the capability is detected; whether the app actually serves
+    // it is settled later, by asking. Folding the two here means every reader -
+    // the panel, the agent surface, invocation - gets the same answer from one
+    // rule rather than each remembering to check.
+    enabled: row.enabled && row.verifiedAt !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

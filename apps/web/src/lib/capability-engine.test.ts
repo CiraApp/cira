@@ -161,7 +161,9 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         method: "GET",
         path: "/api/revenue",
         risk: "read",
-        confidence: 0.93,
+        // Seeded as already confirmed by the app: an unverified capability
+        // is deliberately invisible, which would make every case below vacuous.
+        verifiedAt: new Date(),
         enabled: true,
       },
       {
@@ -173,8 +175,10 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         inputSchema: { type: "object", properties: {}, required: [] },
         method: "POST",
         path: "/api/refunds",
-        risk: "destructive",
-        confidence: 0.9,
+        risk: "write",
+        // Seeded as already confirmed by the app: an unverified capability
+        // is deliberately invisible, which would make every case below vacuous.
+        verifiedAt: new Date(),
         enabled: false,
       },
     ]);
@@ -461,7 +465,6 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
           inputSchema: { type: "object", properties: {}, required: [] },
           outputSchema: null,
           risk: "read",
-          confidence: 0.95,
         },
         {
           name: "createRefund",
@@ -470,8 +473,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
           path: "/api/refunds",
           inputSchema: { type: "object", properties: {}, required: [] },
           outputSchema: null,
-          risk: "destructive",
-          confidence: 0.9,
+          risk: "write",
         },
         {
           name: "getMonthlyGrowth",
@@ -481,7 +483,6 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
           inputSchema: { type: "object", properties: {}, required: [] },
           outputSchema: null,
           risk: "read",
-          confidence: 0.91,
         },
       ],
     });
@@ -493,10 +494,32 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       "getRevenue",
     ]);
 
-    // The reviewed decision survived; the new read turned itself on.
+    // The reviewed decision survived a redeploy, which is the rule this test
+    // exists for: re-detecting createRefund must not switch it back off.
     expect(after.find((c) => c.name === "createRefund")?.enabled).toBe(true);
-    expect(after.find((c) => c.name === "getMonthlyGrowth")?.enabled).toBe(true);
+
+    // The new read is registered but not yet live. Policy says a read may turn
+    // itself on; nothing has asked the running app whether it serves the route,
+    // and until something has, an agent is not offered it.
+    expect(after.find((c) => c.name === "getMonthlyGrowth")?.enabled).toBe(false);
     expect(counts.enabled).toBe(3);
+
+    // Once the app answers for it, it is live - without anyone reviewing it,
+    // because it only reads.
+    const { recordVerification } = await import("./capabilities");
+    await recordVerification({
+      appId,
+      verified: ["getMonthlyGrowth"],
+      rejected: [],
+    });
+    const confirmed = await listCapabilitiesForApp(appId);
+    expect(confirmed.find((c) => c.name === "getMonthlyGrowth")?.enabled).toBe(true);
+
+    // And one the app will not answer for stops existing at all.
+    await recordVerification({ appId, verified: [], rejected: ["getMonthlyGrowth"] });
+    expect((await listCapabilitiesForApp(appId)).map((c) => c.name)).not.toContain(
+      "getMonthlyGrowth",
+    );
 
     // A capability whose code has gone stops existing.
     const shrunk = await replaceCapabilities({
@@ -511,7 +534,6 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
           inputSchema: { type: "object", properties: {}, required: [] },
           outputSchema: null,
           risk: "read",
-          confidence: 0.95,
         },
       ],
     });

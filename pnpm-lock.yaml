@@ -53,9 +53,6 @@ importers:
       '@cira/deploy':
         specifier: workspace:*
         version: link:../../packages/deploy
-      '@cira/extract':
-        specifier: workspace:*
-        version: link:../../packages/extract
       '@clerk/nextjs':
         specifier: ^7.9.2
         version: 7.9.2(next@16.3.5(@types/node@22.20.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -101,9 +98,6 @@ importers:
       '@cira/deploy':
         specifier: workspace:*
         version: link:../deploy
-      '@cira/extract':
-        specifier: workspace:*
-        version: link:../extract
       '@cira/skill':
         specifier: workspace:*
         version: link:../cira-skill
@@ -146,12 +140,6 @@ importers:
       google-auth-library:
         specifier: ^11.0.2
         version: 11.0.2(supports-color@10.2.2)
-
-  packages/extract:
-    dependencies:
-      '@cira/core':
-        specifier: workspace:*
-        version: link:../core
 
   workers/app-proxy:
     devDependencies:

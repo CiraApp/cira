@@ -103,6 +103,29 @@ export class SourceStore {
   }
 
   /**
+   * Fetch an archive back.
+   *
+   * Cira analyses what it was asked to deploy, and this is where it gets it:
+   * the same bytes the build read, without a second upload or a copy kept
+   * anywhere. Held in memory only for as long as it takes to read the source
+   * out of it.
+   */
+  async download(source: StoredSource): Promise<Buffer> {
+    const access = await this.tokens.accessToken();
+    const response = await fetch(
+      `${STORAGE}/b/${encodeURIComponent(source.bucket)}` +
+        `/o/${encodeURIComponent(source.object)}?alt=media` +
+        `&generation=${encodeURIComponent(source.generation)}`,
+      { headers: { authorization: `Bearer ${access}` } },
+    );
+
+    if (!response.ok) {
+      throw new SourceError(`Google would not return the upload (${response.status}).`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  /**
    * Confirm an upload actually arrived, and pin the build to it.
    *
    * Called before a build is started, because the alternative is a build that

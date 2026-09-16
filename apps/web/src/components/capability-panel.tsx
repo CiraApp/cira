@@ -26,8 +26,8 @@ export function CapabilityPanel({
   if (capabilities.length === 0) return null;
 
   const live = capabilities.filter((c) => c.enabled);
-  const review = capabilities.filter((c) => !c.enabled && c.risk !== "destructive");
-  const off = capabilities.filter((c) => !c.enabled && c.risk === "destructive");
+  const review = capabilities.filter((c) => !c.enabled);
+  const off: typeof capabilities = [];
 
   return (
     <section className="enter-up mt-10">
@@ -155,9 +155,7 @@ function RiskMark({ risk }: { risk: Capability["risk"] }) {
   const style =
     risk === "read"
       ? "border-line bg-sunken text-ink-subtle"
-      : risk === "write"
-        ? "border-pending/40 bg-pending/10 text-pending"
-        : "border-failed/40 bg-failed/10 text-failed";
+      : "border-pending/40 bg-pending/10 text-pending";
 
   return (
     <span

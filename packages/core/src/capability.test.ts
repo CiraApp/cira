@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  AUTO_ENABLE_CONFIDENCE,
   isCapabilityName,
   isSafeTargetPath,
   publicationFor,
@@ -8,36 +7,26 @@ import {
 } from "./capability.js";
 
 describe("publicationFor", () => {
-  it("auto-enables only a confident read", () => {
-    expect(publicationFor({ risk: "read", confidence: 0.9 })).toEqual({
-      enabled: true,
-      reason: "auto",
-    });
-    expect(publicationFor({ risk: "read", confidence: AUTO_ENABLE_CONFIDENCE })).toEqual({
-      enabled: true,
-      reason: "auto",
-    });
+  it("lets a read turn itself on", () => {
+    expect(publicationFor({ risk: "read" })).toEqual({ enabled: true, reason: "auto" });
   });
 
-  it("holds back a read it is unsure about", () => {
-    expect(publicationFor({ risk: "read", confidence: 0.5 })).toEqual({
+  it("never auto-enables anything that changes something", () => {
+    expect(publicationFor({ risk: "write" })).toEqual({
       enabled: false,
       reason: "review",
     });
   });
 
-  it("never auto-enables a write, however confident", () => {
-    expect(publicationFor({ risk: "write", confidence: 1 })).toEqual({
-      enabled: false,
-      reason: "review",
-    });
-  });
-
-  it("leaves anything destructive off", () => {
-    expect(publicationFor({ risk: "destructive", confidence: 1 })).toEqual({
-      enabled: false,
-      reason: "destructive",
-    });
+  /**
+   * It used to weigh how sure the analyzer said it was. It no longer needs to:
+   * a capability is not stored at all until the deployed app has answered for
+   * the route, and an app confirming its own routes is better evidence than a
+   * number the analyzer chose for itself.
+   */
+  it("depends on nothing but the grade", () => {
+    expect(publicationFor({ risk: "read" })).toEqual(publicationFor({ risk: "read" }));
+    expect(publicationFor({ risk: "write" })).toEqual(publicationFor({ risk: "write" }));
   });
 });
 

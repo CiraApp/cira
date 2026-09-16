@@ -42,7 +42,18 @@ export const capabilityRiskEnum = pgEnum("capability_risk", [
   "destructive",
 ]);
 
-export const capabilityMethodEnum = pgEnum("capability_method", ["GET", "POST"]);
+/**
+ * Widened past GET and POST because an analyzer that reads source finds what
+ * apps really serve, and a great many operations are a PATCH or a DELETE.
+ * Adding values to an enum is additive; nothing already stored changes.
+ */
+export const capabilityMethodEnum = pgEnum("capability_method", [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
 
 export const users = pgTable(
   "users",
@@ -406,7 +417,24 @@ export const capabilities = pgTable(
     /** Root-relative and never a full URL: the host comes from the deployment. */
     path: text("path").notNull(),
     risk: capabilityRiskEnum("risk").notNull(),
-    confidence: doublePrecision("confidence").notNull(),
+    /**
+     * Dead. Publication once weighed how sure the analyzer said it was; a
+     * capability is now confirmed by asking the deployed app whether it serves
+     * the route, which is better evidence than a number. Nullable rather than
+     * dropped, because expanding precedes contracting.
+     */
+    confidence: doublePrecision("confidence"),
+    /**
+     * When the deployed app answered for this, or null when nothing has asked
+     * it yet. Nothing unverified is published or offered to an agent.
+     */
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /**
+     * An example input, for reads, used once to ask the app whether the route
+     * is there. Never sent to an agent and never used for a write - a write is
+     * confirmed by asking which methods a path allows, not by performing it.
+     */
+    probe: jsonb("probe").$type<Record<string, unknown>>(),
     enabled: boolean("enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
