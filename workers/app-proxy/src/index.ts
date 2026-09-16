@@ -58,18 +58,25 @@ export default {
     const url = new URL(request.url);
     const address = parseAppHost(url.hostname, env.APPS_DOMAIN);
 
-    // Not an app hostname. The route this runs on is a wildcard, so Cira's
-    // own names can land here too; those are passed through to wherever they
-    // were going rather than answered, so turning on Cloudflare's proxy for
-    // one of them cannot take the marketing site down.
-    if (address === null) return fetch(request);
+    // Not an app hostname. The route this runs on is a wildcard, so anything
+    // under the domain without an explicit DNS record arrives here; there is
+    // nothing to serve it. Cira's own names have records of their own and do
+    // not reach this, which is why they must stay unproxied.
+    if (address === null) {
+      return new Response("No app at this address.", {
+        status: 404,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
 
     const label = url.hostname.split(".")[0] ?? "";
 
     if (url.pathname === ENTER_PATH) return enter(url, label, env);
 
     const session = await currentSession(request, label, env);
-    if (session === null) return challenge(request, url, label, env);
+    if (session === null) {
+      return challenge(request, `${url.pathname}${url.search}`, label, env);
+    }
 
     return forward(request, url, label, env);
   },
@@ -93,12 +100,13 @@ async function currentSession(
 async function enter(url: URL, label: string, env: Env): Promise<Response> {
   const token = url.searchParams.get("t") ?? "";
   const session = await verifySession(token, env.CIRA_PROXY_SECRET, { label });
+  const next = safePath(url.searchParams.get("next"));
 
   // A bad token here means a stale or tampered link, and sending someone back
-  // to Cira is both the honest answer and the one that fixes it.
-  if (session === null) return challenge(null, url, label, env);
-
-  const next = safePath(url.searchParams.get("next"));
+  // to Cira is both the honest answer and the one that fixes it - but back to
+  // where they were going, not back to this handshake. Asking Cira to return
+  // them to a URL containing the token that just failed is a loop.
+  if (session === null) return challenge(null, next, label, env);
   const maxAge = Math.max(0, session.expiresAt - Math.floor(Date.now() / 1000));
 
   return new Response(null, {
@@ -120,7 +128,12 @@ async function enter(url: URL, label: string, env: Env): Promise<Response> {
  * The distinction matters. Redirecting a stylesheet or an XHR to a sign-in
  * page produces a page where half the assets are HTML and nothing says why.
  */
-function challenge(request: Request | null, url: URL, label: string, env: Env): Response {
+function challenge(
+  request: Request | null,
+  next: string,
+  label: string,
+  env: Env,
+): Response {
   const navigation =
     request === null ||
     request.headers.get("sec-fetch-mode") === "navigate" ||
@@ -134,7 +147,7 @@ function challenge(request: Request | null, url: URL, label: string, env: Env): 
   }
 
   const enterUrl = new URL(`/enter/${label}`, env.CIRA_ORIGIN);
-  enterUrl.searchParams.set("next", `${url.pathname}${url.search}`);
+  enterUrl.searchParams.set("next", next);
 
   return new Response(null, {
     status: 302,
