@@ -3,18 +3,23 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId, type User } from "@cira/core";
 import { NO_SUCH_CAPABILITY } from "./capabilities";
 import type * as CiraDb from "@cira/db";
+import type * as CiraDeploy from "@cira/deploy";
 import { createTestDatabase } from "../../../../packages/db/src/testing.js";
 
 /**
  * The capability engine end to end: an agent searches, describes, and invokes,
  * and a real HTTP app answers.
  *
- * Only the database driver is swapped - Neon speaks HTTP and cannot reach a
- * local Postgres - so the schema, every permission check, the input
- * validation, the target resolution and the outbound request are all the real
- * ones. The app on the other end is a real server that refuses anything
- * arriving without Cira's key, which is what makes "it reached the right
- * place" something this test can actually observe.
+ * Only two things are swapped. The database driver, because Neon speaks HTTP
+ * and cannot reach a local Postgres; and the minting of the identity token
+ * Cira opens an app with, because Google is not here. Everything else is real:
+ * the schema, every permission check, the input validation, the target
+ * resolution and the outbound request.
+ *
+ * The app on the other end is a real server that refuses anything arriving
+ * without a token addressed to it - which stands in for Cloud Run, where that
+ * check happens before the app is reached at all, and is what makes "it got to
+ * the right place carrying the right thing" something this test can observe.
  */
 
 const TEST_DATABASE_URL = process.env["TEST_DATABASE_URL"];
@@ -22,7 +27,8 @@ const hasDatabase = TEST_DATABASE_URL !== undefined && TEST_DATABASE_URL !== "";
 
 const APP_PORT = 4611;
 const APP_ORIGIN = `http://127.0.0.1:${APP_PORT}`;
-const BYPASS = "test-bypass-secret";
+/** What the stubbed provider mints, and therefore what the app demands. */
+const tokenFor = (audience: string): string => `id-token-for-${audience}`;
 
 let database: Awaited<ReturnType<typeof makeDatabase>>;
 
@@ -59,6 +65,19 @@ async function makeDatabase() {
 vi.mock("@cira/db", async (importOriginal) => {
   const actual = await importOriginal<typeof CiraDb>();
   return { ...actual, db: () => database };
+});
+
+// Likewise only the token. Minting a real one needs Google, and what is worth
+// testing here is that Cira asks for one addressed to this app and sends it -
+// not that Google can sign.
+vi.mock("@cira/deploy", async (importOriginal) => {
+  const actual = await importOriginal<typeof CiraDeploy>();
+  return {
+    ...actual,
+    deploymentProvider: () => ({
+      invocationToken: (audience: string) => Promise.resolve(`id-token-for-${audience}`),
+    }),
+  };
 });
 
 let app: Server;
@@ -115,7 +134,6 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       slug: "revenue-dashboard",
       status: "live",
       ownerUserId: founder.id,
-      accessSecret: BYPASS,
     });
     await database
       .insert(appAccess)
@@ -169,9 +187,13 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         headers: request.headers as Record<string, unknown>,
       });
 
-      // A deployed app is unreachable except through Cira. Answering anything
-      // without the key would make the rest of this test meaningless.
-      if (request.headers["x-vercel-protection-bypass"] !== BYPASS) {
+      // A deployed app is unreachable except through Cira. Cloud Run makes
+      // that true by checking the token's audience before the app sees the
+      // request; this stands in for it, because answering anything without a
+      // token addressed here would make the rest of this test meaningless.
+      if (
+        request.headers["x-serverless-authorization"] !== `Bearer ${tokenFor(APP_ORIGIN)}`
+      ) {
         response.writeHead(401).end(JSON.stringify({ error: "unauthorized" }));
         return;
       }
@@ -251,7 +273,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       endDate: "2026-08-31",
     });
 
-    // It reached the right route, carrying Cira's key and a signature.
+    // It reached the right route, carrying a token minted for this app alone.
     const hit = received[0];
     expect(hit?.method).toBe("GET");
 
@@ -265,7 +287,13 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       endDate: "2026-08-31",
     });
     expect(hit?.headers["x-cira-capability"]).toBe("getRevenue");
-    expect(String(hit?.headers["x-cira-signature"])).toMatch(/^[0-9a-f]{64}$/);
+
+    // Not `authorization`: Cloud Run consumes this header and leaves the app's
+    // own alone, which matters when the app was not written for Cira.
+    expect(hit?.headers["x-serverless-authorization"]).toBe(
+      `Bearer ${tokenFor(APP_ORIGIN)}`,
+    );
+    expect(hit?.headers["authorization"]).toBeUndefined();
   });
 
   it("hides a capability from someone who cannot open the app", async () => {

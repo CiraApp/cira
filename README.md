@@ -70,6 +70,25 @@ pnpm build
 The build needs no secrets; every page that reads data is server-rendered on
 demand, so CI builds without a database or auth keys.
 
+### The tests that need a database
+
+`pnpm test` silently skips around forty of them. The journey and capability
+tests run against a real Postgres, because the constraints _are_ the safety -
+a fake would pass while the real schema rejected the same writes, which is
+precisely what those tests exist to catch. Without `TEST_DATABASE_URL` they are
+reported as skipped, which is easy to read past on a green run and is how a
+breakage reaches CI instead of stopping locally:
+
+```sh
+docker run -d --name cira-test-pg -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=cira_test -p 55439:5432 postgres:18-alpine
+
+TEST_DATABASE_URL=postgresql://postgres:test@localhost:55439/cira_test pnpm test
+```
+
+Each run builds its own schema in a fresh database and drops it afterwards, so
+the container can stay up between runs.
+
 ### A company to look at
 
 An empty account says very little about the product. This builds a whole
