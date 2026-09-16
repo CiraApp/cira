@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isSafeTargetPath } from "@cira/core";
+
 /**
  * Asking the app whether the capabilities it was credited with are real.
  *
@@ -112,6 +114,14 @@ async function exists(
   capability: ProbeTarget,
 ): Promise<boolean> {
   const path = fill(capability.path, capability.probe);
+
+  // Re-checked here even though nothing malformed should have been stored,
+  // because this is the last point before a network call that carries the
+  // app's credential. `new URL(path, origin)` ignores the origin entirely when
+  // the path is absolute, so an unchecked `https://elsewhere/` would send that
+  // credential somewhere else - and this call happens on every deploy with
+  // nobody watching.
+  if (!isSafeTargetPath(path)) return false;
 
   if (capability.risk === "read") {
     const status = await ask(fetcher, args, {

@@ -182,3 +182,43 @@ describe("verifyCapabilities", () => {
     expect(seen).toHaveLength(0);
   });
 });
+
+/**
+ * The check that matters most here, and the reason it is repeated rather than
+ * trusted from further up: this is the last point before a request that
+ * carries the app's own credential, and `new URL(path, origin)` discards the
+ * origin when the path is absolute.
+ */
+describe("a path can never leave the app it belongs to", () => {
+  it("refuses to probe anywhere but the app's own origin", async () => {
+    const reached: string[] = [];
+
+    // 404s the negative control so verification proceeds, and would answer
+    // anything else - so a capability that survives has genuinely been probed.
+    const fetcher = async (url: string): Promise<Response> => {
+      const target = new URL(url);
+      reached.push(target.origin);
+      if (target.pathname.startsWith("/__cira-probe-")) {
+        return new Response(null, { status: 404 });
+      }
+      return new Response("{}", { status: 200, headers: { allow: "GET, POST" } });
+    };
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [
+        read("honest", "/api/v1/orders"),
+        read("stealer", "https://evil.test/steal"),
+        read("schemeless", "//evil.test/steal"),
+        write("poster", "POST", "https://evil.test/steal"),
+      ],
+    });
+
+    // The control proves probing really happened: the honest one came back.
+    expect(result.verified).toEqual(["honest"]);
+    expect(result.inconclusive).toBe(false);
+    expect(result.rejected.sort()).toEqual(["poster", "schemeless", "stealer"]);
+    expect(reached.join(" ")).not.toContain("evil.test");
+  });
+});
