@@ -19,10 +19,13 @@ export function MobileNav({
   spaceSlug,
   spaces,
   items,
+  settings,
 }: {
   spaceSlug: string;
   spaces: Array<Space & { role: Role }>;
   items: NavItem[];
+  /** Pinned to the foot of the sheet, exactly as it is on the desktop spine. */
+  settings: NavItem;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -72,14 +75,21 @@ export function MobileNav({
             />
 
             <div className="enter-right absolute inset-y-0 left-0 flex w-[264px] flex-col border-r border-line bg-panel">
-              <div className="flex h-14 items-center border-b border-line px-4">
-                <Wordmark href={`/${spaceSlug}` as Route} />
+              <div className="flex h-14 shrink-0 items-center border-b border-line px-2.5">
+                <div className="min-w-0 flex-1">
+                  <SpaceMenu spaces={spaces} currentSlug={spaceSlug} />
+                </div>
               </div>
-              <div className="p-2.5">
-                <SpaceMenu spaces={spaces} currentSlug={spaceSlug} />
-              </div>
-              <div className="flex-1 overflow-y-auto px-2.5 pb-4">
+
+              <div className="flex-1 overflow-y-auto p-2.5">
                 <SidebarNav items={items} />
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2 border-t border-line p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))]">
+                <div className="min-w-0 flex-1">
+                  <SidebarNav items={[settings]} />
+                </div>
+                <Wordmark href={`/${spaceSlug}` as Route} />
               </div>
             </div>
           </div>

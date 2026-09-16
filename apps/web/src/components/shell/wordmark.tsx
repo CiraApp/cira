@@ -1,24 +1,33 @@
 import type { Route } from "next";
 import Link from "next/link";
+import { CiraMark } from "./mark";
 
-export function Wordmark({ href }: { href: Route }) {
+/**
+ * The brand, signed at the foot of the spine rather than announced at the top.
+ *
+ * Whose product this is is the one thing on screen nobody has to be told
+ * twice, so it takes the quietest position in the layout and leaves the top of
+ * the sidebar to the thing that actually scopes the page: which company you
+ * are in.
+ */
+export function Wordmark({
+  href,
+  showName = false,
+}: {
+  href: Route;
+  showName?: boolean;
+}) {
   return (
     <Link
       href={href}
       aria-label="Cira home"
-      className="-m-2 flex items-center gap-2 rounded-[var(--radius-edge)] p-2 transition-opacity duration-150 hover:opacity-70"
+      title="Cira"
+      className="group flex shrink-0 items-center gap-2 rounded-[var(--radius-edge)] px-1 py-1 text-ink-subtle transition-colors duration-200 hover:text-ink"
     >
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-[19px] w-[19px]">
-        <rect width="24" height="24" rx="3" fill="var(--color-accent)" />
-        <path
-          d="M16.4 8.6a5.3 5.3 0 1 0 0 6.8"
-          fill="none"
-          stroke="var(--color-accent-ink)"
-          strokeWidth="2.7"
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="text-[14px] font-semibold tracking-[-0.02em] text-ink">Cira</span>
+      <CiraMark className="h-[17px] w-[17px] transition-transform duration-300 ease-[var(--ease-spring)] group-hover:scale-110" />
+      {showName ? (
+        <span className="text-[13px] font-semibold tracking-[-0.02em]">Cira</span>
+      ) : null}
     </Link>
   );
 }

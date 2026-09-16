@@ -1,4 +1,5 @@
 import { AmbientField } from "@/components/ambient-field";
+import { CiraMark } from "@/components/shell/mark";
 
 /**
  * The frame for every screen that exists before a space does: onboarding, an
@@ -92,15 +93,7 @@ function Mark({ kind }: { kind: "logo" | "done" }) {
         className="relative flex h-11 w-11 items-center justify-center rounded-[var(--radius-edge)] bg-accent"
       >
         {kind === "logo" ? (
-          <svg viewBox="0 0 32 32" className="h-[26px] w-[26px]">
-            <path
-              d="M21.5 11.4a7 7 0 1 0 0 9.2"
-              fill="none"
-              stroke="var(--color-accent-ink)"
-              strokeWidth="3.4"
-              strokeLinecap="round"
-            />
-          </svg>
+          <CiraMark className="h-[27px] w-[27px] text-accent-ink" />
         ) : (
           <svg viewBox="0 0 32 32" className="h-[24px] w-[24px]">
             {/* Drawn rather than shown: the one moment in Cira where something
