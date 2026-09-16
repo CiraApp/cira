@@ -8,7 +8,7 @@ import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
 import { deploymentHandle, imageRef, parseHandle, serviceName } from "./names.js";
 import { imageTag, parseArchiveUri, type ParsedArchive } from "./source.js";
-import { buildSucceeded, toDeploymentStatus } from "./status.js";
+import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
 
 /**
  * Deploys through Google.
@@ -208,12 +208,12 @@ export class CloudRunProvider implements DeploymentProvider {
     status: DeploymentResult["status"];
     url: string | null;
   } {
-    const state = service.terminalCondition?.state;
+    const state = toReadiness(service.terminalCondition?.state);
 
-    if (state === "FALSE") return { status: "failed", url: null };
+    if (state === "failed") return { status: "failed", url: null };
 
     if (
-      state === "TRUE" &&
+      state === "ready" &&
       service.latestReadyRevision !== undefined &&
       service.latestReadyRevision === service.latestCreatedRevision
     ) {

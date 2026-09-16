@@ -78,7 +78,7 @@ function serviceAt(image: string, extra: Record<string, unknown> = {}): unknown 
     uri: "https://acme-ledger-abc-uc.a.run.app",
     latestReadyRevision: "acme-ledger-00001",
     latestCreatedRevision: "acme-ledger-00001",
-    terminalCondition: { type: "Ready", state: "TRUE" },
+    terminalCondition: { type: "Ready", state: "CONDITION_SUCCEEDED" },
     template: {
       labels: {},
       containers: [
@@ -345,7 +345,7 @@ describe("getStatus", () => {
           serviceAt(IMAGE, {
             terminalCondition: {
               type: "Ready",
-              state: "FALSE",
+              state: "CONDITION_FAILED",
               message: "container failed to listen on PORT",
             },
             template: {

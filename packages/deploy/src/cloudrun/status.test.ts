@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFailed, buildSucceeded, toDeploymentStatus } from "./status";
+import { buildFailed, buildSucceeded, toDeploymentStatus, toReadiness } from "./status";
 
 describe("toDeploymentStatus", () => {
   it("maps the states a build passes through", () => {
@@ -49,6 +49,30 @@ describe("buildSucceeded and buildFailed", () => {
   it("are never both true", () => {
     for (const state of ["QUEUED", "WORKING", "SUCCESS", "FAILURE", "WEIRD", undefined]) {
       expect(buildSucceeded(state) && buildFailed(state)).toBe(false);
+    }
+  });
+});
+
+describe("toReadiness", () => {
+  // The value the real API actually returns. It is not the one the reference
+  // describes, and coding to the reference made the first real deploy sit at
+  // "deploying" until it timed out, with a service that was serving fine.
+  it("reads what Cloud Run really says", () => {
+    expect(toReadiness("CONDITION_SUCCEEDED")).toBe("ready");
+    expect(toReadiness("CONDITION_FAILED")).toBe("failed");
+    expect(toReadiness("CONDITION_PENDING")).toBe("pending");
+    expect(toReadiness("CONDITION_RECONCILING")).toBe("pending");
+  });
+
+  it("also reads what the reference describes", () => {
+    expect(toReadiness("TRUE")).toBe("ready");
+    expect(toReadiness("FALSE")).toBe("failed");
+    expect(toReadiness("UNKNOWN")).toBe("pending");
+  });
+
+  it("never calls an unrecognised state ready", () => {
+    for (const unknown of ["SOMETHING_NEW", "", "  ", undefined]) {
+      expect(toReadiness(unknown)).toBe("pending");
     }
   });
 });
