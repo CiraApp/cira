@@ -3,6 +3,15 @@ name: ci
 on:
   push:
     branches: [prod]
+    # Prose only. Listed one by one rather than as `**.md`, because
+    # packages/cira-skill/SKILL.md is not prose: it is read at runtime, copied
+    # into the CLI bundle, and covered by skill.test.ts. Ignoring it would skip
+    # the tests for the thing that changed.
+    paths-ignore:
+      - "README.md"
+      - "CHECKLIST.md"
+      - "docs/**"
+      - "packages/cli/README.md"
   workflow_dispatch:
 
 concurrency:
@@ -57,8 +66,12 @@ jobs:
       - name: Format
         run: pnpm format
 
+      # Every package except the web app, whose `next build` is done again by
+      # `vercel build` in the deploy job a minute later. This still builds the
+      # CLI bundle, which nothing else covers - a broken bundle would otherwise
+      # surface only at publish time.
       - name: Build
-        run: pnpm build
+        run: pnpm -r --if-present --filter '!@cira/web' build
 
       - name: Test
         run: pnpm test
@@ -113,10 +126,25 @@ jobs:
       # VERCEL_TOKEN expires 2026-12-14 (90 days from 2026-09-15). When it
       # lapses, these steps fail with an authentication error rather than
       # anything that mentions expiry, so check the token first.
-      # npm, not pnpm: pnpm's global bin directory is not on PATH on the
-      # runner, so `pnpm add -g` installs a binary nothing can then invoke.
+      #
+      # Cached, because the version is pinned: downloading the same CLI on
+      # every push cost longer than the deploy it then performed. Installed
+      # into a prefix rather than globally so there is a single directory to
+      # cache, and its bin is put on PATH explicitly - pnpm's global bin is not
+      # on PATH on the runner, and npm's is not either under a custom prefix.
+      - name: Cache the Vercel CLI
+        id: vercel-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.vercel-cli
+          key: vercel-cli-59-${{ runner.os }}
+
       - name: Install Vercel CLI
-        run: npm install -g vercel@59
+        if: steps.vercel-cli.outputs.cache-hit != 'true'
+        run: npm install --prefix ~/.vercel-cli vercel@59
+
+      - name: Put the Vercel CLI on PATH
+        run: echo "$HOME/.vercel-cli/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Pull project settings
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
