@@ -119,7 +119,16 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 /** Exported so the settings gear at the foot is the same drawing, not a copy. */
-export function NavIcon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
+export function NavIcon({
+  name,
+  active,
+  sizeClass = "h-[15px] w-[15px]",
+}: {
+  name: NavItem["icon"];
+  active: boolean;
+  /** 15px reads as a label's companion in a row; the foot wants the mark's own height. */
+  sizeClass?: string;
+}) {
   const paths: Record<NavItem["icon"], React.ReactNode> = {
     apps: (
       <>
@@ -172,7 +181,7 @@ export function NavIcon({ name, active }: { name: NavItem["icon"]; active: boole
     <svg
       viewBox="0 0 18 18"
       aria-hidden="true"
-      className={`h-[15px] w-[15px] shrink-0 transition-[color,transform] duration-300 ease-[var(--ease-spring)] group-hover:scale-110 ${
+      className={`${sizeClass} shrink-0 transition-[color,transform] duration-300 ease-[var(--ease-spring)] group-hover:scale-110 ${
         active ? "text-accent" : "text-ink-subtle group-hover:text-ink-muted"
       }`}
       fill="none"
