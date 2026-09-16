@@ -14,25 +14,48 @@ export const MAX_SERVICE_NAME = 63;
 /**
  * A Cira space and app, as one Cloud Run service name.
  *
- * Truncated from the middle of the app slug rather than the end when it will
- * not fit, because the space tells you whose it is and the start of an app
- * name tells you which - and the tail of a long slug tells you neither. A hash
- * suffix keeps two long names in one space from colliding into each other.
+ * The id is in the name, and it has to be. Cloud Run allows only lowercase
+ * letters, digits and hyphens, so a space slug and an app slug joined by a
+ * hyphen cannot be taken apart again: space `acme-corp` with app `ledger` and
+ * space `acme` with app `corp-ledger` both read as `acme-corp-ledger`. Those
+ * are two apps belonging to two different companies, and whichever deployed
+ * second would have taken over the other's service - its image and, worse, its
+ * environment. A slug is chosen by whoever creates the space, so that is not
+ * only an accident waiting to happen.
+ *
+ * The slugs stay in front because a name nobody can read is its own kind of
+ * problem when something is wrong at three in the morning. The id on the end
+ * is what makes it unambiguous.
  */
-export function serviceName(spaceSlug: string, appSlug: string): string {
-  const base = `${clean(spaceSlug)}-${clean(appSlug)}`;
-  if (base.length <= MAX_SERVICE_NAME && /^[a-z]/.test(base)) return base;
-
+export function serviceName(args: {
+  spaceSlug: string;
+  appSlug: string;
+  appId: string;
+}): string {
+  const suffix = `-${discriminator(args.appId)}`;
+  const base = `${clean(args.spaceSlug)}-${clean(args.appSlug)}`;
   const prefixed = /^[a-z]/.test(base) ? base : `a${base}`;
-  if (prefixed.length <= MAX_SERVICE_NAME) return prefixed;
 
-  // Deterministic, so the same app always lands on the same service: a deploy
-  // that invented a new name each time would orphan the previous one.
-  const suffix = `-${shortHash(`${spaceSlug}/${appSlug}`)}`;
-  return `${prefixed.slice(0, MAX_SERVICE_NAME - suffix.length)}${suffix}`.replace(
-    /-+$/,
-    "",
-  );
+  const room = MAX_SERVICE_NAME - suffix.length;
+  // Truncated from the end of the app slug rather than the start of the space,
+  // because the space tells you whose it is and the start of an app name tells
+  // you which; the tail of a long slug tells you neither.
+  const head = prefixed.slice(0, room).replace(/-+$/, "");
+
+  return `${head}${suffix}`;
+}
+
+/**
+ * The part that guarantees two apps never land on one service.
+ *
+ * Taken from the app's own id, which is already unique, rather than hashed
+ * from the names - a hash of the names would have exactly the collision this
+ * exists to prevent, just less often.
+ */
+function discriminator(appId: string): string {
+  const cleaned = appId.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (cleaned.length < 8) throw new Error("Not a usable app id.");
+  return cleaned.slice(-8);
 }
 
 /**
@@ -144,17 +167,4 @@ function clean(part: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-/**
- * A short, stable discriminator. Not a security boundary - it exists so two
- * long names do not truncate onto each other, and collisions there are
- * inconvenient rather than dangerous.
- */
-function shortHash(input: string): string {
-  let hash = 5381;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = ((hash << 5) + hash + input.charCodeAt(i)) >>> 0;
-  }
-  return hash.toString(36).slice(0, 6);
 }

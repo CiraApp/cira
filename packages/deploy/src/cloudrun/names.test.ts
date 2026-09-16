@@ -10,50 +10,68 @@ import {
 } from "./names";
 
 describe("serviceName", () => {
-  it("joins a space and an app", () => {
-    expect(serviceName("acme", "invoice-matcher")).toBe("acme-invoice-matcher");
+  const id = "app_0123456789abcdef0123456789abcdef";
+
+  it("joins a space and an app, and says which app", () => {
+    expect(
+      serviceName({ spaceSlug: "acme", appSlug: "invoice-matcher", appId: id }),
+    ).toBe("acme-invoice-matcher-89abcdef");
   });
 
   it("lowercases and replaces what Cloud Run will not take", () => {
-    expect(serviceName("Acme Corp", "Invoice_Matcher!")).toBe(
-      "acme-corp-invoice-matcher",
+    expect(
+      serviceName({ spaceSlug: "Acme Corp", appSlug: "Invoice_Matcher!", appId: id }),
+    ).toBe("acme-corp-invoice-matcher-89abcdef");
+  });
+
+  /**
+   * The reason the id is there at all. Cloud Run names allow only letters,
+   * digits and hyphens, so two slugs joined by a hyphen cannot be taken apart:
+   * these two are different apps in different companies that would otherwise
+   * share one service, and whichever deployed second would take over the
+   * other's image and environment.
+   */
+  it("keeps two companies off the same service", () => {
+    const first = serviceName({
+      spaceSlug: "acme-corp",
+      appSlug: "ledger",
+      appId: "app_1111111111111111111111111111aaaa",
+    });
+    const second = serviceName({
+      spaceSlug: "acme",
+      appSlug: "corp-ledger",
+      appId: "app_2222222222222222222222222222bbbb",
+    });
+
+    expect(first).not.toBe(second);
+  });
+
+  it("is the same every time, so a redeploy finds its own service", () => {
+    const args = { spaceSlug: "acme", appSlug: "ledger", appId: id };
+    expect(serviceName(args)).toBe(serviceName(args));
+  });
+
+  it("starts with a letter, whatever the slug started with", () => {
+    expect(serviceName({ spaceSlug: "9to5", appSlug: "app", appId: id })).toMatch(
+      /^[a-z]/,
     );
   });
 
-  it("collapses runs of separators rather than leaving doubles", () => {
-    expect(serviceName("a--b", "c___d")).toBe("a-b-c-d");
-  });
-
-  it("never starts with a digit", () => {
-    // Cloud Run requires a leading letter, and a name it refuses fails at
-    // create time rather than being trimmed for you.
-    expect(serviceName("2024", "reports")).toMatch(/^[a-z]/);
-  });
-
-  it("stays inside the length limit", () => {
-    const name = serviceName("a-very-long-company-name-indeed", "y".repeat(80));
+  it("fits, and still identifies the app, when the slugs do not", () => {
+    const name = serviceName({
+      spaceSlug: "a".repeat(40),
+      appSlug: "b".repeat(40),
+      appId: id,
+    });
     expect(name.length).toBeLessThanOrEqual(MAX_SERVICE_NAME);
-    expect(name).toMatch(/^[a-z][a-z0-9-]*[a-z0-9]$/);
+    expect(name.endsWith("-89abcdef")).toBe(true);
+    expect(name).toMatch(/^[a-z][a-z0-9-]*$/);
   });
 
-  it("is stable, so a redeploy lands on the same service", () => {
-    // A name that changed per deploy would orphan the previous service and
-    // leave the app answering on a URL nobody is watching.
-    const once = serviceName("space", "z".repeat(90));
-    const twice = serviceName("space", "z".repeat(90));
-    expect(once).toBe(twice);
-  });
-
-  it("keeps two long names in one space apart", () => {
-    const a = serviceName("space", `${"z".repeat(80)}-alpha`);
-    const b = serviceName("space", `${"z".repeat(80)}-beta`);
-    expect(a).not.toBe(b);
-  });
-
-  it("does not end on a hyphen after truncating", () => {
-    for (let n = 55; n < 75; n += 1) {
-      expect(serviceName("space", "a".repeat(n))).not.toMatch(/-$/);
-    }
+  it("refuses an id it cannot tell apart", () => {
+    expect(() =>
+      serviceName({ spaceSlug: "acme", appSlug: "ledger", appId: "app_1" }),
+    ).toThrow("usable app id");
   });
 });
 

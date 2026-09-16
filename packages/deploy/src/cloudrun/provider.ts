@@ -117,7 +117,11 @@ export class CloudRunProvider implements DeploymentProvider {
   ) {}
 
   async deploy(app: AppDeploymentInput): Promise<DeploymentResult> {
-    const service = serviceName(app.spaceSlug, app.appSlug);
+    const service = serviceName({
+      spaceSlug: app.spaceSlug,
+      appSlug: app.appSlug,
+      appId: app.appId,
+    });
     const tag = imageTag(app.source.uri);
     const image = this.imageFor(service, tag);
     const archive = parseArchiveUri(app.source.uri);

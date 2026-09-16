@@ -23,10 +23,11 @@ const tokens = {
 
 const SOURCE_URI = "gs://cira-sources/sources/usr_1/src_2.tar.gz#17000001";
 const TAG = imageTag(SOURCE_URI);
-const IMAGE = `us-central1-docker.pkg.dev/proj/cira-apps/acme-ledger:${TAG}`;
+const SERVICE = "acme-ledger-0000app1";
+const IMAGE = `us-central1-docker.pkg.dev/proj/cira-apps/${SERVICE}:${TAG}`;
 
 const input: AppDeploymentInput = {
-  appId: "app_1",
+  appId: "app_00000000000000000000000000000app1",
   spaceSlug: "acme",
   appSlug: "ledger",
   framework: "python",
@@ -123,7 +124,7 @@ describe("deploy", () => {
 
     // Both halves of the deploy have to be findable from the one string Cira
     // gets to store.
-    expect(result.providerDeploymentId).toBe(`b-1:acme-ledger:${TAG}`);
+    expect(result.providerDeploymentId).toBe(`b-1:${SERVICE}:${TAG}`);
     expect(result.status).toBe("building");
   });
 
@@ -237,7 +238,7 @@ describe("deploy", () => {
 });
 
 describe("getStatus", () => {
-  const handle = `b-1:acme-ledger:${TAG}`;
+  const handle = `b-1:${SERVICE}:${TAG}`;
 
   it("does not touch the service while the build is running", async () => {
     serve([[/cloudbuild/, () => building]]);
@@ -386,7 +387,7 @@ describe("getLogs", () => {
       ],
     ]);
 
-    const lines = await provider().getLogs(`b-1:acme-ledger:${TAG}`);
+    const lines = await provider().getLogs(`b-1:${SERVICE}:${TAG}`);
 
     expect(lines.map((l) => l.message)).toEqual(["FETCHSOURCE", "BUILD", "DONE"]);
     expect(calls.at(-1)?.url).toContain("log-b-1.txt");
@@ -399,7 +400,7 @@ describe("getLogs", () => {
       [/storage\.googleapis/, () => new Response("", { status: 404 })],
     ]);
 
-    expect(await provider().getLogs(`b-1:acme-ledger:${TAG}`)).toEqual([]);
+    expect(await provider().getLogs(`b-1:${SERVICE}:${TAG}`)).toEqual([]);
   });
 });
 
@@ -407,15 +408,15 @@ describe("remove", () => {
   it("deletes the service", async () => {
     serve([[/run\.googleapis/, () => ({ name: "operations/1" })]]);
 
-    await provider().remove(`b-1:acme-ledger:${TAG}`);
+    await provider().remove(`b-1:${SERVICE}:${TAG}`);
 
     expect(calls[0]?.method).toBe("DELETE");
-    expect(calls[0]?.url).toContain("/services/acme-ledger");
+    expect(calls[0]?.url).toContain(`/services/${SERVICE}`);
   });
 
   it("treats already gone as done", async () => {
     serve([[/run\.googleapis/, () => new Response("", { status: 404 })]]);
-    await expect(provider().remove(`b-1:acme-ledger:${TAG}`)).resolves.toBeUndefined();
+    await expect(provider().remove(`b-1:${SERVICE}:${TAG}`)).resolves.toBeUndefined();
   });
 });
 
