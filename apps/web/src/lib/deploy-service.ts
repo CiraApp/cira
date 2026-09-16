@@ -2,9 +2,10 @@ import "server-only";
 
 import { and, eq } from "drizzle-orm";
 import { apps, appAccess, db, deployments, memberships, spaces } from "@cira/db";
-import { newId, slugify } from "@cira/core";
+import { newId, slugify, canManageApp } from "@cira/core";
 import type { SourceFile, User } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
+import { recordEnvVars } from "@/lib/env-vars";
 import { checkBundle } from "@cira/deploy";
 
 export type DeployOutcome =
@@ -23,8 +24,11 @@ export async function deployToSpace(args: {
   appName: string;
   appId: string | null;
   files: readonly SourceFile[];
+  /** Handed to the provider and then forgotten. See docs/secrets.md. */
+  env?: Readonly<Record<string, string>>;
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName, files } = args;
+  const env = args.env ?? {};
 
   const bundle = checkBundle(files as Array<SourceFile>);
   if (!bundle.ok) return { ok: false, error: bundle.reason };
@@ -91,6 +95,38 @@ export async function deployToSpace(args: {
       targetId: user.id,
     });
   } else {
+    // Setting an app's environment is managing it, so it takes the same rights
+    // rather than the weaker "is in this space" that redeploying takes. A first
+    // deploy is exempt by construction: the deployer is the owner.
+    if (Object.keys(env).length > 0) {
+      const mine = await database
+        .select({
+          id: memberships.id,
+          role: memberships.role,
+          spaceId: memberships.spaceId,
+        })
+        .from(memberships)
+        .where(eq(memberships.userId, user.id));
+
+      const allowed = canManageApp({
+        userId: user.id,
+        app,
+        memberships: mine.map((m) => ({
+          id: m.id,
+          userId: user.id,
+          spaceId: m.spaceId,
+          role: m.role,
+        })),
+      });
+
+      if (!allowed) {
+        return {
+          ok: false,
+          error: "You cannot set environment variables on an app you do not manage.",
+        };
+      }
+    }
+
     await database
       .update(apps)
       .set({ status: "deploying", updatedAt: new Date() })
@@ -106,7 +142,7 @@ export async function deployToSpace(args: {
       appSlug: app.slug,
       framework: "nextjs",
       files,
-      env: {},
+      env,
     });
   } catch (error) {
     await database
@@ -141,6 +177,10 @@ export async function deployToSpace(args: {
       // handing anyone a link that does not work.
     }
   }
+
+  // The names, never the values. Recorded after the provider accepted them, so
+  // the app page cannot claim a variable is configured when the deploy failed.
+  await recordEnvVars({ appId: app.id, userId: user.id, env });
 
   const deploymentId = newId("deployment");
   await database.insert(deployments).values({

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
+import { envSchema } from "@/lib/env-vars";
 
 export const maxDuration = 60;
 
@@ -19,6 +20,10 @@ const body = z.object({
     )
     .min(1)
     .max(5000),
+  // Values pass straight through to the provider and are never stored; see
+  // docs/secrets.md. Absent means "this app has none", which clears any the
+  // app was previously deployed with.
+  env: envSchema.optional(),
 });
 
 export async function POST(request: Request) {
@@ -41,6 +46,7 @@ export async function POST(request: Request) {
     appName: parsed.data.appName,
     appId: parsed.data.appId ?? null,
     files: parsed.data.files,
+    env: parsed.data.env ?? {},
   });
 
   if (!outcome.ok) {

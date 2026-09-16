@@ -12,6 +12,8 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { AccessPanel } from "@/components/access-panel";
 import { AppSettings } from "@/components/app-settings";
+import { EnvPanel } from "@/components/env-panel";
+import { listEnvVars } from "@/lib/env-vars";
 import { CapabilityPanel } from "@/components/capability-panel";
 import { AppIcon } from "@/components/app-icon";
 import { StatusDot } from "@/components/status-dot";
@@ -50,6 +52,9 @@ export default async function AppPage({
       memberships: ctx.memberships,
     });
     const access = manages ? await loadAccess(spaceSlug, appSlug) : null;
+    // Only to whoever can manage the app: what it is configured with is part of
+    // how it is run, not part of using it.
+    const envVars = manages ? await listEnvVars(app.id) : [];
     const color = appColor(app.id);
     const resolved = resolveAppState(app, deployment, holdsKey);
 
@@ -176,6 +181,8 @@ export default async function AppPage({
               hasEveryone={access.entries.some((e) => e.kind === "everyone")}
             />
           ) : null}
+
+          {manages ? <EnvPanel vars={envVars} /> : null}
 
           {manages ? (
             <AppSettings

@@ -110,6 +110,15 @@ export class VercelProvider implements DeploymentProvider {
         files: app.files.map((f) => ({ file: f.path, sha: f.sha, size: f.size })),
         projectSettings: { framework: app.framework },
         meta: { ciraAppId: app.appId },
+        // Inline on the deployment rather than on the project: a Cira project
+        // does not exist until its first deployment creates it, so there is
+        // nothing to attach project variables to when the first build runs -
+        // which is the build most likely to need them. Both halves are set from
+        // one map because Next.js needs some while building and some while
+        // serving, and which is which is not a question to put to a developer.
+        ...(Object.keys(app.env).length === 0
+          ? {}
+          : { env: app.env, build: { env: app.env } }),
       }),
     });
 

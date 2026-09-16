@@ -15,6 +15,9 @@ const USAGE = `
   ${bold("Commands")}
     deploy     Deploy this folder to your company
                --space <slug>   which space, when you are in more than one
+               --env-file <p>   read variables from this file instead
+               --env K=V        set one variable (repeatable, wins over a file)
+               --no-env         deploy with no variables, clearing any set
     login      Connect this machine to your Cira account
     skill      install    Add the Cira Skill to your coding agents
     mcp        connect    Point this machine's assistants at your company

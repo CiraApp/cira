@@ -210,6 +210,42 @@ export const appAccess = pgTable(
   ],
 );
 
+/**
+ * One environment variable an app is deployed with - the fact of it, never the
+ * value.
+ *
+ * Cira passes values to the provider and keeps none: see docs/secrets.md. What
+ * is here is what the app page needs to show what is configured, plus enough to
+ * see that a value changed between deploys without being able to recover it.
+ */
+export const appEnvVars = pgTable(
+  "app_env_vars",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    /**
+     * First 8 hex of the SHA-256 of the value. Enough to tell that a value
+     * changed, far too little to recover one - a full digest of a short or
+     * guessable secret is worth brute-forcing, and eight characters is not.
+     */
+    fingerprint: text("fingerprint").notNull(),
+    /** `NEXT_PUBLIC_*`, which the build inlines into the browser bundle. */
+    isPublic: boolean("is_public").notNull().default(false),
+    setByUserId: text("set_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("app_env_vars_app_key_idx").on(t.appId, t.key),
+    index("app_env_vars_app_idx").on(t.appId),
+  ],
+);
+
 export const deployments = pgTable(
   "deployments",
   {

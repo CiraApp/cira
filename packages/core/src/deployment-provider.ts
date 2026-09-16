@@ -31,7 +31,14 @@ export interface AppDeploymentInput {
   appSlug: string;
   framework: Framework;
   files: readonly SourceFile[];
-  /** Build-time and run-time variables. Never surfaced to a browser. */
+  /**
+   * Build-time and run-time variables.
+   *
+   * Values pass through and are never stored by Cira or written to a log; see
+   * docs/secrets.md. A name prefixed `NEXT_PUBLIC_` is compiled into the
+   * browser bundle by the build, which is the caller's problem to warn about,
+   * not this interface's to prevent.
+   */
   env: Readonly<Record<string, string>>;
 }
 

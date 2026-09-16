@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
 import { collectFiles, readFileBody, readSourceFiles } from "./files.js";
+import { collectEnv } from "./env.js";
 import { extractRepo } from "@cira/extract";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
@@ -98,6 +99,34 @@ export async function deploy(argv: string[] = []): Promise<number> {
   const bytes = files.reduce((n, f) => n + f.size, 0);
   info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)})...`)}`);
 
+  // Names are printed, values never are - not here, not on failure, not
+  // anywhere. See docs/secrets.md.
+  let collected;
+  try {
+    collected = collectEnv(root, argv);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "Could not read the env file.");
+    return 1;
+  }
+
+  const names = Object.keys(collected.env).sort();
+  if (names.length > 0) {
+    info(
+      `${dim(`Environment from ${collected.source ?? "flags"}:`)} ${names.join(", ")}`,
+    );
+  }
+
+  // Worth interrupting for: the build inlines these into the JavaScript the
+  // browser downloads, so a secret here is published the moment it ships and
+  // rotating is the only fix.
+  if (collected.publicNames.length > 0) {
+    info("");
+    info(`  ${bold("Public to anyone who opens the app:")}`);
+    for (const name of collected.publicNames) info(`    ${name}`);
+    info(`  ${dim("NEXT_PUBLIC_ variables are compiled into the browser bundle.")}`);
+    info("");
+  }
+
   for (const file of files) {
     try {
       await api("/api/cli/upload", {
@@ -127,6 +156,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         appName: link === null ? prettyName(basename(root)) : basename(root),
         appId: link?.appId ?? null,
         files,
+        env: collected.env,
       },
     });
   } catch (error) {
