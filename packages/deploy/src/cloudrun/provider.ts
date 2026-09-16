@@ -118,7 +118,8 @@ export class CloudRunProvider implements DeploymentProvider {
 
   async deploy(app: AppDeploymentInput): Promise<DeploymentResult> {
     const service = serviceName(app.spaceSlug, app.appSlug);
-    const image = this.imageFor(service, imageTag(app.source.uri));
+    const tag = imageTag(app.source.uri);
+    const image = this.imageFor(service, tag);
     const archive = parseArchiveUri(app.source.uri);
 
     const buildId = await this.startBuild(archive, image);
@@ -140,11 +141,7 @@ export class CloudRunProvider implements DeploymentProvider {
     });
 
     return {
-      providerDeploymentId: deploymentHandle({
-        buildId,
-        service,
-        tag: imageTag(app.source.uri),
-      }),
+      providerDeploymentId: deploymentHandle({ buildId, service, tag }),
       status: "building",
       // A redeploy is still serving its previous revision, and saying so is
       // more useful than reporting an app with no address for ten minutes.
