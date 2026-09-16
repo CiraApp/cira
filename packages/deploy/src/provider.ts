@@ -1,4 +1,6 @@
 import { VercelProvider } from "./vercel.js";
+import { cloudRunConfig, googleTokens } from "./cloudrun/config.js";
+import { SourceStore } from "./cloudrun/source.js";
 
 /**
  * Which provider Cira is using.
@@ -17,4 +19,16 @@ export function deploymentProvider(): VercelProvider {
   }
 
   return new VercelProvider({ token, teamId });
+}
+
+/**
+ * Where uploaded source lands.
+ *
+ * Separate from the provider because it is used before there is anything to
+ * deploy: the CLI uploads, and only then says which space the result belongs
+ * in. Same configuration, different moment.
+ */
+export function sourceStore(): SourceStore {
+  const config = cloudRunConfig();
+  return new SourceStore(config, googleTokens(config));
 }

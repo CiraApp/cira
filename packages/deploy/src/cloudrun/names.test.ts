@@ -82,19 +82,24 @@ describe("imageRef", () => {
 });
 
 describe("sourceObject", () => {
-  it("is unique per deploy and sorts by time", () => {
-    const first = sourceObject("app_1", new Date("2026-01-01T00:00:00Z"));
-    const second = sourceObject("app_1", new Date("2026-01-02T00:00:00Z"));
-    expect(first).not.toBe(second);
-    expect(first < second).toBe(true);
+  it("files an upload under whoever uploaded it", () => {
+    expect(sourceObject("usr_abc", "src_def")).toBe("sources/usr_abc/src_def.tar.gz");
   });
 
-  it("keeps colons out of the timestamp", () => {
-    // A colon in an object name has to be escaped in the URLs that address it.
-    // The `.tar.gz` extension is fine and stays.
-    const object = sourceObject("app_1", new Date("2026-01-01T12:34:56.789Z"));
+  it("keeps colons out of the name", () => {
+    // A colon in an object name has to be escaped in every URL that addresses
+    // it. The `.tar.gz` extension is fine and stays.
+    const object = sourceObject("usr_abc", "src_def");
     expect(object).not.toContain(":");
     expect(object).toMatch(/\.tar\.gz$/);
+  });
+
+  // The check that matters: these two halves are pasted into a URL path, and a
+  // traversal in either would address an object the caller was never given.
+  it("refuses anything that is not an id", () => {
+    expect(() => sourceObject("../other", "src_def")).toThrow("user id");
+    expect(() => sourceObject("usr_abc", "a/b")).toThrow("source id");
+    expect(() => sourceObject("usr_abc", "")).toThrow("source id");
   });
 });
 

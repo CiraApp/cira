@@ -16,6 +16,8 @@ export const ID_PREFIXES = {
   deployment: "dep",
   invite: "inv",
   capability: "cap",
+  /** An uploaded source archive. Not a row: it names an object in a bucket. */
+  source: "src",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

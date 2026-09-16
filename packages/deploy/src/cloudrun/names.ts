@@ -47,9 +47,33 @@ export function imageRef(args: {
   return `${region}-docker.pkg.dev/${projectId}/${repository}/${service}:${buildId}`;
 }
 
-/** The object a deploy's source archive is uploaded to. */
-export function sourceObject(appId: string, at: Date = new Date()): string {
-  return `sources/${appId}/${at.toISOString().replace(/[:.]/g, "-")}.tar.gz`;
+/**
+ * The object a deploy's source archive is uploaded to.
+ *
+ * Keyed on the uploading user, not on the app, because the app does not exist
+ * yet: `cira deploy` uploads before it says which space to publish into, and
+ * on a first deploy the app is created by that later call. The user is the one
+ * thing already known.
+ *
+ * That ordering turns out to be the safer shape anyway. A deploy names the
+ * source it wants by id alone, and this rebuilds the path from the *caller's*
+ * own id, so an id belonging to someone else does not resolve to their upload.
+ * There is no request in which one person can build from another's source.
+ */
+export function sourceObject(userId: string, sourceId: string): string {
+  return `sources/${safe(userId, "user")}/${safe(sourceId, "source")}.tar.gz`;
+}
+
+/**
+ * Both halves end up inside a URL path, so they are checked rather than
+ * trusted. Cira's own ids always pass; this exists for the day something
+ * constructs one from user input and nobody notices.
+ */
+function safe(value: string, what: string): string {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(value)) {
+    throw new Error(`Not a usable ${what} id.`);
+  }
+  return value;
 }
 
 /** The fully qualified name the Cloud Run API addresses a service by. */
