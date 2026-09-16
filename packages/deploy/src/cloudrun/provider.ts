@@ -48,6 +48,28 @@ const BUILD_LABEL = "cira-build";
 /** Cloud Run's own default, stated rather than assumed. */
 const CONTAINER_PORT = 8080;
 
+/**
+ * Names Cloud Run sets itself, and rejects a service for setting.
+ *
+ * `PORT` is the one that matters. It is in a great many `.env` files, because
+ * it is how you run the thing locally, and a deploy that failed on it would
+ * fail with whatever Google says about reserved variables - about a line the
+ * developer wrote months ago for an unrelated reason. Cloud Run tells the
+ * container which port to listen on, so the value would have been wrong even
+ * if it were allowed.
+ */
+const RESERVED = new Set([
+  "PORT",
+  "K_SERVICE",
+  "K_REVISION",
+  "K_CONFIGURATION",
+  "CLOUD_RUN_JOB",
+  "CLOUD_RUN_EXECUTION",
+  "CLOUD_RUN_TASK_INDEX",
+  "CLOUD_RUN_TASK_ATTEMPT",
+  "CLOUD_RUN_TASK_COUNT",
+]);
+
 export class CloudRunError extends Error {
   constructor(
     message: string,
@@ -402,6 +424,7 @@ export class CloudRunProvider implements DeploymentProvider {
               image: spec.image,
               ports: [{ name: "http1", containerPort: CONTAINER_PORT }],
               env: Object.entries(spec.env)
+                .filter(([name]) => !RESERVED.has(name))
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([name, value]) => ({ name, value })),
               resources: { limits: { cpu: "1", memory: "512Mi" }, cpuIdle: true },

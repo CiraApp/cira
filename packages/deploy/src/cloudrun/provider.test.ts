@@ -159,10 +159,30 @@ describe("deploy", () => {
     const body = patch?.body as {
       template: { containers: Array<{ env: Array<{ name: string; value: string }> }> };
     };
+    // PORT is gone: Cloud Run sets it itself and rejects a service that tries
+    // to, and it is in a great many `.env` files because it is how you run the
+    // thing locally.
     expect(body.template.containers[0]?.env).toEqual([
       { name: "DATABASE_URL", value: "postgres://user:hunter2@db/app" },
-      { name: "PORT", value: "8080" },
     ]);
+  });
+
+  it("drops the names Cloud Run reserves rather than failing the deploy", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy({
+      ...input,
+      env: { PORT: "3000", K_SERVICE: "mine", KEEP: "yes" },
+    });
+
+    const patch = calls.find((c) => c.method === "PATCH");
+    const body = patch?.body as {
+      template: { containers: Array<{ env: Array<{ name: string }> }> };
+    };
+    expect(body.template.containers[0]?.env).toEqual([{ name: "KEEP", value: "yes" }]);
   });
 
   /**
