@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { PRESETS, accentContrast, normalizeHex, type Theme } from "@/lib/theme";
+import {
+  DEFAULT_THEME,
+  PRESETS,
+  accentContrast,
+  normalizeHex,
+  type Theme,
+} from "@/lib/theme";
 import { ColorWheel } from "./color-wheel";
 import { Portal } from "@/components/ui/portal";
 import { useTheme } from "./theme-provider";
@@ -17,6 +23,9 @@ import { useTheme } from "./theme-provider";
  */
 export function ThemePicker() {
   const { theme, effective, setTheme, reset, preview } = useTheme();
+  // Which swatch is marked. Not `effective`, which follows the pointer while
+  // a preset is being previewed and would slide the mark around under it.
+  const chosen = theme ?? DEFAULT_THEME;
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -112,7 +121,7 @@ export function ThemePicker() {
                   onBlur={() => preview(null)}
                   onClick={() => setTheme({ base: preset.base, accent: preset.accent })}
                   data-current={
-                    theme?.base === preset.base && theme.accent === preset.accent
+                    chosen.base === preset.base && chosen.accent === preset.accent
                       ? "true"
                       : undefined
                   }
@@ -157,7 +166,7 @@ export function ThemePicker() {
 
             <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
               <span className="text-[11px] text-ink-subtle">
-                {theme === null ? "Following your system" : "Saved in this browser"}
+                {theme === null ? "Cira's own colours" : "Saved in this browser"}
               </span>
               <button
                 type="button"

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PRESETS } from "@/lib/theme";
+import { DEFAULT_THEME, PRESETS } from "@/lib/theme";
 import { useTheme } from "./theme/theme-provider";
 import { spaceIndex, type PaletteApp } from "@/lib/palette-actions";
 import { Portal } from "./ui/portal";
@@ -42,7 +42,8 @@ export function CommandPalette({
   items: NavItem[];
 }) {
   const router = useRouter();
-  const { theme: chosen, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
+  const chosen = theme ?? DEFAULT_THEME;
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -119,7 +120,7 @@ export function CommandPalette({
       id: `theme:${preset.name}`,
       label: preset.name,
       hint:
-        chosen?.base === preset.base && chosen.accent === preset.accent
+        chosen.base === preset.base && chosen.accent === preset.accent
           ? "Current colours"
           : null,
       group: "Interface",
