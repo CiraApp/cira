@@ -34,7 +34,7 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
   "removed",
 ]);
 
-export const accessTypeEnum = pgEnum("access_type", ["user", "space"]);
+export const accessTypeEnum = pgEnum("access_type", ["user", "space", "team"]);
 
 export const capabilityRiskEnum = pgEnum("capability_risk", [
   "read",
@@ -99,6 +99,59 @@ export const memberships = pgTable(
   ],
 );
 
+/**
+ * A team inside a company: Engineering, Support, Finance.
+ *
+ * Teams exist because access grants outlive the people in them. "Everyone in
+ * Support can open the ticket console" stays true when Support hires; a list
+ * of eleven names does not, and the day it stops being true is the day nobody
+ * notices. A team is therefore a *target* for a grant and nothing else - it
+ * carries no role and no permissions of its own.
+ */
+export const teams = pgTable(
+  "teams",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("teams_space_slug_idx").on(t.spaceId, t.slug),
+    index("teams_space_idx").on(t.spaceId),
+  ],
+);
+
+/**
+ * Who is on a team.
+ *
+ * Deliberately not a column on `memberships`: people belong to more than one
+ * team, and the day someone moves from Support to Engineering their old
+ * grants should follow the move without anyone editing an app.
+ */
+export const teamMembers = pgTable(
+  "team_members",
+  {
+    id: text("id").primaryKey(),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("team_members_unique_idx").on(t.teamId, t.userId),
+    index("team_members_user_idx").on(t.userId),
+    index("team_members_team_idx").on(t.teamId),
+  ],
+);
+
 export const apps = pgTable(
   "apps",
   {
@@ -147,7 +200,7 @@ export const appAccess = pgTable(
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
     type: accessTypeEnum("type").notNull(),
-    /** A user id for `user`, a space id for `space`. */
+    /** A user id for `user`, a space id for `space`, a team id for `team`. */
     targetId: text("target_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

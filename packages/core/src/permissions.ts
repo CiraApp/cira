@@ -1,6 +1,6 @@
 import { ROLES, type AppAccess, type Role } from "./model.js";
 import type { Capability } from "./capability.js";
-import type { App, Membership, SpaceId, UserId } from "./model.js";
+import type { App, Membership, SpaceId, TeamId, UserId } from "./model.js";
 
 /**
  * Every check here takes explicit records rather than reading a request or a
@@ -29,18 +29,33 @@ export function isSpaceMember(
 }
 
 /**
+ * Everything about the person asking, gathered in one place.
+ *
+ * The three facts travel together because any check that has two of them and
+ * not the third answers *almost* correctly, and an access check that is almost
+ * correct silently hides someone's work from them. A caller that has to build
+ * this cannot forget a piece of it.
+ */
+export interface Principal {
+  userId: UserId;
+  memberships: readonly Membership[];
+  /** Every team this user is on, across every space. */
+  teamIds: readonly TeamId[];
+}
+
+/**
  * Can this user open this app?
  *
  * Space membership is a precondition, never a grant on its own: being in Acme
  * does not reveal every Acme app, only the ones whose access rules include you.
  */
 export function canAccessApp(args: {
-  userId: UserId;
+  principal: Principal;
   app: App;
-  memberships: readonly Membership[];
   access: readonly AppAccess[];
 }): boolean {
-  const { userId, app, memberships, access } = args;
+  const { principal, app, access } = args;
+  const { userId, memberships, teamIds } = principal;
 
   const membership = membershipIn(memberships, userId, app.spaceId);
   if (membership === undefined) return false;
@@ -54,6 +69,7 @@ export function canAccessApp(args: {
   return access.some((rule) => {
     if (rule.appId !== app.id) return false;
     if (rule.type === "space") return rule.targetId === app.spaceId;
+    if (rule.type === "team") return teamIds.includes(rule.targetId);
     return rule.targetId === userId;
   });
 }
@@ -94,13 +110,12 @@ export function canDeployToSpace(args: {
 
 /** The gallery: every app in the space this user is actually allowed to open. */
 export function visibleApps(args: {
-  userId: UserId;
+  principal: Principal;
   apps: readonly App[];
-  memberships: readonly Membership[];
   access: readonly AppAccess[];
 }): App[] {
-  const { userId, apps, memberships, access } = args;
-  return apps.filter((app) => canAccessApp({ userId, app, memberships, access }));
+  const { principal, apps, access } = args;
+  return apps.filter((app) => canAccessApp({ principal, app, access }));
 }
 
 /**
@@ -113,19 +128,18 @@ export function visibleApps(args: {
  * rule rather than three copies of it.
  */
 export function visibleCapabilities(args: {
-  userId: UserId;
+  principal: Principal;
   capabilities: readonly Capability[];
   apps: readonly App[];
-  memberships: readonly Membership[];
   access: readonly AppAccess[];
 }): Capability[] {
-  const { userId, capabilities, apps, memberships, access } = args;
+  const { principal, capabilities, apps, access } = args;
   const byId = new Map(apps.map((app) => [app.id, app]));
 
   return capabilities.filter((capability) => {
     const app = byId.get(capability.appId);
     if (app === undefined) return false;
-    return canAccessApp({ userId, app, memberships, access });
+    return canAccessApp({ principal, app, access });
   });
 }
 
@@ -137,17 +151,15 @@ export function visibleCapabilities(args: {
  * make it do it while it is switched off.
  */
 export function canInvokeCapability(args: {
-  userId: UserId;
+  principal: Principal;
   capability: Capability;
   app: App;
-  memberships: readonly Membership[];
   access: readonly AppAccess[];
 }): boolean {
   if (!args.capability.enabled) return false;
   return canAccessApp({
-    userId: args.userId,
+    principal: args.principal,
     app: args.app,
-    memberships: args.memberships,
     access: args.access,
   });
 }

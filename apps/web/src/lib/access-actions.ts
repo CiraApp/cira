@@ -1,7 +1,7 @@
 "use server";
 
 import { and, eq, inArray } from "drizzle-orm";
-import { appAccess, db, memberships, users } from "@cira/db";
+import { appAccess, db, memberships, teamMembers, teams, users } from "@cira/db";
 import { newId } from "@cira/core";
 import type { Role } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
@@ -15,14 +15,34 @@ export interface SpaceMember {
   role: Role;
 }
 
+export interface SpaceTeam {
+  teamId: string;
+  name: string;
+  /** How many people the grant would reach today. */
+  size: number;
+}
+
 export interface AccessEntry {
   id: string;
-  kind: "everyone" | "person";
-  /** For a person: their name. For everyone: the space name. */
+  kind: "everyone" | "team" | "person";
+  /** For a person: their name. For a team: its name. For everyone: the space. */
   label: string;
   detail: string | null;
-  /** Owners and admins reach every app regardless, so their access is implicit. */
-  removable: boolean;
+}
+
+/**
+ * The people who reach this app without a grant: its owner, and every admin.
+ *
+ * Summarised rather than listed as rows. In a company with eight admins,
+ * listing them turns the access panel into a page of entries nobody can act
+ * on and pushes the two grants that were actually made off the screen - which
+ * is the opposite of what someone opened this panel to see. Saying it in a
+ * line still stops anyone "fixing" an absence by adding a grant that changes
+ * nothing.
+ */
+export interface ImplicitAccess {
+  ownerName: string | null;
+  adminNames: string[];
 }
 
 /**
@@ -35,7 +55,12 @@ export interface AccessEntry {
 export async function loadAccess(
   spaceSlug: string,
   appSlug: string,
-): Promise<{ entries: AccessEntry[]; candidates: SpaceMember[] }> {
+): Promise<{
+  entries: AccessEntry[];
+  implicit: ImplicitAccess;
+  candidates: SpaceMember[];
+  teamCandidates: SpaceTeam[];
+}> {
   const ctx = await requireAppManage(spaceSlug, appSlug);
   const database = db();
 
@@ -50,6 +75,21 @@ export async function loadAccess(
     .from(appAccess)
     .where(eq(appAccess.appId, ctx.app.id));
 
+  const teamRows = await database
+    .select({ team: teams, userId: teamMembers.userId })
+    .from(teams)
+    .leftJoin(teamMembers, eq(teamMembers.teamId, teams.id))
+    .where(eq(teams.spaceId, ctx.space.id));
+
+  const teamSizes = new Map<string, { name: string; size: number }>();
+  for (const row of teamRows) {
+    const seen = teamSizes.get(row.team.id) ?? { name: row.team.name, size: 0 };
+    teamSizes.set(row.team.id, {
+      name: row.team.name,
+      size: seen.size + (row.userId === null ? 0 : 1),
+    });
+  }
+
   const byId = new Map(memberRows.map((m) => [m.user.id, m]));
   const entries: AccessEntry[] = [];
 
@@ -59,8 +99,18 @@ export async function loadAccess(
         id: grant.id,
         kind: "everyone",
         label: `Everyone at ${ctx.space.name}`,
-        detail: `${memberRows.length} ${memberRows.length === 1 ? "person" : "people"}`,
-        removable: true,
+        detail: people(memberRows.length),
+      });
+      continue;
+    }
+
+    if (grant.type === "team") {
+      const team = teamSizes.get(grant.targetId);
+      entries.push({
+        id: grant.id,
+        kind: "team",
+        label: team?.name ?? "A team that no longer exists",
+        detail: team === undefined ? "Nobody" : people(team.size),
       });
       continue;
     }
@@ -71,27 +121,17 @@ export async function loadAccess(
       kind: "person",
       label: member?.user.name ?? "Someone no longer in this space",
       detail: member?.user.email ?? null,
-      removable: true,
     });
   }
 
-  // The owner and any admin can already open it; saying so prevents someone
-  // "fixing" their absence by adding a grant that changes nothing.
-  for (const m of memberRows) {
-    const implicit = m.user.id === ctx.app.ownerUserId || m.role !== "member";
-    const alreadyListed = grants.some(
-      (g) => g.type === "user" && g.targetId === m.user.id,
-    );
-    if (implicit && !alreadyListed) {
-      entries.push({
-        id: `implicit-${m.user.id}`,
-        kind: "person",
-        label: m.user.name,
-        detail: m.user.id === ctx.app.ownerUserId ? "Owns this app" : `Space ${m.role}`,
-        removable: false,
-      });
-    }
-  }
+  const implicit: ImplicitAccess = {
+    ownerName:
+      memberRows.find((m) => m.user.id === ctx.app.ownerUserId)?.user.name ?? null,
+    adminNames: memberRows
+      .filter((m) => m.role !== "member" && m.user.id !== ctx.app.ownerUserId)
+      .map((m) => m.user.name)
+      .sort((a, b) => a.localeCompare(b)),
+  };
 
   const granted = new Set(grants.filter((g) => g.type === "user").map((g) => g.targetId));
 
@@ -106,14 +146,30 @@ export async function loadAccess(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { entries, candidates };
+  const grantedTeams = new Set(
+    grants.filter((g) => g.type === "team").map((g) => g.targetId),
+  );
+
+  const teamCandidates = [...teamSizes.entries()]
+    .filter(([id]) => !grantedTeams.has(id))
+    .map(([teamId, team]) => ({ teamId, name: team.name, size: team.size }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { entries, implicit, candidates, teamCandidates };
 }
 
-/** Grant one person, or everyone in the space, access to an app. */
+function people(count: number): string {
+  return `${count} ${count === 1 ? "person" : "people"}`;
+}
+
+/** Grant one person, one team, or everyone in the space, access to an app. */
 export async function grantAccess(
   spaceSlug: string,
   appSlug: string,
-  target: { kind: "everyone" } | { kind: "person"; userId: string },
+  target:
+    | { kind: "everyone" }
+    | { kind: "team"; teamId: string }
+    | { kind: "person"; userId: string },
 ): Promise<ActionResult<null>> {
   try {
     const ctx = await requireAppManage(spaceSlug, appSlug);
@@ -129,6 +185,32 @@ export async function grantAccess(
           targetId: ctx.space.id,
         })
         .onConflictDoNothing();
+      return { ok: true, data: null };
+    }
+
+    if (target.kind === "team") {
+      // Same rule as a person: the team has to belong to this space, or the
+      // grant names something the access check will never look at.
+      const [team] = await database
+        .select({ id: teams.id })
+        .from(teams)
+        .where(and(eq(teams.id, target.teamId), eq(teams.spaceId, ctx.space.id)))
+        .limit(1);
+
+      if (team === undefined) {
+        return { ok: false, error: "That team is not in this space." };
+      }
+
+      await database
+        .insert(appAccess)
+        .values({
+          id: newId("access"),
+          appId: ctx.app.id,
+          type: "team",
+          targetId: target.teamId,
+        })
+        .onConflictDoNothing();
+
       return { ok: true, data: null };
     }
 

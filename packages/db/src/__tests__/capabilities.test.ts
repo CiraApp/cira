@@ -8,8 +8,17 @@ import {
   type AppAccess,
   type Capability,
   type Membership,
+  type Principal,
 } from "@cira/core";
-import { appAccess, apps, capabilities, memberships, spaces, users } from "../schema.js";
+import {
+  appAccess,
+  apps,
+  capabilities,
+  memberships,
+  spaces,
+  teamMembers,
+  users,
+} from "../schema.js";
 import type { TestDatabase } from "../testing.js";
 import { freshDatabase, hasDatabase } from "./harness.js";
 
@@ -131,30 +140,41 @@ describe.skipIf(!hasDatabase)("capability access", () => {
     const appRows = (await db.select().from(apps)) as App[];
     const memberRows = (await db.select().from(memberships)) as Membership[];
     const grantRows = (await db.select().from(appAccess)) as AppAccess[];
-    return { capabilityRows, appRows, memberRows, grantRows };
+    const teamRows = await db.select().from(teamMembers);
+    return { capabilityRows, appRows, memberRows, grantRows, teamRows };
+  }
+
+  function who(
+    userId: string,
+    memberRows: Membership[],
+    teamRows: Array<{ teamId: string; userId: string }>,
+  ): Principal {
+    return {
+      userId,
+      memberships: memberRows,
+      teamIds: teamRows.filter((t) => t.userId === userId).map((t) => t.teamId),
+    };
   }
 
   async function discoverableBy(userId: string) {
-    const { capabilityRows, appRows, memberRows, grantRows } = await context();
+    const { capabilityRows, appRows, memberRows, grantRows, teamRows } = await context();
     return visibleCapabilities({
-      userId,
+      principal: who(userId, memberRows, teamRows),
       capabilities: capabilityRows,
       apps: appRows,
-      memberships: memberRows,
       access: grantRows,
     }).map((c) => c.name);
   }
 
   async function canRun(userId: string, capabilityId: string) {
-    const { capabilityRows, appRows, memberRows, grantRows } = await context();
+    const { capabilityRows, appRows, memberRows, grantRows, teamRows } = await context();
     const capability = capabilityRows.find((c) => c.id === capabilityId);
     const app = appRows.find((a) => a.id === capability?.appId);
     if (capability === undefined || app === undefined) return false;
     return canInvokeCapability({
-      userId,
+      principal: who(userId, memberRows, teamRows),
       capability,
       app,
-      memberships: memberRows,
       access: grantRows,
     });
   }

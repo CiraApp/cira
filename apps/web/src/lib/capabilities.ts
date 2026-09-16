@@ -1,7 +1,15 @@
 import "server-only";
 
 import { eq, inArray } from "drizzle-orm";
-import { apps, appAccess, capabilities, db, memberships, spaces } from "@cira/db";
+import {
+  apps,
+  appAccess,
+  capabilities,
+  db,
+  memberships,
+  spaces,
+  teamMembers,
+} from "@cira/db";
 import {
   canAccessApp,
   canManageApp,
@@ -11,6 +19,7 @@ import {
   type AppAccess,
   type Capability,
   type Membership,
+  type Principal,
   type User,
 } from "@cira/core";
 import type { AnalyzedCapability } from "@/lib/capability-grounding";
@@ -235,6 +244,17 @@ async function visibleCapabilities(user: User): Promise<{ rows: CapabilityWithAp
 
   const spaceIds = mine.map((m) => m.spaceId);
 
+  const onTeams = await database
+    .select({ teamId: teamMembers.teamId })
+    .from(teamMembers)
+    .where(eq(teamMembers.userId, user.id));
+
+  const principal: Principal = {
+    userId: user.id,
+    memberships: mine,
+    teamIds: onTeams.map((t) => t.teamId),
+  };
+
   const rows = await database
     .select({ capability: capabilities, app: apps })
     .from(capabilities)
@@ -258,9 +278,8 @@ async function visibleCapabilities(user: User): Promise<{ rows: CapabilityWithAp
   const visible = rows
     .filter((row) =>
       canAccessApp({
-        userId: user.id,
+        principal,
         app: toApp(row.app),
-        memberships: mine,
         access: grants,
       }),
     )

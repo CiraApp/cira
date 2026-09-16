@@ -6,14 +6,25 @@ import {
   grantAccess,
   revokeAccess,
   type AccessEntry,
+  type ImplicitAccess,
   type SpaceMember,
+  type SpaceTeam,
 } from "@/lib/access-actions";
+
+/** How many people to offer by name before folding the rest away. */
+const VISIBLE_CANDIDATES = 8;
 
 /**
  * Who can open this app.
  *
- * People are picked from the space, never typed as an email: a grant to
- * someone outside the space would sit in the table doing nothing, and a UI
+ * Teams are offered before individuals, and deliberately look heavier on the
+ * page, because a grant to Support keeps being right after Support hires and a
+ * list of eleven names does not. Naming a person is still there for the real
+ * exception - one salesperson who needs the finance app - rather than as the
+ * path of least resistance.
+ *
+ * Everything is picked from the space, never typed as an email or an id: a
+ * grant to someone outside it would sit in the table doing nothing, and a UI
  * that lets you create one is a UI that invites the mistake.
  */
 export function AccessPanel({
@@ -21,20 +32,25 @@ export function AccessPanel({
   appSlug,
   spaceName,
   entries,
+  implicit,
   candidates,
+  teamCandidates,
   hasEveryone,
 }: {
   spaceSlug: string;
   appSlug: string;
   spaceName: string;
   entries: AccessEntry[];
+  implicit: ImplicitAccess;
   candidates: SpaceMember[];
+  teamCandidates: SpaceTeam[];
   hasEveryone: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const run = (key: string, work: () => Promise<{ ok: boolean; error?: string }>) => {
     setError(null);
@@ -46,6 +62,13 @@ export function AccessPanel({
       router.refresh();
     });
   };
+
+  const always = describeImplicit(implicit);
+
+  // A company of any size turns this row into a wall of names. Enough to pick
+  // someone out by sight, and the rest a click away.
+  const shown = expanded ? candidates : candidates.slice(0, VISIBLE_CANDIDATES);
+  const hidden = candidates.length - shown.length;
 
   return (
     <section className="enter-up mt-10">
@@ -70,12 +93,18 @@ export function AccessPanel({
               <span
                 aria-hidden="true"
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-edge)] border text-[12px] font-semibold ${
-                  entry.kind === "everyone"
-                    ? "border-accent/35 bg-accent-quiet text-accent"
-                    : "border-line bg-sunken text-ink-muted"
+                  entry.kind === "person"
+                    ? "border-line bg-sunken text-ink-muted"
+                    : "border-accent/35 bg-accent-quiet text-accent"
                 }`}
               >
-                {entry.kind === "everyone" ? "All" : entry.label.charAt(0).toUpperCase()}
+                {entry.kind === "everyone" ? (
+                  "All"
+                ) : entry.kind === "team" ? (
+                  <TeamGlyph />
+                ) : (
+                  entry.label.charAt(0).toUpperCase()
+                )}
               </span>
 
               <span className="min-w-0 flex-1">
@@ -87,24 +116,29 @@ export function AccessPanel({
                 ) : null}
               </span>
 
-              {entry.removable ? (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    run(entry.id, () => revokeAccess(spaceSlug, appSlug, entry.id))
-                  }
-                  className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
-                >
-                  {busy === entry.id ? "Removing..." : "Remove"}
-                </button>
-              ) : (
-                <span className="shrink-0 px-2.5 text-[11.5px] text-ink-subtle">
-                  Always
-                </span>
-              )}
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  run(entry.id, () => revokeAccess(spaceSlug, appSlug, entry.id))
+                }
+                className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
+              >
+                {busy === entry.id ? "Removing..." : "Remove"}
+              </button>
             </li>
           ))
+        )}
+
+        {always === null ? null : (
+          <li
+            className="px-4 py-3 text-[12px] leading-relaxed text-ink-subtle"
+            title={[implicit.ownerName, ...implicit.adminNames]
+              .filter((name) => name !== null)
+              .join("\n")}
+          >
+            {always}
+          </li>
         )}
       </ul>
 
@@ -122,7 +156,33 @@ export function AccessPanel({
           </button>
         ) : null}
 
-        {candidates.map((member) => (
+        {teamCandidates.map((team) => (
+          <button
+            key={team.teamId}
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              run(team.teamId, () =>
+                grantAccess(spaceSlug, appSlug, { kind: "team", teamId: team.teamId }),
+              )
+            }
+            title={`${team.size} ${team.size === 1 ? "person" : "people"}`}
+            className="btn border-line-strong text-ink-muted hover:border-accent hover:bg-accent-quiet hover:text-accent"
+          >
+            {busy === team.teamId ? (
+              "Adding..."
+            ) : (
+              <>
+                <TeamGlyph />
+                {team.name}
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {shown.map((member) => (
           <button
             key={member.userId}
             type="button"
@@ -141,6 +201,16 @@ export function AccessPanel({
             {busy === member.userId ? "Adding..." : `+ ${member.name}`}
           </button>
         ))}
+
+        {hidden > 0 ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="btn btn-ghost text-ink-subtle hover:text-ink"
+          >
+            {hidden} more
+          </button>
+        ) : null}
       </div>
 
       {error !== null ? (
@@ -149,5 +219,44 @@ export function AccessPanel({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * One line for everyone who reaches the app without being granted it.
+ *
+ * Written out rather than counted alone, because "and 8 admins" is a fact
+ * someone reading an access list may want to argue with, and they cannot if
+ * they cannot see who.
+ */
+function describeImplicit({ ownerName, adminNames }: ImplicitAccess): string | null {
+  const owner = ownerName === null ? null : `its owner ${ownerName}`;
+  const admins =
+    adminNames.length === 0
+      ? null
+      : `${adminNames.length} space ${adminNames.length === 1 ? "admin" : "admins"}: ${adminNames.join(", ")}`;
+
+  const parts = [owner, admins].filter((part) => part !== null);
+  if (parts.length === 0) return null;
+  return `Always open to ${parts.join(", and to ")}.`;
+}
+
+/** Two figures: enough to read as "a group" at 13px, which an avatar is not. */
+function TeamGlyph() {
+  return (
+    <svg
+      viewBox="0 0 18 18"
+      aria-hidden="true"
+      className="h-[13px] w-[13px] shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="6.9" cy="6.3" r="2.8" />
+      <path d="M2.3 15c0-2.5 2.1-4.2 4.6-4.2s4.6 1.7 4.6 4.2" />
+      <path d="M12.2 4.1a2.6 2.6 0 0 1 0 4.8M13.4 10.9c1.4.5 2.4 1.8 2.4 3.5" />
+    </svg>
   );
 }

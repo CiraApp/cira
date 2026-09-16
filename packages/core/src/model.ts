@@ -9,6 +9,7 @@
 export type UserId = string;
 export type SpaceId = string;
 export type AppId = string;
+export type TeamId = string;
 
 export interface User {
   id: UserId;
@@ -43,6 +44,23 @@ export interface Membership {
   role: Role;
 }
 
+/**
+ * A named group of people inside a space.
+ *
+ * A team is something to point a grant at, not a level of privilege: it has no
+ * role, and being on one confers nothing by itself. That is what keeps the
+ * permission model one question deep - a person can open an app because the
+ * app names them, names a team they are on, or names the whole space.
+ */
+export interface Team {
+  id: TeamId;
+  spaceId: SpaceId;
+  name: string;
+  slug: string;
+  description: string | null;
+  createdAt: Date;
+}
+
 export type AppStatus = "draft" | "deploying" | "live" | "failed";
 
 export interface App {
@@ -61,16 +79,18 @@ export interface App {
 /**
  * Who can see and open an app.
  *
- * `space` grants every member of the app's space. `user` grants one person.
- * Group support is deliberately absent until it is actually needed.
+ * `space` grants every member of the app's space, `team` grants everyone on a
+ * team, and `user` grants one person. The three are checked with an or, never
+ * a precedence: there is no such thing as a grant that takes access away, so
+ * the order they are evaluated in cannot matter.
  */
-export type AccessType = "user" | "space";
+export type AccessType = "user" | "space" | "team";
 
 export interface AppAccess {
   id: string;
   appId: AppId;
   type: AccessType;
-  /** A UserId for `user`, a SpaceId for `space`. */
+  /** A UserId for `user`, a SpaceId for `space`, a TeamId for `team`. */
   targetId: string;
 }
 

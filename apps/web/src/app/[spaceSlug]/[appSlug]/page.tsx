@@ -170,7 +170,9 @@ export default async function AppPage({
               appSlug={appSlug}
               spaceName={space.name}
               entries={access.entries}
+              implicit={access.implicit}
               candidates={access.candidates}
+              teamCandidates={access.teamCandidates}
               hasEveryone={access.entries.some((e) => e.kind === "everyone")}
             />
           ) : null}

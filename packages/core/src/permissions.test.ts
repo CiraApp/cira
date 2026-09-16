@@ -8,6 +8,7 @@ import {
   visibleApps,
 } from "./permissions.js";
 import type { App, AppAccess, Membership, Role } from "./model.js";
+import type { Principal } from "./permissions.js";
 
 const ACME = "space_acme";
 const OTHER = "space_other";
@@ -40,6 +41,10 @@ function grantSpace(appId: string, spaceId: string): AppAccess {
   return { id: `a_${appId}_${spaceId}`, appId, type: "space", targetId: spaceId };
 }
 
+function grantTeam(appId: string, teamId: string): AppAccess {
+  return { id: `a_${appId}_${teamId}`, appId, type: "team", targetId: teamId };
+}
+
 describe("roleAtLeast", () => {
   it("ranks member below admin below owner", () => {
     expect(roleAtLeast("owner", "admin")).toBe(true);
@@ -56,29 +61,33 @@ describe("canAccessApp", () => {
     member("user_outsider", OTHER, "owner"),
   ];
 
+  const who = (userId: string, teamIds: string[] = []): Principal => ({
+    userId,
+    memberships,
+    teamIds,
+  });
+
   it("denies a user who is not in the app's space", () => {
     expect(
       canAccessApp({
-        userId: "user_outsider",
+        principal: who("user_outsider"),
         app: app(),
-        memberships,
         access: [grantSpace("app_revenue", ACME)],
       }),
     ).toBe(false);
   });
 
   it("denies a space member with no grant", () => {
-    expect(
-      canAccessApp({ userId: "user_emp", app: app(), memberships, access: [] }),
-    ).toBe(false);
+    expect(canAccessApp({ principal: who("user_emp"), app: app(), access: [] })).toBe(
+      false,
+    );
   });
 
   it("allows a space member named by a user grant", () => {
     expect(
       canAccessApp({
-        userId: "user_emp",
+        principal: who("user_emp"),
         app: app(),
-        memberships,
         access: [grantUser("app_revenue", "user_emp")],
       }),
     ).toBe(true);
@@ -87,32 +96,30 @@ describe("canAccessApp", () => {
   it("allows every member under a space-wide grant", () => {
     expect(
       canAccessApp({
-        userId: "user_emp",
+        principal: who("user_emp"),
         app: app(),
-        memberships,
         access: [grantSpace("app_revenue", ACME)],
       }),
     ).toBe(true);
   });
 
   it("allows the owner even with no grant at all", () => {
-    expect(
-      canAccessApp({ userId: "user_dev", app: app(), memberships, access: [] }),
-    ).toBe(true);
+    expect(canAccessApp({ principal: who("user_dev"), app: app(), access: [] })).toBe(
+      true,
+    );
   });
 
   it("allows a space admin even with no grant", () => {
-    expect(
-      canAccessApp({ userId: "user_admin", app: app(), memberships, access: [] }),
-    ).toBe(true);
+    expect(canAccessApp({ principal: who("user_admin"), app: app(), access: [] })).toBe(
+      true,
+    );
   });
 
   it("ignores grants that belong to a different app", () => {
     expect(
       canAccessApp({
-        userId: "user_emp",
+        principal: who("user_emp"),
         app: app(),
-        memberships,
         access: [grantUser("app_invoices", "user_emp")],
       }),
     ).toBe(false);
@@ -121,10 +128,51 @@ describe("canAccessApp", () => {
   it("does not let a space grant for another space leak access", () => {
     expect(
       canAccessApp({
-        userId: "user_emp",
+        principal: who("user_emp"),
         app: app(),
-        memberships,
         access: [grantSpace("app_revenue", OTHER)],
+      }),
+    ).toBe(false);
+  });
+
+  it("allows a member of a team the app names", () => {
+    expect(
+      canAccessApp({
+        principal: who("user_emp", ["team_support"]),
+        app: app(),
+        access: [grantTeam("app_revenue", "team_support")],
+      }),
+    ).toBe(true);
+  });
+
+  it("denies someone on a different team", () => {
+    expect(
+      canAccessApp({
+        principal: who("user_emp", ["team_sales"]),
+        app: app(),
+        access: [grantTeam("app_revenue", "team_support")],
+      }),
+    ).toBe(false);
+  });
+
+  it("denies a team grant to someone on no team at all", () => {
+    expect(
+      canAccessApp({
+        principal: who("user_emp"),
+        app: app(),
+        access: [grantTeam("app_revenue", "team_support")],
+      }),
+    ).toBe(false);
+  });
+
+  it("still requires space membership, whatever teams say", () => {
+    // The outsider is on the named team but belongs to another company. A team
+    // grant must never be a way around the space check.
+    expect(
+      canAccessApp({
+        principal: who("user_outsider", ["team_support"]),
+        app: app(),
+        access: [grantTeam("app_revenue", "team_support")],
       }),
     ).toBe(false);
   });
@@ -182,12 +230,32 @@ describe("visibleApps", () => {
     const leads = app({ id: "app_leads", slug: "lead-cleaner" });
 
     const visible = visibleApps({
-      userId: "user_emp",
+      principal: {
+        userId: "user_emp",
+        memberships: [member("user_emp", ACME, "member")],
+        teamIds: [],
+      },
       apps: [revenue, invoices, leads],
-      memberships: [member("user_emp", ACME, "member")],
       access: [grantUser("app_revenue", "user_emp"), grantSpace("app_leads", ACME)],
     });
 
     expect(visible.map((a) => a.id)).toEqual(["app_revenue", "app_leads"]);
+  });
+
+  it("includes what a team grant reaches", () => {
+    const runbook = app({ id: "app_runbook", slug: "runbook" });
+    const ledger = app({ id: "app_ledger", slug: "ledger" });
+
+    const visible = visibleApps({
+      principal: {
+        userId: "user_emp",
+        memberships: [member("user_emp", ACME, "member")],
+        teamIds: ["team_eng"],
+      },
+      apps: [runbook, ledger],
+      access: [grantTeam("app_runbook", "team_eng"), grantTeam("app_ledger", "team_fin")],
+    });
+
+    expect(visible.map((a) => a.id)).toEqual(["app_runbook"]);
   });
 });

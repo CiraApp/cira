@@ -1,7 +1,7 @@
 import "server-only";
 
 import { and, eq, inArray } from "drizzle-orm";
-import { appAccess, apps, db, memberships, spaces } from "@cira/db";
+import { appAccess, apps, db, memberships, spaces, teamMembers } from "@cira/db";
 import {
   canAccessApp,
   canInviteToSpace,
@@ -9,7 +9,15 @@ import {
   isSlug,
   visibleApps,
 } from "@cira/core";
-import type { App, AppAccess, Membership, Role, Space, User } from "@cira/core";
+import type {
+  App,
+  AppAccess,
+  Membership,
+  Principal,
+  Role,
+  Space,
+  User,
+} from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
 import { settleAbandonedDeploys } from "@/lib/deployment-sync";
 
@@ -38,6 +46,8 @@ export interface SpaceContext {
   space: Space;
   role: Role;
   memberships: Membership[];
+  /** Who is asking, in the shape every access rule in @cira/core expects. */
+  principal: Principal;
 }
 
 /**
@@ -70,11 +80,24 @@ export async function requireSpaceMember(spaceSlug: string): Promise<SpaceContex
   const membership = rows[0];
   if (membership === undefined) throw new NotFoundError("Space");
 
+  // Every team, not only this space's: teams are space-scoped, so an id from
+  // another company can never match a grant here, and filtering would cost a
+  // join to prove something the data already guarantees.
+  const teams = await database
+    .select({ teamId: teamMembers.teamId })
+    .from(teamMembers)
+    .where(eq(teamMembers.userId, user.id));
+
   return {
     user,
     space,
     role: membership.role,
     memberships: rows,
+    principal: {
+      userId: user.id,
+      memberships: rows,
+      teamIds: teams.map((t) => t.teamId),
+    },
   };
 }
 
@@ -118,9 +141,8 @@ export async function listVisibleApps(spaceSlug: string): Promise<App[]> {
     );
 
   return visibleApps({
-    userId: ctx.user.id,
+    principal: ctx.principal,
     apps: spaceApps,
-    memberships: ctx.memberships,
     access: grants as AppAccess[],
   });
 }
@@ -153,9 +175,8 @@ export async function requireAppAccess(
     .where(eq(appAccess.appId, app.id));
 
   const allowed = canAccessApp({
-    userId: ctx.user.id,
+    principal: ctx.principal,
     app,
-    memberships: ctx.memberships,
     access: grants as AppAccess[],
   });
 

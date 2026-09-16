@@ -9,6 +9,8 @@ export const ID_PREFIXES = {
   user: "usr",
   space: "spc",
   membership: "mem",
+  team: "tem",
+  teamMember: "tmm",
   app: "app",
   access: "acc",
   deployment: "dep",

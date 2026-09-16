@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isId, isInviteToken, isSlug, newId, newInviteToken, slugify } from "./id.js";
+import {
+  ID_PREFIXES,
+  isId,
+  isInviteToken,
+  isSlug,
+  newId,
+  newInviteToken,
+  slugify,
+} from "./id.js";
 
 describe("newId", () => {
   it("prefixes by kind and is unique", () => {
@@ -13,6 +21,16 @@ describe("newId", () => {
     const space = newId("space");
     expect(isId("space", space)).toBe(true);
     expect(isId("app", space)).toBe(false);
+  });
+
+  it("gives every kind a prefix of its own", () => {
+    // A missing entry produces "undefined_..." rather than failing, so the ids
+    // of a whole table silently lose the one thing they are prefixed for.
+    const prefixes = Object.values(ID_PREFIXES);
+    expect(new Set(prefixes).size).toBe(prefixes.length);
+    for (const kind of Object.keys(ID_PREFIXES) as Array<keyof typeof ID_PREFIXES>) {
+      expect(newId(kind).startsWith(`${ID_PREFIXES[kind]}_`)).toBe(true);
+    }
   });
 });
 
