@@ -70,6 +70,25 @@ pnpm build
 The build needs no secrets; every page that reads data is server-rendered on
 demand, so CI builds without a database or auth keys.
 
+### A company to look at
+
+An empty account says very little about the product. This builds a whole
+synthetic one - twenty-two invented people across ten teams, ten internal apps,
+forty-one capabilities, and grants that disagree with the org chart the way real
+ones do:
+
+```sh
+pnpm --filter @cira/db build
+pnpm --filter @cira/db db:seed:demo -- --owner you@example.com
+pnpm --filter @cira/db db:seed:demo -- --remove
+```
+
+`--owner` has to be an account that has signed in at least once, so Cira knows
+who it is; it becomes the owner of the space. `--also a@b,c@d` drops further
+real accounts in as admins, for a machine with more than one login. Everything
+the seed writes is marked in its ids, so `--remove` is exact rather than a
+guess. Source: [`packages/db/src/seed`](packages/db/src/seed).
+
 ## Shipping
 
 `prod` is the production branch. Push to `prod` and CI runs typecheck, lint,
