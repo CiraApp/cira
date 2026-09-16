@@ -21,11 +21,18 @@ export interface Theme {
 
 export type Mode = "light" | "dark";
 
-/** Where the interface starts before anyone chooses: Cira's own two palettes. */
-export const BUILT_IN: Record<Mode, Theme> = {
-  dark: { base: "#08090c", accent: "#5b85ff" },
-  light: { base: "#f4f5f7", accent: "#2f5cf5" },
-};
+/**
+ * Where the interface starts before anyone chooses.
+ *
+ * One palette, not a pair keyed off the operating system. Cira has a look -
+ * graphite ground, near-white accent - and a product with a look does not
+ * quietly become a different product because of a checkbox in System
+ * Settings. Anyone who wants paper picks it, and that choice then travels
+ * with them instead of following their desktop around.
+ *
+ * Kept in step with the Graphite preset below; they are the same two colours.
+ */
+export const DEFAULT_THEME: Theme = { base: "#0e0e10", accent: "#e4e4e7" };
 
 export interface Preset extends Theme {
   name: string;
@@ -37,8 +44,8 @@ export interface Preset extends Theme {
  * pairs that already work, rather than two colour wells and no idea.
  */
 export const PRESETS: readonly Preset[] = [
-  { name: "Midnight", base: "#08090c", accent: "#5b85ff" },
   { name: "Graphite", base: "#0e0e10", accent: "#e4e4e7" },
+  { name: "Midnight", base: "#08090c", accent: "#5b85ff" },
   { name: "Moss", base: "#080d0a", accent: "#4ade80" },
   { name: "Ember", base: "#110b09", accent: "#fb923c" },
   { name: "Plum", base: "#0d0912", accent: "#c084fc" },
@@ -194,7 +201,7 @@ export function hslToHex({ h, s, l }: Hsl): string {
 
 const STORAGE_KEY = "cira-theme";
 
-/** What the browser stores. Null means "follow the system", the default. */
+/** What the browser stores. Null means nobody has chosen, so DEFAULT_THEME stands. */
 export function parseTheme(raw: string | null): Theme | null {
   if (raw === null) return null;
   try {

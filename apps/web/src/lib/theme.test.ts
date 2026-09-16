@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUILT_IN,
+  DEFAULT_THEME,
   PRESETS,
   hexToHsl,
   hslToHex,
@@ -67,13 +67,13 @@ describe("readableOn", () => {
 });
 
 describe("modeFor", () => {
-  it("agrees with the shipped palettes", () => {
-    expect(modeFor(BUILT_IN.dark.base)).toBe("dark");
-    expect(modeFor(BUILT_IN.light.base)).toBe("light");
+  it("agrees with the shipped default", () => {
+    expect(modeFor(DEFAULT_THEME.base)).toBe("dark");
   });
 
   it("classifies every preset the way its name implies", () => {
     const byName = Object.fromEntries(PRESETS.map((p) => [p.name, modeFor(p.base)]));
+    expect(byName["Graphite"]).toBe("dark");
     expect(byName["Midnight"]).toBe("dark");
     expect(byName["Moss"]).toBe("dark");
     expect(byName["Paper"]).toBe("light");
@@ -90,7 +90,7 @@ describe("accentInk", () => {
 
 describe("parseTheme", () => {
   it("round-trips a stored theme", () => {
-    expect(parseTheme(JSON.stringify(BUILT_IN.dark))).toEqual(BUILT_IN.dark);
+    expect(parseTheme(JSON.stringify(DEFAULT_THEME))).toEqual(DEFAULT_THEME);
   });
 
   it("treats nothing stored as no choice made", () => {
@@ -108,6 +108,12 @@ describe("parseTheme", () => {
     ]) {
       expect(parseTheme(raw)).toBeNull();
     }
+  });
+});
+
+describe("DEFAULT_THEME", () => {
+  it("is one of the presets, so the picker opens with something selected", () => {
+    expect(PRESETS).toContainEqual({ name: "Graphite", ...DEFAULT_THEME });
   });
 });
 

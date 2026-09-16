@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import {
-  BUILT_IN,
+  DEFAULT_THEME,
   THEME_STORAGE_KEY,
   accentInk,
   modeFor,
@@ -19,14 +19,14 @@ import {
 } from "@/lib/theme";
 
 interface ThemeState {
-  /** The chosen colours, or null while the interface follows the system. */
+  /** The chosen colours, or null while the interface is still on Cira's own. */
   theme: Theme | null;
-  /** What is actually on screen, system default included. */
+  /** What is actually on screen, Cira's default included. */
   effective: Theme;
   mode: Mode;
   /** Writes the colours to the document immediately, then remembers them. */
   setTheme: (theme: Theme) => void;
-  /** Back to following the operating system. */
+  /** Back to Cira's own colours. */
   reset: () => void;
   /** Shows the colours without committing them, for dragging a picker. */
   preview: (theme: Theme | null) => void;
@@ -45,7 +45,7 @@ export function useTheme(): ThemeState {
  *
  * There is no light/dark switch: the mode is read off the base colour, so
  * choosing a near-black ground *is* choosing dark. Until someone chooses
- * anything the system preference decides, exactly as before.
+ * anything, Cira's own graphite stands - the operating system is not asked.
  *
  * Nothing about this reaches the server. It is a personal preference, stored
  * next to where the light/dark choice used to live, and a browser that refuses
@@ -54,20 +54,14 @@ export function useTheme(): ThemeState {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setStored] = useState<Theme | null>(null);
   const [previewed, setPreviewed] = useState<Theme | null>(null);
-  const [systemMode, setSystemMode] = useState<Mode>("dark");
 
   // The document already carries the right colours, stamped before paint by
   // the inline script. This only catches up React's copy of that state.
   useEffect(() => {
     setStored(parseTheme(readStorage()));
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => setSystemMode(query.matches ? "dark" : "light");
-    sync();
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
   }, []);
 
-  const effective = previewed ?? theme ?? BUILT_IN[systemMode];
+  const effective = previewed ?? theme ?? DEFAULT_THEME;
   const mode = modeFor(effective.base);
 
   // The document is the source of truth for what is painted, so every path

@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/*
+ * Dark is the default, so it is everything that has not been marked light -
+ * not everything that has been marked dark. Written this way the variant is
+ * still correct in the frame before the pre-paint script has stamped an
+ * attribute, and in a browser running no script at all.
+ */
+@custom-variant dark (&:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
 
 /*
  * Cira's interface is architectural: straight edges, hairline rules, and a
@@ -72,17 +78,65 @@
 }
 
 /*
- * Light: the same architecture, rendered on paper.
+ * The default, and the design the system was drawn for. Panels lift by
+ * lightening rather than by shadow, because a shadow on near-black is
+ * invisible, and the hairlines lighten with them - here the ink is the pale
+ * thing, so a rule moves with it.
  *
- * Panels lift toward white, a sunken well goes the other way, and hairlines
- * and ink move toward black - a rule at rest is a faint stroke of the ink,
- * which is why the two travel together.
+ * It sits on bare `:root` so that it is what a page paints before a single
+ * line of script has run, and so that `data-theme="dark"` needs no rule of
+ * its own: an element carries one value, and anything that is not `light` is
+ * this.
  *
  * `--user-base` and `--user-accent` are the only inputs. They are declared
  * here as Cira's own colours and overridden inline on <html> when someone has
  * chosen their own, which is why nothing below ever names a literal again.
  */
 :root {
+  --user-base: #0e0e10;
+  --user-accent: #e4e4e7;
+  --user-accent-ink: #0a0a0c;
+
+  --t-base: var(--user-base);
+  --t-panel: color-mix(in oklab, var(--user-base) 97%, #ffffff);
+  --t-surface: color-mix(in oklab, var(--user-base) 94%, #ffffff);
+  --t-raised: color-mix(in oklab, var(--user-base) 90%, #ffffff);
+  --t-sunken: color-mix(in oklab, var(--user-base) 92%, #000000);
+  --t-line: color-mix(in oklab, var(--user-base) 89%, #ffffff);
+  --t-line-strong: color-mix(in oklab, var(--user-base) 81%, #ffffff);
+
+  --t-ink: color-mix(in oklab, var(--user-base) 6%, #ffffff);
+  --t-ink-muted: color-mix(in oklab, var(--user-base) 40%, #ffffff);
+  --t-ink-subtle: color-mix(in oklab, var(--user-base) 60%, #ffffff);
+
+  --t-accent-hover: color-mix(in oklab, var(--user-accent) 82%, #ffffff);
+  --t-accent-quiet: color-mix(in oklab, var(--user-base) 84%, var(--user-accent));
+
+  --t-live: #2fbd84;
+  --t-failed: #f06d6d;
+  --t-pending: #d79a3c;
+
+  --t-shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --t-shadow-float:
+    0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
+  --t-shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
+
+  --aurora-strength: 1;
+  --grain-strength: 0.035;
+}
+
+/*
+ * Light: the same architecture, rendered on paper.
+ *
+ * Panels lift toward white, a sunken well goes the other way, and hairlines
+ * and ink move toward black - a rule at rest is a faint stroke of the ink,
+ * which is why the two travel together.
+ *
+ * Which of these two blocks applies is not a preference anyone sets. It is
+ * decided from the base colour itself (lib/theme), because a colour either can
+ * carry pale text or it cannot.
+ */
+[data-theme="light"] {
   --user-base: #f4f5f7;
   --user-accent: #2f5cf5;
   --user-accent-ink: #ffffff;
@@ -116,49 +170,6 @@
 }
 
 /*
- * Dark is the design the system was drawn for. Panels lift by lightening
- * rather than by shadow, because a shadow on near-black is invisible, and the
- * hairlines lighten with them - here the ink is the pale thing, so a rule
- * moves with it.
- *
- * Which of these two blocks applies is not a preference anyone sets. It is
- * decided from the base colour itself (lib/theme), because a colour either can
- * carry pale text or it cannot.
- */
-[data-theme="dark"] {
-  --user-base: #08090c;
-  --user-accent: #5b85ff;
-  --user-accent-ink: #0a0a0c;
-
-  --t-base: var(--user-base);
-  --t-panel: color-mix(in oklab, var(--user-base) 97%, #ffffff);
-  --t-surface: color-mix(in oklab, var(--user-base) 94%, #ffffff);
-  --t-raised: color-mix(in oklab, var(--user-base) 90%, #ffffff);
-  --t-sunken: color-mix(in oklab, var(--user-base) 92%, #000000);
-  --t-line: color-mix(in oklab, var(--user-base) 89%, #ffffff);
-  --t-line-strong: color-mix(in oklab, var(--user-base) 81%, #ffffff);
-
-  --t-ink: color-mix(in oklab, var(--user-base) 6%, #ffffff);
-  --t-ink-muted: color-mix(in oklab, var(--user-base) 40%, #ffffff);
-  --t-ink-subtle: color-mix(in oklab, var(--user-base) 60%, #ffffff);
-
-  --t-accent-hover: color-mix(in oklab, var(--user-accent) 82%, #ffffff);
-  --t-accent-quiet: color-mix(in oklab, var(--user-base) 84%, var(--user-accent));
-
-  --t-live: #2fbd84;
-  --t-failed: #f06d6d;
-  --t-pending: #d79a3c;
-
-  --t-shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
-  --t-shadow-float:
-    0 24px 48px -24px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(255 255 255 / 0.09);
-  --t-shadow-panel: 0 40px 90px -40px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.1);
-
-  --aurora-strength: 1;
-  --grain-strength: 0.035;
-}
-
-/*
  * A real spring, where the browser has one. linear() is a progressive
  * enhancement: where it is not understood the declaration is dropped and the
  * bezier above it stands, which is why both are written.
@@ -186,11 +197,11 @@
 html {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
-[data-theme="dark"] {
-  color-scheme: dark;
+[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {
@@ -561,14 +572,14 @@ select:focus-visible {
  * silently.
  */
 .app-icon {
-  background: var(--bg);
-  color: var(--fg);
-  box-shadow: inset 0 0 0 1px rgb(12 14 18 / 0.08);
-}
-[data-theme="dark"] .app-icon {
   background: var(--bg-dark);
   color: var(--fg-dark);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.09);
+}
+[data-theme="light"] .app-icon {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgb(12 14 18 / 0.08);
 }
 
 @layer components {
