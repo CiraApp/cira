@@ -247,7 +247,7 @@ Keep `prod` green.
 - **Host** - Vercel, in the "aumit shiv" Pro team, which
   also holds wave. Pro allows commercial use, so the Hobby licensing limit
   below no longer applies while Cira lives here. Live at
-  https://cira-aumitshiv.vercel.app (behind the team's Deployment Protection).
+  https://cira.dev (the Vercel URL still answers, and redirects nowhere).
   Reference the team by id, never by slug: the slug has already changed once
   and every URL built from it rots silently.
 - **Deploys** - driven from GitHub Actions, gated on the verify job. Vercel's

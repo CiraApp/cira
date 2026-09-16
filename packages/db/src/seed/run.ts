@@ -51,8 +51,7 @@ if (ownerEmail === undefined) {
   process.exit(1);
 }
 
-const origin =
-  flag("origin") ?? process.env["CIRA_APP_URL"] ?? "https://cira-aumitshiv.vercel.app";
+const origin = flag("origin") ?? process.env["CIRA_APP_URL"] ?? "https://cira.dev";
 
 try {
   const alsoEmails = (flag("also") ?? "")

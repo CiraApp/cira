@@ -15,7 +15,18 @@ export interface CliConfig {
   email?: string;
 }
 
-export const DEFAULT_API_URL = "https://cira-aumitshiv.vercel.app";
+export const DEFAULT_API_URL = "https://cira.dev";
+
+/**
+ * Where Cira answered before it had a name.
+ *
+ * Still live, and tokens issued against it still work, because it is the same
+ * deployment either way. Anyone whose config points here is moved across on
+ * their next command rather than being left on a hostname that reads like
+ * somebody's scratch project. Only this exact value is rewritten - a URL
+ * someone set deliberately, to a preview or a local instance, is theirs.
+ */
+const PREVIOUS_API_URL = "https://cira-aumitshiv.vercel.app";
 
 /** Everything Cira keeps on this machine lives here. */
 export function ciraHome(): string {
@@ -33,7 +44,10 @@ export function readConfig(): CliConfig {
     const raw = JSON.parse(readFileSync(configPath(), "utf8")) as Partial<CliConfig>;
     return {
       // An explicit environment override always wins over the stored value.
-      apiUrl: process.env["CIRA_API_URL"] ?? raw.apiUrl ?? DEFAULT_API_URL,
+      apiUrl:
+        process.env["CIRA_API_URL"] ??
+        (raw.apiUrl === PREVIOUS_API_URL ? DEFAULT_API_URL : raw.apiUrl) ??
+        DEFAULT_API_URL,
       ...(raw.token !== undefined ? { token: raw.token } : {}),
       ...(raw.email !== undefined ? { email: raw.email } : {}),
     };
