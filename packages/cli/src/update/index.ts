@@ -28,7 +28,7 @@ const run = promisify(execFile);
 export type CliUpdater = (version: string) => Promise<void>;
 
 /**
- * Update through npm, because `npm install -g @cira-app/cli` is what the product
+ * Update through npm, because `npm i -g @cira-app/cli` is what the product
  * tells developers to run. There is deliberately no detection of other package
  * managers: supporting a channel Cira does not publish to would be guessing.
  */

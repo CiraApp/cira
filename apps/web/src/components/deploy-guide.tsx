@@ -7,18 +7,12 @@ import { CopyableCommand } from "./copyable-command";
  * task, so this page is allowed to look like a terminal; it is not allowed to
  * assume you already know the sequence.
  */
-export function DeployGuide({
-  spaceSlug,
-  needsSpaceFlag,
-}: {
-  spaceSlug: string;
-  needsSpaceFlag: boolean;
-}) {
+export function DeployGuide({ spaceSlug }: { spaceSlug: string }) {
   const steps = [
     {
       title: "Install the CLI",
       note: "Once per machine.",
-      command: "npm install -g @cira-app/cli",
+      command: "npm i -g @cira-app/cli",
     },
     {
       title: "Connect your account",
@@ -27,10 +21,12 @@ export function DeployGuide({
     },
     {
       title: "Ship it",
-      note: needsSpaceFlag
-        ? `You are in more than one space, so name this one.`
-        : "From the folder holding your Next.js app.",
-      command: needsSpaceFlag ? `cira deploy --space ${spaceSlug}` : "cira deploy",
+      note: "From the folder holding your Next.js app.",
+      // Always named, even for someone with a single space. The command is
+      // copied into a script or a README as often as it is run here, and one
+      // that stops working the day its author joins a second company is worse
+      // than one extra flag.
+      command: `cira deploy --space ${spaceSlug}`,
     },
   ];
 

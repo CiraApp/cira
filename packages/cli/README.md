@@ -3,7 +3,7 @@
 Deploy internal software to your company, and let the people there use it.
 
 ```sh
-npm install -g @cira-app/cli
+npm i -g @cira-app/cli
 cira login
 cira deploy
 ```

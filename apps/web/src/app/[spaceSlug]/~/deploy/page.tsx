@@ -14,7 +14,6 @@ export default async function DeployPage({
   try {
     const ctx = await requireSpaceMember(spaceSlug);
     const spaces = await listMySpaces();
-    const multiple = spaces.length > 1;
 
     return (
       <AppShell
@@ -22,7 +21,7 @@ export default async function DeployPage({
         spaces={spaces}
         title={<PageTitle title="Deploy" detail={`Ship an app into ${ctx.space.name}`} />}
       >
-        <DeployGuide spaceSlug={spaceSlug} needsSpaceFlag={multiple} />
+        <DeployGuide spaceSlug={spaceSlug} />
       </AppShell>
     );
   } catch (error) {
