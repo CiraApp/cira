@@ -1,13 +1,14 @@
-import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { shouldUpload, type BundleFile } from "@cira/deploy";
+import { shouldUpload, type BundleFile } from "@cira/deploy/packaging";
 
 /**
- * Walk a project folder and hash what should be deployed.
+ * Walk a project folder and list what should be deployed.
  *
- * SHA-1 because that is how the content is addressed on the receiving end;
- * it identifies a file here, it does not protect anything.
+ * Sizes only. This used to hash every file as well, because the deploy was
+ * content-addressed and the hash was the address. The source travels as one
+ * archive now, so the hashing was a second full read of the project for a
+ * value nothing looked at.
  */
 export function collectFiles(root: string): BundleFile[] {
   const found: BundleFile[] = [];
@@ -34,12 +35,7 @@ export function collectFiles(root: string): BundleFile[] {
       if (!entry.isFile()) continue;
 
       try {
-        const body = readFileSync(full);
-        found.push({
-          path: rel,
-          size: body.byteLength,
-          sha: createHash("sha1").update(body).digest("hex"),
-        });
+        found.push({ path: rel, size: statSync(full).size });
       } catch {
         // Likewise for an unreadable file.
       }
@@ -48,10 +44,6 @@ export function collectFiles(root: string): BundleFile[] {
 
   walk(root);
   return found.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-export function readFileBody(root: string, relativePath: string): Buffer {
-  return readFileSync(join(root, relativePath));
 }
 
 /**

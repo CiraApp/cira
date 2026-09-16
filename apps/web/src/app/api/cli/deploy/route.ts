@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { FRAMEWORKS } from "@cira/core";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
 import { envSchema } from "@/lib/env-vars";
@@ -10,16 +11,10 @@ const body = z.object({
   spaceSlug: z.string().min(1).max(64),
   appName: z.string().trim().min(1).max(60),
   appId: z.string().min(1).max(64).nullable().optional(),
-  files: z
-    .array(
-      z.object({
-        path: z.string().min(1).max(500),
-        size: z.number().int().nonnegative(),
-        sha: z.string().regex(/^[0-9a-f]{40}$/),
-      }),
-    )
-    .min(1)
-    .max(5000),
+  // Names an archive this user already uploaded. The bytes never came through
+  // Cira; this is the receipt for them.
+  sourceId: z.string().regex(/^src_[0-9a-f]{32}$/),
+  framework: z.enum(FRAMEWORKS).default("unknown"),
   // Values pass straight through to the provider and are never stored; see
   // docs/secrets.md. Absent means "this app has none", which clears any the
   // app was previously deployed with.
@@ -45,7 +40,8 @@ export async function POST(request: Request) {
     spaceSlug: parsed.data.spaceSlug,
     appName: parsed.data.appName,
     appId: parsed.data.appId ?? null,
-    files: parsed.data.files,
+    sourceId: parsed.data.sourceId,
+    framework: parsed.data.framework,
     env: parsed.data.env ?? {},
   });
 

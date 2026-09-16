@@ -1,5 +1,5 @@
-import { VercelProvider } from "./vercel.js";
 import { cloudRunConfig, googleTokens } from "./cloudrun/config.js";
+import { CloudRunProvider } from "./cloudrun/provider.js";
 import { SourceStore } from "./cloudrun/source.js";
 
 /**
@@ -8,17 +8,9 @@ import { SourceStore } from "./cloudrun/source.js";
  * One place to change, and it fails loudly when unconfigured rather than
  * pretending to deploy and leaving an app stuck saying "deploying" forever.
  */
-export function deploymentProvider(): VercelProvider {
-  const token = process.env["VERCEL_API_TOKEN"];
-  const teamId = process.env["VERCEL_DEPLOY_TEAM_ID"];
-
-  if (token === undefined || token === "" || teamId === undefined || teamId === "") {
-    throw new Error(
-      "Deployments are not configured. Set VERCEL_API_TOKEN and VERCEL_DEPLOY_TEAM_ID.",
-    );
-  }
-
-  return new VercelProvider({ token, teamId });
+export function deploymentProvider(): CloudRunProvider {
+  const config = cloudRunConfig();
+  return new CloudRunProvider(config, googleTokens(config));
 }
 
 /**

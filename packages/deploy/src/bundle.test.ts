@@ -50,7 +50,7 @@ describe("shouldUpload", () => {
 });
 
 describe("checkBundle", () => {
-  const file = (path: string, size: number): BundleFile => ({ path, size, sha: "x" });
+  const file = (path: string, size: number): BundleFile => ({ path, size });
 
   it("accepts an ordinary project", () => {
     expect(checkBundle([file("package.json", 900), file("src/a.ts", 4000)]).ok).toBe(

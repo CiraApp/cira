@@ -167,17 +167,22 @@ export const apps = pgTable(
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    /** The provider's own handle for this app, so it can be reconfigured later. */
-    providerProjectId: text("provider_project_id"),
     /**
-     * Lets Cira open a deployed app on an employee's behalf.
+     * Both dead. Nothing reads or writes either any more.
      *
-     * The app itself is unreachable without this, so Cira's own permission
-     * check is the only way in. Held in plain text for now, which is the weak
-     * point: anyone who can read this column can open any app. Encrypting it
-     * needs key management that V1 does not have, and it is worth less than it
-     * looks while the deploy token in the same environment can already do more.
+     * They belonged to a provider that needed a per-app project and a shared
+     * secret to open it. Cira now calls each app with an identity token minted
+     * for that app's own URL and expiring in an hour, so there is no long-lived
+     * value to keep - which was the acknowledged weak point of `accessSecret`,
+     * held in plain text because encrypting it needed key management V1 did
+     * not have.
+     *
+     * Still here because migrations expand before they contract: dropping a
+     * column in the same release that stops using it breaks the deployment
+     * still serving during the rollover. They go in a later migration, once
+     * nothing running has ever read them.
      */
+    providerProjectId: text("provider_project_id"),
     accessSecret: text("access_secret"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

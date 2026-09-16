@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { build } from "esbuild";
@@ -36,8 +36,29 @@ await build({
   legalComments: "none",
 });
 
+/**
+ * A ceiling, not a target.
+ *
+ * The CLI is a few thousand lines of its own code; anything approaching this
+ * is a third-party package that arrived by accident. That has happened once
+ * already - importing `@cira/deploy` at its main entry pulled in Google's auth
+ * library and took the bundle past a megabyte - and it is invisible in a diff,
+ * because the import that causes it looks identical to one that does not.
+ */
+const MAX_BUNDLE_BYTES = 250 * 1024;
+
+const bundled = statSync(join(root, "bin", "cira.js")).size;
+if (bundled > MAX_BUNDLE_BYTES) {
+  const kb = (n) => `${Math.round(n / 1024)} KB`;
+  throw new Error(
+    `bin/cira.js is ${kb(bundled)}, over the ${kb(MAX_BUNDLE_BYTES)} ceiling. ` +
+      `Something is importing a third-party package - check what @cira/deploy ` +
+      `is being imported from, and prefer @cira/deploy/packaging.`,
+  );
+}
+
 // The canonical skill travels with the CLI and is read at runtime, relative to
 // the package root - the same place it sits when installed from the registry.
 copyFileSync(skill, join(root, "SKILL.md"));
 
-process.stdout.write("bundled bin/cira.js\n");
+process.stdout.write(`bundled bin/cira.js (${Math.round(bundled / 1024)} KB)\n`);

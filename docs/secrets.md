@@ -46,30 +46,43 @@ key-management story, not something to grow into by accident.
   machine                    over TLS                   checks canManageApp
                                                                 │
                                                                 ▼
-   app_env_vars                                        POST /v13/deployments
-   name + fingerprint   ◀──  recorded, values    ──▶   env + build.env inline
-   + who + when              discarded                 (the provider stores them)
+   app_env_vars                                        PATCH run.googleapis.com
+   name + fingerprint   ◀──  recorded, values    ──▶   .../services/{app}
+   + who + when              discarded                 (the runtime stores them)
 ```
 
-### Inline on the deployment, not on the project
+### On the service, never in the build
 
-Vercel offers two places to put variables: on the project, where they persist
-across deployments, and on the deployment itself. Cira uses the deployment.
+A deploy is two acts. Cloud Build turns source into an image; Cloud Run turns
+that image into something serving. The variables go to the second and never
+touch the first.
 
-The reason is the first deploy. A Cira project does not exist until the first
-deployment creates it - `secureProject` looks it up afterwards - so there is no
-project to attach variables to when the first build runs, which is exactly the
-build most likely to need them. Deployment-inline variables are present for the
-first build and every build after it.
+That is the single most important rule in this document, because the tempting
+shortcut is the dangerous one. Cloud Build takes `substitutions`, and passing
+the environment through them would work on the first try. It would also publish
+every value: a build's configuration is readable by anyone with access to the
+project, its logs are stored in a bucket, and both outlive the build. A
+database password put into a build step is a database password in a log file.
 
-The cost is that the values are attached per deployment rather than inherited,
-so every deploy carries the full set. That is fine, because every deploy comes
-from `cira deploy`, which reads them fresh from the developer's machine. The
-developer's environment is the source of truth, and there is only one.
+So the build request carries source, a builder, and an image name. Nothing
+else. There is a test asserting it, because the failure is silent - a deploy
+that leaks this way still succeeds.
 
-Both `env` and `build.env` are set from the same map. Next.js needs some
-variables while building and some while serving, and asking a developer which is
-which is a question they should not have to answer.
+### The environment lives in the service, and Cira reads it back
+
+Cloud Run holds the variables, which is where a running app's environment
+belongs. Cira sets them on the way past and keeps nothing.
+
+One consequence is worth being explicit about. The image is not swapped into
+the service until the build finishes, minutes after the request that carried
+the variables has ended - and that swap has to rewrite the container, which
+means restating its environment. Cira reads the current values back off the
+service and writes them straight out again in the same request. They pass
+through its memory exactly as they did on the way in, are never returned to a
+caller, and are never written down.
+
+The alternative would be for Cira to keep them until the build finished, which
+is the thing this document exists to say it does not do.
 
 ## What Cira records
 
@@ -136,5 +149,5 @@ security review asks:
 | Cira's server memory               | For the duration of one request |
 | Cira's database                    | **No**                          |
 | Cira's logs                        | **No**                          |
-| Vercel deployment config           | Yes                             |
+| The Cloud Run service definition   | Yes                             |
 | The running app's environment      | Yes                             |

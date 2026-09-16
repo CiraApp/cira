@@ -1,10 +1,13 @@
 import { basename } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
-import { collectFiles, readFileBody, readSourceFiles } from "./files.js";
+import { collectFiles, readSourceFiles } from "./files.js";
+import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
 import { extractRepo } from "@cira/extract";
+import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
+import { checkBundle } from "@cira/deploy/packaging";
 import { bold, dim, fail, info, success } from "./ui.js";
 
 interface MeResponse {
@@ -32,6 +35,19 @@ interface CapabilitiesResponse {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** What to call each of these out loud. */
+const FRAMEWORK_NAMES: Record<Framework, string> = {
+  nextjs: "Next.js app",
+  node: "Node.js app",
+  python: "Python app",
+  go: "Go app",
+  ruby: "Ruby app",
+  java: "Java app",
+  php: "PHP app",
+  dotnet: ".NET app",
+  unknown: "Application",
+};
+
 export async function deploy(argv: string[] = []): Promise<number> {
   const requestedSpace = readFlag(argv, "--space");
   const config = readConfig();
@@ -44,12 +60,10 @@ export async function deploy(argv: string[] = []): Promise<number> {
 
   info("");
   info(`${dim("Detecting application...")}`);
+  // Never a reason to stop. The build works out what this is from the source
+  // itself; this only decides what the app's page will call it.
   const framework = detectFramework(root);
-  if (framework === null) {
-    fail("This folder is not a Next.js app. Cira deploys Next.js in V1.");
-    return 1;
-  }
-  success("Next.js app");
+  success(FRAMEWORK_NAMES[framework]);
 
   const link = readProjectLink(root);
 
@@ -96,6 +110,16 @@ export async function deploy(argv: string[] = []): Promise<number> {
     return 1;
   }
 
+  // Checked here rather than only on the server, because the server never sees
+  // the files: it authorises an upload by size and Google enforces that size.
+  // A 40 MB asset someone forgot to ignore is worth naming before the upload,
+  // not after it.
+  const bundle = checkBundle(files);
+  if (!bundle.ok) {
+    fail(bundle.reason);
+    return 1;
+  }
+
   const bytes = files.reduce((n, f) => n + f.size, 0);
   info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)})...`)}`);
 
@@ -127,21 +151,14 @@ export async function deploy(argv: string[] = []): Promise<number> {
     info("");
   }
 
-  for (const file of files) {
-    try {
-      await api("/api/cli/upload", {
-        method: "POST",
-        body: undefined,
-        raw: { sha: file.sha, body: readFileBody(root, file.path) },
-      });
-    } catch (error) {
-      fail(
-        error instanceof ApiError
-          ? `${error.message} while uploading ${file.path}`
-          : `Could not upload ${file.path}.`,
-      );
-      return 1;
-    }
+  // One archive, sent straight to storage. It does not pass through Cira,
+  // which is what lets a project larger than a few megabytes deploy at all.
+  let sourceId: string;
+  try {
+    sourceId = await uploadSource(archiveProject(root, files));
+  } catch (error) {
+    fail(error instanceof ApiError ? error.message : "Could not upload this project.");
+    return 1;
   }
   success("Uploaded");
 
@@ -155,7 +172,8 @@ export async function deploy(argv: string[] = []): Promise<number> {
         spaceSlug,
         appName: link === null ? prettyName(basename(root)) : basename(root),
         appId: link?.appId ?? null,
-        files,
+        sourceId,
+        framework,
         env: collected.env,
       },
     });

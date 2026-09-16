@@ -35,16 +35,69 @@ export function serviceName(spaceSlug: string, appSlug: string): string {
   );
 }
 
-/** Where the built image lives, tagged by the build that produced it. */
+/**
+ * Where the built image lives, tagged by the source it was built from.
+ *
+ * Tagged by source rather than by build, which is not the obvious choice: the
+ * build id would read better in a console. But the image name has to be
+ * written into the build request, and a build does not have an id until that
+ * request has been accepted - so a build-id tag cannot be known in time. The
+ * source id can, is unique per deploy, and says something more useful anyway,
+ * which is which bytes produced this image.
+ */
 export function imageRef(args: {
   region: string;
   projectId: string;
   repository: string;
   service: string;
-  buildId: string;
+  tag: string;
 }): string {
-  const { region, projectId, repository, service, buildId } = args;
-  return `${region}-docker.pkg.dev/${projectId}/${repository}/${service}:${buildId}`;
+  const { region, projectId, repository, service, tag } = args;
+  return `${region}-docker.pkg.dev/${projectId}/${repository}/${service}:${tag}`;
+}
+
+/**
+ * What Cira stores as a deployment's provider id.
+ *
+ * A Cloud Run deploy is two things and the interface has room for one string,
+ * so the string carries both. A build makes an image; a service serves it, and
+ * knowing only the build id would leave no way to find the service it was for.
+ * The image tag rides along for the same reason - the deploy that started this
+ * is long gone by the time anyone asks how it went.
+ *
+ * Colons separate them because none of the three can contain one: a build id
+ * is a uuid, a service name is DNS-safe, and a tag is one of Cira's own ids.
+ */
+export function deploymentHandle(args: {
+  buildId: string;
+  service: string;
+  tag: string;
+}): string {
+  return `${args.buildId}:${args.service}:${args.tag}`;
+}
+
+export interface DeploymentHandle {
+  buildId: string;
+  service: string;
+  tag: string;
+}
+
+export function parseHandle(handle: string): DeploymentHandle {
+  const [buildId, service, tag, ...rest] = handle.split(":");
+  if (
+    buildId === undefined ||
+    service === undefined ||
+    tag === undefined ||
+    rest.length > 0 ||
+    buildId === "" ||
+    service === "" ||
+    tag === ""
+  ) {
+    // Reachable: a row written by the Vercel provider holds a bare Vercel id,
+    // and saying so beats a confusing failure against a build that never was.
+    throw new Error("That deployment was not made by Cloud Run.");
+  }
+  return { buildId, service, tag };
 }
 
 /**

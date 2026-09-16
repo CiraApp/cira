@@ -41,7 +41,7 @@ ids are never trusted.
 | Database | Neon Postgres                                |
 | ORM      | Drizzle                                      |
 | Identity | Clerk, behind `apps/web/src/lib/identity.ts` |
-| Hosting  | Vercel                                       |
+| Hosting  | Vercel for Cira, Cloud Run for deployed apps |
 | Analysis | Claude, behind `lib/capability-analyzer.ts`  |
 
 Two seams keep the replaceable parts replaceable. `lib/identity.ts` is the only
@@ -101,11 +101,21 @@ Cira does not own compute. Everything routes through the `DeploymentProvider`
 interface in `packages/core`, so the provider can be replaced without touching
 anything above it.
 
-Vercel is the first provider, chosen because V1 targets Next.js only. Deployed
-apps keep Vercel's Deployment Protection on, so their raw URL is not publicly
-reachable; Cira checks permission server-side and proxies through with a bypass
-token. That is the access gateway from spec section 7, without building one.
-The implementation lands in Phase 7.
+Google Cloud Run runs the deployed apps. Cloud Build turns uploaded source into
+an image with buildpacks, which detect the language themselves - so Cira deploys
+whatever an internal tool happens to be written in, rather than only the half of
+it that is a frontend.
+
+It was chosen for its access model as much as its runtime. A Cloud Run service
+is unreachable until something is granted the invoker role, and Cira grants
+nothing: it calls each app with an OIDC token addressed to that app's own URL,
+which Cloud Run checks before the request arrives. That is the access gateway
+from spec section 7, without building one, and without a shared secret in a
+column anywhere.
+
+Cira itself still runs on Vercel, and that is load-bearing rather than
+incidental: Vercel issues every deployment a short-lived OIDC token, which is
+what Cira exchanges for Google credentials. There is no service account key.
 
 ## Capabilities
 

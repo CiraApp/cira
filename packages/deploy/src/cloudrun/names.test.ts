@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_SERVICE_NAME,
+  deploymentHandle,
   imageRef,
+  parseHandle,
   serviceName,
   servicePath,
   sourceObject,
@@ -56,28 +58,50 @@ describe("serviceName", () => {
 });
 
 describe("imageRef", () => {
-  it("addresses Artifact Registry by region, project and build", () => {
+  it("addresses Artifact Registry by region, project and source", () => {
     expect(
       imageRef({
         region: "us-central1",
         projectId: "cira-prod",
         repository: "apps",
         service: "acme-ledger",
-        buildId: "b-123",
+        tag: "src_123",
       }),
-    ).toBe("us-central1-docker.pkg.dev/cira-prod/apps/acme-ledger:b-123");
+    ).toBe("us-central1-docker.pkg.dev/cira-prod/apps/acme-ledger:src_123");
   });
 
-  it("tags by build, so a rollback has something to point at", () => {
+  it("tags by source, so a rollback has something to point at", () => {
     const base = {
       region: "us-central1",
       projectId: "p",
       repository: "apps",
       service: "s",
     };
-    expect(imageRef({ ...base, buildId: "one" })).not.toBe(
-      imageRef({ ...base, buildId: "two" }),
-    );
+    expect(imageRef({ ...base, tag: "one" })).not.toBe(imageRef({ ...base, tag: "two" }));
+  });
+});
+
+describe("deploymentHandle", () => {
+  it("round-trips the three things a Cloud Run deploy is", () => {
+    const handle = deploymentHandle({
+      buildId: "9f1c-4a",
+      service: "acme-ledger",
+      tag: "src_123",
+    });
+    expect(handle).toBe("9f1c-4a:acme-ledger:src_123");
+    expect(parseHandle(handle)).toEqual({
+      buildId: "9f1c-4a",
+      service: "acme-ledger",
+      tag: "src_123",
+    });
+  });
+
+  // Every deployment row written before this provider existed holds a bare
+  // Vercel id, and those rows are still in the table.
+  it("says so when it is handed another provider's id", () => {
+    expect(() => parseHandle("dpl_9RaYvCa")).toThrow("not made by Cloud Run");
+    expect(() => parseHandle("a:b:c:d")).toThrow("not made by Cloud Run");
+    expect(() => parseHandle("a::c")).toThrow("not made by Cloud Run");
   });
 });
 

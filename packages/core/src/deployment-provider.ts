@@ -4,25 +4,50 @@ import type { DeploymentStatus } from "./model.js";
  * The seam between Cira and whoever actually runs the code.
  *
  * Cira does not own compute. Everything above this interface stays unchanged
- * if the provider is later swapped for Fly, Cloudflare, AWS, or a custom
- * runtime (spec sections 4 and 12), so nothing outside a provider
+ * if the provider is later swapped again, so nothing outside a provider
  * implementation may reference a provider's own API, types, or vocabulary.
  */
 
-export type Framework = "nextjs";
+/**
+ * What the source appears to be written in.
+ *
+ * A hint, not a gate. Cira used to refuse anything that was not Next.js,
+ * because the provider it had could not run anything else - and the effect was
+ * that Cira only ever saw frontends. The builder now detects the language from
+ * the source itself, so this exists to say something useful on an app's page,
+ * never to decide whether a deploy may proceed. `unknown` is a normal answer.
+ */
+export const FRAMEWORKS = [
+  "nextjs",
+  "node",
+  "python",
+  "go",
+  "ruby",
+  "java",
+  "php",
+  "dotnet",
+  "unknown",
+] as const;
+
+export type Framework = (typeof FRAMEWORKS)[number];
 
 /**
- * One file of a project's source, addressed by its own hash.
+ * Where the provider can read this deploy's source.
  *
- * Content-addressed rather than a single archive, so redeploying moves only
- * what changed. Providers that want an archive can assemble one; providers
- * that deduplicate can skip what they already hold.
+ * One archive rather than a list of hashed files. The previous shape was
+ * content-addressed so that a redeploy moved only what changed, which is a
+ * real saving, but it only works against a provider that keeps a store of
+ * loose files to deduplicate against. Paying for that generality with a
+ * per-file upload round trip, when no provider Cira uses can benefit from it,
+ * is the wrong trade.
+ *
+ * The URI's scheme is the provider's business. Nothing above this interface
+ * parses it.
  */
-export interface SourceFile {
-  /** Path relative to the project root, as the build should see it. */
-  path: string;
+export interface SourceArchive {
+  uri: string;
+  /** Bytes, as stored. Uncompressed size is not knowable without unpacking. */
   size: number;
-  sha: string;
 }
 
 export interface AppDeploymentInput {
@@ -30,7 +55,7 @@ export interface AppDeploymentInput {
   spaceSlug: string;
   appSlug: string;
   framework: Framework;
-  files: readonly SourceFile[];
+  source: SourceArchive;
   /**
    * Build-time and run-time variables.
    *
@@ -57,7 +82,18 @@ export interface DeploymentProvider {
   readonly name: string;
 
   deploy(app: AppDeploymentInput): Promise<DeploymentResult>;
+
+  /**
+   * Where the deploy has got to, and where it ends up.
+   *
+   * Allowed to act, not only to read. A deploy is more than one step at every
+   * provider worth using, and the later steps have to be driven by something;
+   * Cira has no background worker, so they are driven from here, which is
+   * called whenever anyone looks at the app. Implementations must therefore be
+   * idempotent and safe to call concurrently.
+   */
   getStatus(deploymentId: string): Promise<DeploymentResult>;
+
   getLogs(deploymentId: string): Promise<DeploymentLogLine[]>;
   remove(deploymentId: string): Promise<void>;
 }

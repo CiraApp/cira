@@ -67,7 +67,6 @@ export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export interface BundleFile {
   path: string;
   size: number;
-  sha: string;
 }
 
 export type BundleVerdict = { ok: true } | { ok: false; reason: string };

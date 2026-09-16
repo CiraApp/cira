@@ -3,10 +3,9 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { apps, appAccess, db, deployments, memberships, spaces } from "@cira/db";
 import { newId, slugify, canManageApp } from "@cira/core";
-import type { SourceFile, User } from "@cira/core";
-import { deploymentProvider } from "@cira/deploy";
+import type { Framework, User } from "@cira/core";
+import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
 import { recordEnvVars } from "@/lib/env-vars";
-import { checkBundle } from "@cira/deploy";
 
 export type DeployOutcome =
   | { ok: true; appId: string; appSlug: string; spaceSlug: string; deploymentId: string }
@@ -23,15 +22,15 @@ export async function deployToSpace(args: {
   spaceSlug: string;
   appName: string;
   appId: string | null;
-  files: readonly SourceFile[];
+  /** Names an archive already uploaded by this user. */
+  sourceId: string;
+  /** What the source looks like. A label on the app, not a gate on the build. */
+  framework: Framework;
   /** Handed to the provider and then forgotten. See docs/secrets.md. */
   env?: Readonly<Record<string, string>>;
 }): Promise<DeployOutcome> {
-  const { user, spaceSlug, appName, files } = args;
+  const { user, spaceSlug, appName } = args;
   const env = args.env ?? {};
-
-  const bundle = checkBundle(files as Array<SourceFile>);
-  if (!bundle.ok) return { ok: false, error: bundle.reason };
 
   const database = db();
 
@@ -133,6 +132,24 @@ export async function deployToSpace(args: {
       .where(eq(apps.id, app.id));
   }
 
+  // Resolved here rather than trusted from the request. The path is rebuilt
+  // from this user's own id, so an id belonging to someone else does not
+  // resolve, and an upload that never finished reads as one that is not there.
+  let source;
+  try {
+    source = await sourceStore().find({ userId: user.id, sourceId: args.sourceId });
+  } catch {
+    source = null;
+  }
+
+  if (source === null) {
+    await database
+      .update(apps)
+      .set({ status: "failed", updatedAt: new Date() })
+      .where(eq(apps.id, app.id));
+    return { ok: false, error: "That upload did not finish. Try deploying again." };
+  }
+
   let result;
   try {
     const provider = deploymentProvider();
@@ -140,8 +157,8 @@ export async function deployToSpace(args: {
       appId: app.id,
       spaceSlug: space.slug,
       appSlug: app.slug,
-      framework: "nextjs",
-      files,
+      framework: args.framework,
+      source: { uri: archiveUri(source), size: source.size },
       env,
     });
   } catch (error) {
@@ -156,28 +173,6 @@ export async function deployToSpace(args: {
     };
   }
 
-  // Lock the app down and keep the key. Until this succeeds the app is
-  // reachable only by whoever holds a provider account, which is nobody we
-  // care about, so a failure here is worth recording but not worth failing
-  // the deploy over.
-  if (app.accessSecret === null || app.providerProjectId === null) {
-    try {
-      const secured = await deploymentProvider().secureProject(
-        `${space.slug}-${app.slug}`,
-      );
-      await database
-        .update(apps)
-        .set({
-          providerProjectId: secured.projectId,
-          accessSecret: secured.accessSecret,
-        })
-        .where(eq(apps.id, app.id));
-    } catch {
-      // Left unset: the app page will say it cannot be opened yet rather than
-      // handing anyone a link that does not work.
-    }
-  }
-
   // The names, never the values. Recorded after the provider accepted them, so
   // the app page cannot claim a variable is configured when the deploy failed.
   await recordEnvVars({ appId: app.id, userId: user.id, env });
@@ -186,7 +181,7 @@ export async function deployToSpace(args: {
   await database.insert(deployments).values({
     id: deploymentId,
     appId: app.id,
-    provider: "vercel",
+    provider: "cloudrun",
     providerDeploymentId: result.providerDeploymentId,
     status: result.status,
     url: result.url,

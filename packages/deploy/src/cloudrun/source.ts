@@ -24,6 +24,7 @@
  * docs/secrets.md.
  */
 
+import { createHash } from "node:crypto";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
 import { sourceObject } from "./names.js";
@@ -142,4 +143,40 @@ export class SourceStore {
       generation: body.generation,
     };
   }
+}
+
+/**
+ * One archive, as a URI the rest of Cira can carry around without knowing what
+ * it means. The generation is part of it on purpose: a URI naming only the
+ * object would let a later upload to the same name become what gets built.
+ */
+export function archiveUri(source: StoredSource): string {
+  return `gs://${source.bucket}/${source.object}#${source.generation}`;
+}
+
+export interface ParsedArchive {
+  bucket: string;
+  object: string;
+  generation: string;
+}
+
+export function parseArchiveUri(uri: string): ParsedArchive {
+  const match = /^gs:\/\/([^/]+)\/(.+)#(\d+)$/.exec(uri);
+  const [, bucket, object, generation] = match ?? [];
+  if (bucket === undefined || object === undefined || generation === undefined) {
+    throw new SourceError("That deployment's source is not somewhere Cira can read.");
+  }
+  return { bucket, object, generation };
+}
+
+/**
+ * The tag the image built from this source will carry.
+ *
+ * A hash of the URI rather than the source id read out of it, so that nothing
+ * depends on how objects happen to be named, and so the result is always a
+ * legal Docker tag whatever the name turns out to contain. Deterministic, so
+ * building the same bytes twice addresses the same image.
+ */
+export function imageTag(uri: string): string {
+  return createHash("sha256").update(uri, "utf8").digest("hex").slice(0, 16);
 }

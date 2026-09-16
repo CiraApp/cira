@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { tarGzip, type ArchiveEntry, type BundleFile } from "@cira/deploy";
+import { tarGzip, type ArchiveEntry, type BundleFile } from "@cira/deploy/packaging";
 import { api, ApiError } from "./api.js";
 
 /**

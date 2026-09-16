@@ -1,8 +1,6 @@
 import "server-only";
 
-import { createHmac } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { apps, db } from "@cira/db";
+import { deploymentProvider } from "@cira/deploy";
 import { isSafeTargetPath, type Capability, type User } from "@cira/core";
 import {
   getCapabilityForUser,
@@ -69,7 +67,6 @@ export async function invokeCapability(args: {
 
 interface ResolvedTarget {
   url: URL;
-  secret: string;
 }
 
 /**
@@ -88,15 +85,6 @@ async function resolveTarget(capability: Capability): Promise<ResolvedTarget | n
     return null;
   }
 
-  const [row] = await db()
-    .select({ accessSecret: apps.accessSecret })
-    .from(apps)
-    .where(eq(apps.id, capability.appId))
-    .limit(1);
-
-  const secret = row?.accessSecret ?? null;
-  if (secret === null || secret === "") return null;
-
   let url: URL;
   try {
     url = new URL(deployment.url);
@@ -110,7 +98,7 @@ async function resolveTarget(capability: Capability): Promise<ResolvedTarget | n
   url.search = "";
   url.hash = "";
 
-  return { url, secret };
+  return { url };
 }
 
 /**
@@ -140,12 +128,16 @@ async function call(
     body = JSON.stringify(input);
   }
 
-  // The app is unreachable without the bypass, so holding it is already proof
-  // this is Cira. The signature is what lets an app that wants to check say so
-  // for itself, without Cira having to run a secrets system to make it possible.
-  const signature = createHmac("sha256", target.secret)
-    .update(`${capability.target.method}\n${url.pathname}\n${body ?? ""}`)
-    .digest("hex");
+  // Minted for this app's own URL and expiring in an hour, rather than read
+  // out of a column. Cloud Run checks the audience before the request reaches
+  // the app at all, so a token for one app opens nothing else - and there is
+  // no long-lived value anywhere for anyone to take.
+  let token: string;
+  try {
+    token = await deploymentProvider().invocationToken(url.origin);
+  } catch {
+    return { ok: false, error: `Could not reach ${capability.appName}.` };
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -157,9 +149,11 @@ async function call(
       headers: {
         accept: "application/json",
         "content-type": "application/json",
-        "x-vercel-protection-bypass": target.secret,
+        // Not `authorization`: Cloud Run consumes this one and passes the
+        // app's own `authorization` header through untouched, which matters
+        // because the app was not written for Cira and may well use it.
+        "x-serverless-authorization": `Bearer ${token}`,
         "x-cira-capability": capability.name,
-        "x-cira-signature": signature,
         ...(body === undefined ? {} : { "content-length": String(body.length) }),
       },
       ...(body === undefined ? {} : { body }),
