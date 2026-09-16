@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "workers/*"
 
 # vitest's bundler needs its postinstall to place the native binary.
 allowBuilds:

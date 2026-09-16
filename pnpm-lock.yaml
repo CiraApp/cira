@@ -153,6 +153,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  workers/app-proxy:
+    devDependencies:
+      '@cira/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
+
 packages:
 
   '@alloc/quick-lru@5.3.0':

@@ -20,6 +20,7 @@ import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
 import { appColor } from "@/lib/app-color";
 import { resolveAppState } from "@/lib/app-state";
+import { appOpenPath } from "@/lib/app-open";
 
 export default async function AppPage({
   params,
@@ -55,7 +56,11 @@ export default async function AppPage({
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
     const color = appColor(app.id);
-    const resolved = resolveAppState(app, deployment);
+    const resolved = resolveAppState(
+      app,
+      deployment,
+      appOpenPath({ appSlug, spaceSlug }),
+    );
 
     return (
       <AppShell

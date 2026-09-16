@@ -16,24 +16,6 @@ export type AppState =
   /** Running, but there is no way for a browser to get in. */
   | "unreachable";
 
-/**
- * Whether a person can open a deployed app in their browser.
- *
- * False, for now, and the reason is worth writing down. Apps run on Cloud Run,
- * which is private by IAM: it wants an identity token on every request, and a
- * browser cannot put one on a navigation. The previous provider took a secret
- * in the query string and traded it for a cookie, which is what the Open
- * button used to rely on and why nothing like it exists here.
- *
- * Closing this needs a proxy holding the token on the browser's behalf, at a
- * hostname per app. Until that exists, saying so is better than offering a
- * button that goes nowhere - and far better than the message this replaced,
- * which told people to redeploy, which could never have helped.
- *
- * Agents are unaffected: `invoke-capability` sets the header itself.
- */
-const BROWSER_ACCESS = false;
-
 export interface ResolvedApp {
   state: AppState;
   /** Present only when the app can actually be opened. */
@@ -43,7 +25,19 @@ export interface ResolvedApp {
   blockedReason: string | null;
 }
 
-export function resolveAppState(app: App, deployment: Deployment | null): ResolvedApp {
+export function resolveAppState(
+  app: App,
+  deployment: Deployment | null,
+  /**
+   * Where a browser should be sent, or null when nowhere can be.
+   *
+   * Computed by the caller rather than here, because it depends on which
+   * domain apps are served under - configuration, which this function has no
+   * business reading. Null covers both an unconfigured deployment and an app
+   * whose slugs are too long to make a legal hostname.
+   */
+  openAt: string | null,
+): ResolvedApp {
   const url = deployment?.url ?? null;
 
   if (deployment === null) {
@@ -97,17 +91,18 @@ export function resolveAppState(app: App, deployment: Deployment | null): Resolv
     };
   }
 
-  // Running, and reachable by an assistant, but not by a browser. Offering an
-  // Open button that bounces the person back here is worse than admitting it.
-  if (!BROWSER_ACCESS) {
+  // Running, and reachable by an assistant, but with no address a browser can
+  // be sent to. Offering an Open button that goes nowhere is worse than saying
+  // so.
+  if (openAt === null) {
     return {
       state: "unreachable",
       openUrl: null,
       label: "Running",
       blockedReason:
-        "This app is running and assistants can use it. Opening it in a browser is not available yet.",
+        "This app is running and assistants can use it, but it has no web address yet.",
     };
   }
 
-  return { state: "live", openUrl: url, label: "Live", blockedReason: null };
+  return { state: "live", openUrl: openAt, label: "Live", blockedReason: null };
 }
