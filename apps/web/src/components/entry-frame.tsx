@@ -93,7 +93,7 @@ function Mark({ kind }: { kind: "logo" | "done" }) {
         className="relative flex h-11 w-11 items-center justify-center rounded-[var(--radius-edge)] bg-accent"
       >
         {kind === "logo" ? (
-          <CiraMark className="h-[27px] w-[27px] text-accent-ink" />
+          <CiraMark className="h-[21px] w-auto text-accent-ink" />
         ) : (
           <svg viewBox="0 0 32 32" className="h-[24px] w-[24px]">
             {/* Drawn rather than shown: the one moment in Cira where something

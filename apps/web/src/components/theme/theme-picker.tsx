@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   DEFAULT_THEME,
   PRESETS,
@@ -27,21 +27,49 @@ export function ThemePicker() {
   // a preset is being previewed and would slide the mark around under it.
   const chosen = theme ?? DEFAULT_THEME;
   const [open, setOpen] = useState(false);
-  const boxRef = useRef<HTMLDivElement>(null);
+  // The panel is held as state rather than a ref: Portal renders nothing
+  // until its own mount effect has run, so the node does not exist on the
+  // pass that opens the panel. State is what re-runs the measurement once it
+  // does, which a ref would silently fail to do.
+  const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   // Which of the two colours the wheel is currently editing.
   const [target, setTarget] = useState<"base" | "accent">("accent");
 
-  // The panel is portalled out of the header, which applies a backdrop filter
+  // The panel is portalled out of the sidebar, which applies a backdrop filter
   // and would otherwise become its containing block, so its position has to be
   // measured rather than inherited.
-  useEffect(() => {
+  //
+  // It is placed against the panel's own measured box rather than a remembered
+  // size, so it simply goes wherever it fits: from the foot of the spine that
+  // means upwards and out from the button's left edge, and both of those flip
+  // back on their own if the swatch is ever put somewhere else. A layout
+  // effect, because this reads geometry and writes a position - a passive one
+  // would show a frame of the panel parked off-screen.
+  useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
-      const box = buttonRef.current?.getBoundingClientRect();
-      if (box === undefined) return;
-      setAnchor({ top: box.bottom + 8, right: window.innerWidth - box.right });
+      const button = buttonRef.current?.getBoundingClientRect();
+      if (button === undefined || panelEl === null) return;
+      // offsetWidth/Height rather than a rect: the panel animates in on a
+      // scale, and a rect taken mid-animation reports it a few percent short,
+      // which is enough to park it over the button it opened from.
+      const width = panelEl.offsetWidth;
+      const height = panelEl.offsetHeight;
+      const gap = 8;
+      setAnchor({
+        top:
+          button.bottom + gap + height <= window.innerHeight
+            ? button.bottom + gap
+            : Math.max(gap, button.top - gap - height),
+        left: Math.max(
+          gap,
+          button.right - width >= gap
+            ? button.right - width
+            : Math.min(button.left, window.innerWidth - width - gap),
+        ),
+      });
     };
     place();
     window.addEventListener("resize", place);
@@ -50,13 +78,13 @@ export function ThemePicker() {
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open]);
+  }, [open, panelEl]);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (boxRef.current?.contains(target) === true) return;
+      if (panelEl?.contains(target) === true) return;
       if (buttonRef.current?.contains(target) === true) return;
       setOpen(false);
     };
@@ -69,7 +97,7 @@ export function ThemePicker() {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, panelEl]);
 
   // A preview left running after the panel closes would be a theme nobody
   // chose and nothing would ever clear.
@@ -88,23 +116,30 @@ export function ThemePicker() {
         aria-label="Change colours"
         className="flex h-[30px] w-[30px] items-center justify-center rounded-[var(--radius-edge)] transition-[background-color,transform] duration-150 hover:bg-sunken active:scale-90"
       >
-        {/* The button is the swatch: the two colours in the shape the
-            interface is actually using them, ground behind accent. */}
+        {/* The button is the swatch: both colours in one square, ground in the
+            bottom-left corner running up into accent at the top-right. The
+            two ends hold long enough to be read as themselves and the middle
+            is left to blend, so it looks like a mixture of the two rather
+            than a pair of tiles stacked on each other. */}
         <span
           aria-hidden="true"
-          className="relative h-4 w-4 overflow-hidden rounded-[2px] border border-line-strong bg-base"
-        >
-          <span className="absolute inset-x-0 bottom-0 h-1/2 bg-accent" />
-        </span>
+          className="h-4 w-4 rounded-[2px] border border-line-strong"
+          style={{
+            backgroundImage:
+              "linear-gradient(to top right, var(--color-base) 0%, var(--color-base) 28%, var(--color-accent) 72%, var(--color-accent) 100%)",
+          }}
+        />
       </button>
 
-      {open && anchor !== null ? (
+      {open ? (
         <Portal>
           <div
-            ref={boxRef}
+            ref={setPanelEl}
             role="dialog"
             aria-label="Interface colours"
-            style={{ top: anchor.top, right: anchor.right }}
+            // Parked off-screen for the single pass it takes to measure it;
+            // the layout effect above lands it before the browser paints.
+            style={anchor ?? { top: -9999, left: 0 }}
             className="enter-scale fixed z-50 w-[300px] rounded-[var(--radius-edge)] border border-line-strong bg-raised p-3 shadow-[var(--shadow-panel)]"
           >
             <p className="eyebrow px-0.5">Presets</p>

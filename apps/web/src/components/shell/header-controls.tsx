@@ -1,14 +1,14 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { ThemePicker } from "@/components/theme/theme-picker";
 
+/**
+ * What the header still owns: who you are signed in as.
+ *
+ * The colour swatch used to sit here beside it. It went to the foot of the
+ * spine, next to the brand, because it changes how the product looks rather
+ * than what this page is doing - and the header is for the latter.
+ */
 export function HeaderControls() {
-  return (
-    <div className="flex items-center gap-1.5">
-      <ThemePicker />
-      <div className="h-4 w-px bg-line" aria-hidden="true" />
-      <UserButton appearance={{ elements: { avatarBox: "h-[26px] w-[26px]" } }} />
-    </div>
-  );
+  return <UserButton appearance={{ elements: { avatarBox: "h-[26px] w-[26px]" } }} />;
 }

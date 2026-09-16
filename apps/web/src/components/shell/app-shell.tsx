@@ -9,6 +9,10 @@ import { Wordmark } from "./wordmark";
 import { HeaderControls } from "./header-controls";
 import { HeaderTitle } from "./header-title";
 import { RouteProgress } from "./route-progress";
+import { SettingsLink } from "./settings-link";
+import { ConnectAssistant } from "@/components/connect-assistant";
+import { listAssistantTokens } from "@/lib/assistant-actions";
+import { ThemePicker } from "@/components/theme/theme-picker";
 
 /**
  * The product shell: a fixed spine on the left, a thin header, and one
@@ -16,8 +20,9 @@ import { RouteProgress } from "./route-progress";
  *
  * The spine is ordered by how often you reach for something. The company you
  * are in takes the top, level with the header, because it scopes everything
- * under it. The work sits in the middle. Settings and the brand sit at the
- * foot, out of the way of the four things anyone actually clicks.
+ * under it. The work - Settings included - sits in the middle, because a
+ * destination you cannot find in the list is a destination you hunt for. The
+ * foot belongs to the brand, with Settings as a glyph at the far end of it.
  *
  * The sidebar is the only place navigation lives, so the header stays free for
  * what belongs to the current view. On a phone the spine folds into a sheet
@@ -27,7 +32,7 @@ import { RouteProgress } from "./route-progress";
  * Everything atmospheric is mounted here once - the field, the palette, the
  * route bar - so a page never has to think about any of it.
  */
-export function AppShell({
+export async function AppShell({
   spaceSlug,
   spaces,
   title,
@@ -47,13 +52,17 @@ export function AppShell({
     { label: "Members", href: `/${spaceSlug}/~/members` as Route, icon: "members" },
   ];
 
-  // Kept out of the list above and pinned to the foot: it is where you go when
-  // something is wrong, not where you go to work.
+  // Out of the list and onto the foot, as a glyph beside the brand. It stays in
+  // the palette, because that is where you look for a place by name.
   const settings: NavItem = {
     label: "Settings",
     href: `/${spaceSlug}/~/settings` as Route,
     icon: "settings",
   };
+
+  // The card shows the most recent token rather than a count: "connected, and
+  // this is the one that has been working" is the useful fact.
+  const [assistant] = await listAssistantTokens();
 
   return (
     <div className="flex min-h-dvh">
@@ -67,15 +76,18 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2.5">
+        <div className="flex flex-1 flex-col overflow-y-auto p-2.5">
           <SidebarNav items={items} />
+          <div className="mt-5">
+            <ConnectAssistant connected={assistant ?? null} />
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 border-t border-line p-2.5">
-          <div className="min-w-0 flex-1">
-            <SidebarNav items={[settings]} />
+          <div className="flex min-w-0 flex-1 justify-center">
+            <Wordmark href={`/${spaceSlug}` as Route} />
           </div>
-          <Wordmark href={`/${spaceSlug}` as Route} />
+          <SettingsLink href={settings.href} />
         </div>
       </aside>
 
@@ -85,12 +97,13 @@ export function AppShell({
             spaceSlug={spaceSlug}
             spaces={spaces}
             items={items}
-            settings={settings}
+            settingsHref={settings.href}
           />
 
           <HeaderTitle>{title}</HeaderTitle>
 
           <div className="flex shrink-0 items-center gap-2">
+            <ThemePicker />
             {actions}
             <CommandPalette spaceSlug={spaceSlug} items={[...items, settings]} />
             <HeaderControls />

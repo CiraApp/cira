@@ -118,7 +118,8 @@ function isActive(pathname: string, href: string): boolean {
   return href.split("/").length > 2 && pathname.startsWith(`${href}/`);
 }
 
-function NavIcon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
+/** Exported so the settings gear at the foot is the same drawing, not a copy. */
+export function NavIcon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
   const paths: Record<NavItem["icon"], React.ReactNode> = {
     apps: (
       <>
@@ -147,10 +148,22 @@ function NavIcon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
         <path d="M12.2 4.1a2.6 2.6 0 0 1 0 4.8M13.4 10.9c1.4.5 2.4 1.8 2.4 3.5" />
       </>
     ),
+    // Drawn in the mark's vocabulary rather than a stock cog: every edge is
+    // horizontal, vertical or on the same 45 degree diagonal, the corners are
+    // mitred, and the body is a regular octagon carrying a tooth on each of
+    // its eight edges. Four teeth left it reading as a crosshair; eight is
+    // what makes it a gear, and a regular octagon is what keeps every root
+    // long enough to still show a gap at 15px.
     settings: (
       <>
-        <circle cx="9" cy="9" r="2.5" />
-        <path d="M9 1.9v1.7M9 14.4v1.7M16.1 9h-1.7M3.6 9H1.9M14 4l-1.2 1.2M5.2 12.8 4 14M14 14l-1.2-1.2M5.2 5.2 4 4" />
+        <path
+          strokeLinejoin="miter"
+          d="M6.72 3.5L7.8 3.5L7.8 1.7L10.2 1.7L10.2 3.5L11.28 3.5L12.04 4.26L13.31 2.99L15.01 4.69L13.74 5.96L14.5 6.72L14.5 7.8L16.3 7.8L16.3 10.2L14.5 10.2L14.5 11.28L13.74 12.04L15.01 13.31L13.31 15.01L12.04 13.74L11.28 14.5L10.2 14.5L10.2 16.3L7.8 16.3L7.8 14.5L6.72 14.5L5.96 13.74L4.69 15.01L2.99 13.31L4.26 12.04L3.5 11.28L3.5 10.2L1.7 10.2L1.7 7.8L3.5 7.8L3.5 6.72L4.26 5.96L2.99 4.69L4.69 2.99L5.96 4.26Z"
+        />
+        <path
+          strokeLinejoin="miter"
+          d="M8.17 7L9.83 7L11 8.17L11 9.83L9.83 11L8.17 11L7 9.83L7 8.17Z"
+        />
       </>
     ),
   };

@@ -142,7 +142,7 @@ export default async function DemoAppPage({
             </Link>
 
             <span className="flex items-center gap-1.5 text-ink-subtle">
-              <CiraMark className="h-[13px] w-[13px]" />
+              <CiraMark className="h-[13px] w-auto" />
               <span className="text-[11.5px]">Opened through Cira</span>
             </span>
           </div>

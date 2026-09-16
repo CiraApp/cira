@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#0e0e10"/>
-  <!-- Centred on the mark's own bounding box, not on its 24-unit grid: the
-       grid has more room to the right of the terminals than to the left of
-       the apex, so centring the grid leaves the C sitting off to one side. -->
-  <g transform="translate(0.7 -0.2) scale(1.35)" fill="#e4e4e7">
-    <path d="M19 4H9.5L3.67 11.4h4.4L11.06 7.6H17.3Z"/>
-    <path d="M19 20H9.5l-5.83-7.4h4.4l2.99 3.8H17.3Z"/>
+  <rect width="32" height="32" rx="7" fill="#ffffff"/>
+  <!-- The mark's viewBox is its own bounding box, so centring it in the tile is
+       just the two margins - no nudge needed the way the old drawing wanted one. -->
+  <g transform="translate(5.45 8.68) scale(0.61)" fill="#0e0e10">
+    <path d="M12 0H34.6L30.87 3.73H13.54L5.27 12L13.54 20.27H30.87L34.6 24H12L0 12Z"/>
+    <path d="M14.46 5.92H28.6L26.2 8.32H15.46L11.78 12L15.46 15.68H26.2L28.6 18.08H14.46L8.38 12Z"/>
   </g>
 </svg>

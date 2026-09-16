@@ -3,6 +3,7 @@ import { api, ApiError } from "./api.js";
 import { clearConfig, readConfig } from "./config.js";
 import { deploy } from "./deploy.js";
 import { login } from "./login.js";
+import { mcpCommand } from "./mcp.js";
 import { skillCommand } from "./skill/command.js";
 import { beginUpdateCheck, finishUpdateCheck, updateCommand } from "./update/index.js";
 import { detectFramework, readProjectLink } from "./project.js";
@@ -16,6 +17,8 @@ const USAGE = `
                --space <slug>   which space, when you are in more than one
     login      Connect this machine to your Cira account
     skill      install    Add the Cira Skill to your coding agents
+    mcp        connect    Point this machine's assistants at your company
+               disconnect Stop them reaching it
     update     Update Cira and the Skill copies you approved
     logout     Forget the stored credential
     whoami     Show who you are signed in as
@@ -79,6 +82,8 @@ async function main(): Promise<number> {
       return login();
     case "skill":
       return skillCommand(process.argv.slice(3));
+    case "mcp":
+      return mcpCommand(process.argv.slice(3));
     case "update":
       return updateCommand();
     case "logout":

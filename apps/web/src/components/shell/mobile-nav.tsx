@@ -8,6 +8,7 @@ import { SpaceMenu } from "./space-menu";
 import { Wordmark } from "./wordmark";
 import type { Route } from "next";
 import { Portal } from "@/components/ui/portal";
+import { SettingsLink } from "./settings-link";
 
 /**
  * The sidebar, folded into a sheet for narrow screens.
@@ -19,13 +20,13 @@ export function MobileNav({
   spaceSlug,
   spaces,
   items,
-  settings,
+  settingsHref,
 }: {
   spaceSlug: string;
   spaces: Array<Space & { role: Role }>;
   items: NavItem[];
-  /** Pinned to the foot of the sheet, exactly as it is on the desktop spine. */
-  settings: NavItem;
+  /** Beside the brand at the foot of the sheet, exactly as on the spine. */
+  settingsHref: Route;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -86,10 +87,10 @@ export function MobileNav({
               </div>
 
               <div className="flex shrink-0 items-center gap-2 border-t border-line p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))]">
-                <div className="min-w-0 flex-1">
-                  <SidebarNav items={[settings]} />
+                <div className="flex min-w-0 flex-1 justify-center">
+                  <Wordmark href={`/${spaceSlug}` as Route} />
                 </div>
-                <Wordmark href={`/${spaceSlug}` as Route} />
+                <SettingsLink href={settingsHref} />
               </div>
             </div>
           </div>
