@@ -1,21 +1,21 @@
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { apps, db } from "@cira/db";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
-import { latestDeployment, recordAppOpen } from "@/lib/queries";
+import { latestDeployment } from "@/lib/queries";
 import { resolveAppState } from "@/lib/app-state";
 
 /**
  * The door to a deployed app.
  *
- * Deployed apps are unreachable on their own URL, so this is the only way in
- * and Cira's permission check is what opens it. Employees never need an
- * account with whoever runs the app.
+ * Shut, for now. Apps run on Cloud Run, which wants an identity token on every
+ * request, and a browser cannot put a header on a navigation. The previous
+ * provider accepted a secret as a query parameter and exchanged it for a
+ * cookie, which is what this route used to do and why it no longer does
+ * anything: there is no equivalent to reach for.
  *
- * The secret travels as a one-time query parameter that the provider
- * immediately exchanges for a cookie. It is briefly visible in the address bar,
- * which is the weak point of this approach; a full proxy would avoid it at the
- * cost of standing between every request and the app.
+ * The route stays rather than being deleted, because the link to it is in
+ * people's history and in Cira's own pages, and landing back on the app page
+ * where the reason is written is better than a 404. It asks the same function
+ * the page asks, so the two can never disagree about whether an app opens.
  */
 export async function GET(
   request: Request,
@@ -27,35 +27,11 @@ export async function GET(
 
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
-    const { app } = ctx;
-    const deployment = await latestDeployment(app.id);
+    const deployment = await latestDeployment(ctx.app.id);
+    const resolved = resolveAppState(ctx.app, deployment);
 
-    // The secret is infrastructure, not part of the app as the product knows
-    // it, so it is read here rather than carried through the domain type.
-    const [row] = await db()
-      .select({ accessSecret: apps.accessSecret })
-      .from(apps)
-      .where(eq(apps.id, app.id))
-      .limit(1);
-
-    const secret = row?.accessSecret ?? null;
-
-    // Resolved from exactly the inputs the app page uses, so the button and
-    // this route can never disagree about whether the app opens.
-    const resolved = resolveAppState(app, deployment, secret !== null && secret !== "");
-    if (resolved.openUrl === null || secret === null) {
-      return NextResponse.redirect(backToApp);
-    }
-
-    // Recorded here rather than on the app page, because this is the moment
-    // someone actually used the app rather than looked at it.
-    await recordAppOpen(ctx.user.id, app.id);
-
-    const target = new URL(resolved.openUrl);
-    target.searchParams.set("x-vercel-protection-bypass", secret);
-    target.searchParams.set("x-vercel-set-bypass-cookie", "true");
-
-    return NextResponse.redirect(target);
+    if (resolved.openUrl === null) return NextResponse.redirect(backToApp);
+    return NextResponse.redirect(new URL(resolved.openUrl));
   } catch (error) {
     if (error instanceof NotFoundError) {
       return NextResponse.redirect(new URL(`/${spaceSlug}`, origin));

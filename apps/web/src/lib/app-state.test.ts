@@ -34,41 +34,51 @@ function deployment(
 }
 
 describe("resolveAppState", () => {
-  it("opens only when there is something to open", () => {
-    const r = resolveAppState(app("live"), deployment("live"), true);
-    expect(r.state).toBe("live");
-    expect(r.openUrl).toBe("https://x.example");
-    expect(r.blockedReason).toBeNull();
+  // A running app is running, and an assistant can use it. What it is not is
+  // openable in a browser, because Cloud Run wants a header on every request
+  // and a navigation cannot carry one. Saying so is the whole point: the
+  // message this replaced told people to redeploy, which could never help.
+  it("says a running app is running, without offering a door", () => {
+    const r = resolveAppState(app("live"), deployment("live"));
+    expect(r.state).toBe("unreachable");
+    expect(r.label).toBe("Running");
+    expect(r.openUrl).toBeNull();
+    expect(r.blockedReason).toContain("not available yet");
+    expect(r.blockedReason).not.toContain("cira deploy");
+  });
+
+  // The ordering that matters: a deploy still in flight, or one that failed,
+  // is reported as such rather than being flattened into "running".
+  it("does not let the missing door hide what is actually happening", () => {
+    expect(resolveAppState(app("deploying"), deployment("building")).state).toBe(
+      "deploying",
+    );
+    expect(resolveAppState(app("failed"), deployment("failed")).state).toBe("failed");
+    expect(resolveAppState(app("live"), null).state).toBe("never-deployed");
   });
 
   it("does not claim live when the app has never deployed", () => {
-    const r = resolveAppState(app("live"), null, true);
+    const r = resolveAppState(app("live"), null);
     expect(r.state).toBe("never-deployed");
     expect(r.openUrl).toBeNull();
     expect(r.label).not.toBe("Live");
   });
 
   it("does not claim live when the deployment has no address", () => {
-    const r = resolveAppState(app("live"), deployment("live", null), true);
+    const r = resolveAppState(app("live"), deployment("live", null));
     expect(r.state).toBe("never-deployed");
     expect(r.openUrl).toBeNull();
   });
 
   it("reports failure from either record", () => {
-    expect(resolveAppState(app("failed"), deployment("live"), true).state).toBe("failed");
-    expect(resolveAppState(app("live"), deployment("failed"), true).state).toBe("failed");
+    expect(resolveAppState(app("failed"), deployment("live")).state).toBe("failed");
+    expect(resolveAppState(app("live"), deployment("failed")).state).toBe("failed");
   });
 
   it("reports in-progress deploys from either record", () => {
-    expect(resolveAppState(app("deploying"), deployment("live"), true).state).toBe(
-      "deploying",
-    );
-    expect(resolveAppState(app("live"), deployment("building"), true).state).toBe(
-      "deploying",
-    );
-    expect(resolveAppState(app("live"), deployment("queued"), true).state).toBe(
-      "deploying",
-    );
+    expect(resolveAppState(app("deploying"), deployment("live")).state).toBe("deploying");
+    expect(resolveAppState(app("live"), deployment("building")).state).toBe("deploying");
+    expect(resolveAppState(app("live"), deployment("queued")).state).toBe("deploying");
   });
 
   it("never offers a link without also clearing the reason, and vice versa", () => {
@@ -81,39 +91,8 @@ describe("resolveAppState", () => {
       ["live", deployment("live", null)],
     ];
     for (const [status, dep] of cases) {
-      const r = resolveAppState(app(status), dep, true);
+      const r = resolveAppState(app(status), dep);
       expect(r.openUrl === null).toBe(r.blockedReason !== null);
-    }
-  });
-});
-
-describe("when Cira holds no key", () => {
-  it("refuses to call a running app openable", () => {
-    const r = resolveAppState(app("live"), deployment("live"), false);
-    expect(r.state).toBe("unreachable");
-    expect(r.openUrl).toBeNull();
-    expect(r.label).not.toBe("Live");
-    expect(r.blockedReason).toContain("cira deploy");
-  });
-
-  it("still reports a failure as a failure, not as unreachable", () => {
-    expect(resolveAppState(app("failed"), deployment("failed"), false).state).toBe(
-      "failed",
-    );
-  });
-
-  it("still reports an in-progress deploy as deploying", () => {
-    expect(resolveAppState(app("deploying"), deployment("building"), false).state).toBe(
-      "deploying",
-    );
-  });
-
-  it("never offers a link without a reason, with or without the key", () => {
-    for (const key of [true, false]) {
-      for (const dep of [deployment("live"), deployment("failed"), null]) {
-        const r = resolveAppState(app("live"), dep, key);
-        expect(r.openUrl === null).toBe(r.blockedReason !== null);
-      }
     }
   });
 });
@@ -136,21 +115,11 @@ describe("openability is one answer, for every combination of inputs", () => {
     deployment("removed"),
   ];
 
-  it("never offers a link when Cira holds no key", () => {
-    for (const status of statuses) {
-      for (const dep of deployments) {
-        expect(resolveAppState(app(status), dep, false).openUrl).toBeNull();
-      }
-    }
-  });
-
   it("never offers a link without a reason, or a reason without withholding the link", () => {
     for (const status of statuses) {
       for (const dep of deployments) {
-        for (const key of [true, false]) {
-          const r = resolveAppState(app(status), dep, key);
-          expect(r.openUrl === null).toBe(r.blockedReason !== null);
-        }
+        const r = resolveAppState(app(status), dep);
+        expect(r.openUrl === null).toBe(r.blockedReason !== null);
       }
     }
   });
@@ -158,10 +127,8 @@ describe("openability is one answer, for every combination of inputs", () => {
   it("only ever calls an app Live when it can actually be opened", () => {
     for (const status of statuses) {
       for (const dep of deployments) {
-        for (const key of [true, false]) {
-          const r = resolveAppState(app(status), dep, key);
-          if (r.label === "Live") expect(r.openUrl).not.toBeNull();
-        }
+        const r = resolveAppState(app(status), dep);
+        if (r.label === "Live") expect(r.openUrl).not.toBeNull();
       }
     }
   });

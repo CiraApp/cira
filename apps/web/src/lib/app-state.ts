@@ -13,8 +13,26 @@ export type AppState =
   | "deploying"
   | "failed"
   | "never-deployed"
-  /** Deployed and running, but Cira holds no key, so it cannot let anyone in. */
+  /** Running, but there is no way for a browser to get in. */
   | "unreachable";
+
+/**
+ * Whether a person can open a deployed app in their browser.
+ *
+ * False, for now, and the reason is worth writing down. Apps run on Cloud Run,
+ * which is private by IAM: it wants an identity token on every request, and a
+ * browser cannot put one on a navigation. The previous provider took a secret
+ * in the query string and traded it for a cookie, which is what the Open
+ * button used to rely on and why nothing like it exists here.
+ *
+ * Closing this needs a proxy holding the token on the browser's behalf, at a
+ * hostname per app. Until that exists, saying so is better than offering a
+ * button that goes nowhere - and far better than the message this replaced,
+ * which told people to redeploy, which could never have helped.
+ *
+ * Agents are unaffected: `invoke-capability` sets the header itself.
+ */
+const BROWSER_ACCESS = false;
 
 export interface ResolvedApp {
   state: AppState;
@@ -25,18 +43,7 @@ export interface ResolvedApp {
   blockedReason: string | null;
 }
 
-export function resolveAppState(
-  app: App,
-  deployment: Deployment | null,
-  /**
-   * Whether Cira holds the key to this app.
-   *
-   * Required rather than optional: the page offering an Open button and the
-   * route refusing to act on it is the same bug twice, and a default would let
-   * a caller forget which of the two it is.
-   */
-  ciraHoldsKey: boolean,
-): ResolvedApp {
+export function resolveAppState(app: App, deployment: Deployment | null): ResolvedApp {
   const url = deployment?.url ?? null;
 
   if (deployment === null) {
@@ -90,15 +97,15 @@ export function resolveAppState(
     };
   }
 
-  // Running, but Cira cannot open it. Saying "Live" and offering a button that
-  // bounces the person back here is worse than admitting it.
-  if (!ciraHoldsKey) {
+  // Running, and reachable by an assistant, but not by a browser. Offering an
+  // Open button that bounces the person back here is worse than admitting it.
+  if (!BROWSER_ACCESS) {
     return {
       state: "unreachable",
       openUrl: null,
-      label: "Not reachable",
+      label: "Running",
       blockedReason:
-        "This app is running, but Cira cannot open it yet. Deploy it again with cira deploy to reconnect it.",
+        "This app is running and assistants can use it. Opening it in a browser is not available yet.",
     };
   }
 

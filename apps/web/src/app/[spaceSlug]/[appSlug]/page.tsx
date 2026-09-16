@@ -6,7 +6,7 @@ import { listMySpaces } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
-import { appHoldsKey, deploymentHistory } from "@/lib/queries";
+import { deploymentHistory } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
@@ -31,9 +31,8 @@ export default async function AppPage({
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
     const { app, space } = ctx;
-    const [rawDeployment, holdsKey, history, spaces, capabilities] = await Promise.all([
+    const [rawDeployment, history, spaces, capabilities] = await Promise.all([
       latestDeployment(app.id),
-      appHoldsKey(app.id),
       deploymentHistory(app.id),
       listMySpaces(),
       listCapabilitiesForApp(app.id),
@@ -56,7 +55,7 @@ export default async function AppPage({
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
     const color = appColor(app.id);
-    const resolved = resolveAppState(app, deployment, holdsKey);
+    const resolved = resolveAppState(app, deployment);
 
     return (
       <AppShell
