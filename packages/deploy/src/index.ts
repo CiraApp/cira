@@ -1,5 +1,6 @@
 export * from "./archive.js";
 export * from "./bundle.js";
+export * from "./source-pack.js";
 export * from "./status.js";
 export * from "./provider.js";
 export * from "./cloudrun/auth.js";

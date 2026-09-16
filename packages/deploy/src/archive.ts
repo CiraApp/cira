@@ -13,7 +13,7 @@
  * visibly unchanged rather than merely claimed to be.
  */
 
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 export interface ArchiveEntry {
   /** Path relative to the project root, `/`-separated, no leading slash. */
@@ -191,4 +191,72 @@ function pad(body: Buffer): Buffer {
   const remainder = body.length % BLOCK;
   if (remainder === 0) return body;
   return Buffer.concat([body, Buffer.alloc(BLOCK - remainder)]);
+}
+
+/**
+ * Read an archive back out.
+ *
+ * The mirror of `tarGzip`, and here for one reason: Cira analyses what it was
+ * asked to deploy, and what it was asked to deploy is already sitting in a
+ * bucket as one of these. Unpacking it in memory means the analyzer needs no
+ * second upload, no temporary directory, and nothing from the CLI beyond the
+ * name of an object it already sent.
+ *
+ * Tolerant of archives it did not write, within reason. GNU tar pads with
+ * zero blocks and may append its own long-name records; anything it cannot
+ * make sense of is skipped rather than thrown, because one strange entry in a
+ * repository should not cost the whole analysis.
+ */
+export function tarUngzip(archive: Buffer): ArchiveEntry[] {
+  let tar: Buffer;
+  try {
+    tar = gunzipSync(archive);
+  } catch {
+    throw new ArchiveError("That upload is not a gzipped archive.");
+  }
+
+  const entries: ArchiveEntry[] = [];
+  let offset = 0;
+
+  while (offset + BLOCK <= tar.length) {
+    const header = tar.subarray(offset, offset + BLOCK);
+
+    // Two zero blocks end the archive; one on its own ends it too, since
+    // nothing after a zero header is a record we could read.
+    if (header.every((byte) => byte === 0)) break;
+
+    const name = text(header, 0, NAME_MAX);
+    const prefix = text(header, 345, PREFIX_MAX);
+    const size = Number.parseInt(text(header, 124, 12).trim() || "0", 8);
+    const typeflag = String.fromCharCode(header[156] ?? 0);
+    const mode = Number.parseInt(text(header, 100, 8).trim() || "0", 8);
+
+    if (!Number.isFinite(size) || size < 0) {
+      throw new ArchiveError("That archive has an entry of unreadable length.");
+    }
+
+    offset += BLOCK;
+    const body = tar.subarray(offset, offset + size);
+    offset += Math.ceil(size / BLOCK) * BLOCK;
+
+    // `0` and the historical NUL both mean a regular file. Directories, links
+    // and tar's own metadata records are not source and are skipped.
+    if (typeflag !== "0" && typeflag !== "\0") continue;
+    if (name === "") continue;
+
+    entries.push({
+      path: prefix === "" ? name : `${prefix}/${name}`,
+      mode: mode === 0 ? 0o644 : mode,
+      body: Buffer.from(body),
+    });
+  }
+
+  return entries;
+}
+
+/** A NUL-terminated field, as tar writes them. */
+function text(block: Buffer, at: number, length: number): string {
+  const raw = block.subarray(at, at + length);
+  const end = raw.indexOf(0);
+  return raw.subarray(0, end === -1 ? raw.length : end).toString("utf8");
 }

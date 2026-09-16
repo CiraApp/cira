@@ -12,3 +12,4 @@
 
 export * from "./archive.js";
 export * from "./bundle.js";
+export * from "./source-pack.js";

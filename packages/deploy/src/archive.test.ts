@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ArchiveError, tarGzip, type ArchiveEntry } from "./archive.js";
+import { ArchiveError, tarGzip, type ArchiveEntry, tarUngzip } from "./archive.js";
 
 const file = (path: string, body: string, mode = 0o644): ArchiveEntry => ({
   path,
@@ -190,5 +190,75 @@ describe("tarGzip refusals", () => {
   it("refuses a path longer than the two fields together", () => {
     const path = `${"a".repeat(150)}/${"b".repeat(150)}/c.ts`;
     expect(() => tarGzip([file(path, "x")])).toThrow(ArchiveError);
+  });
+});
+
+describe("tarUngzip", () => {
+  const entries = [
+    { path: "app/main.py", mode: 0o644, body: Buffer.from("print('hi')\n") },
+    { path: "bin/run", mode: 0o755, body: Buffer.from("#!/bin/sh\n") },
+    { path: "README.md", mode: 0o644, body: Buffer.from("# hello\n") },
+  ];
+
+  it("reads back exactly what was written", () => {
+    const read = tarUngzip(tarGzip(entries));
+    expect(read.map((e) => e.path)).toEqual(["README.md", "app/main.py", "bin/run"]);
+    expect(read.map((e) => e.body.toString())).toEqual([
+      "# hello\n",
+      "print('hi')\n",
+      "#!/bin/sh\n",
+    ]);
+  });
+
+  it("keeps the executable bit", () => {
+    const read = tarUngzip(tarGzip(entries));
+    const run = read.find((e) => e.path === "bin/run");
+    expect(run?.mode & 0o111).toBeTruthy();
+  });
+
+  // The prefix split is the part most likely to be wrong in either direction,
+  // and a path that survives the writer but not the reader would be a file
+  // silently missing from an analysis.
+  it("round-trips a path long enough to need the prefix field", () => {
+    const deep = `${"nested/".repeat(14)}module.py`;
+    expect(deep.length).toBeGreaterThan(100);
+    const read = tarUngzip(
+      tarGzip([{ path: deep, mode: 0o644, body: Buffer.from("x") }]),
+    );
+    expect(read[0]?.path).toBe(deep);
+  });
+
+  it("handles an empty file and a file crossing a block boundary", () => {
+    const odd = [
+      { path: "empty.txt", mode: 0o644, body: Buffer.alloc(0) },
+      { path: "big.txt", mode: 0o644, body: Buffer.alloc(1025, 0x61) },
+    ];
+    const read = tarUngzip(tarGzip(odd));
+    expect(read.find((e) => e.path === "empty.txt")?.body.length).toBe(0);
+    expect(read.find((e) => e.path === "big.txt")?.body.length).toBe(1025);
+  });
+
+  // Written by real GNU tar rather than by us, because an archive we both
+  // wrote and read proves only that we are consistent with ourselves.
+  it("reads an archive GNU tar produced", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cira-untar-"));
+    try {
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src", "a.go"), "package main\n");
+      writeFileSync(join(dir, "go.mod"), "module x\n");
+      const out = join(dir, "out.tar.gz");
+      execFileSync("tar", ["-czf", out, "-C", dir, "src/a.go", "go.mod"]);
+
+      const read = tarUngzip(readFileSync(out));
+      const paths = read.map((e) => e.path).sort();
+      expect(paths).toEqual(["go.mod", "src/a.go"]);
+      expect(read.find((e) => e.path === "go.mod")?.body.toString()).toBe("module x\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses something that is not an archive", () => {
+    expect(() => tarUngzip(Buffer.from("not a tarball"))).toThrow(ArchiveError);
   });
 });
