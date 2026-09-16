@@ -136,6 +136,74 @@ Cira itself still runs on Vercel, and that is load-bearing rather than
 incidental: Vercel issues every deployment a short-lived OIDC token, which is
 what Cira exchanges for Google credentials. There is no service account key.
 
+## Opening a deployed app
+
+Apps run on Cloud Run, which is private: it wants a Google identity token on
+every request, and a browser cannot put a header on a navigation. So each app
+gets its own hostname and a Cloudflare Worker in front of it holds the token.
+
+```
+browser  ->  ledger--acme.cira.dev        Cloudflare, free wildcard certificate
+         ->  workers/app-proxy            verifies Cira's signed session
+         ->  {service}.run.app            Cloud Run, still IAM-private
+```
+
+The double hyphen is load-bearing. Slugs collapse runs of non-alphanumerics to
+a single hyphen, so no slug can contain `--`, which makes it a separator
+nothing else can produce - that is what keeps `acme-corp` + `ledger` distinct
+from `acme` + `corp-ledger`. One label rather than two, because a wildcard
+certificate matches exactly one: `*.cira.dev` covers `ledger--acme.cira.dev`
+and not `ledger.acme.cira.dev`, and the first is free. It also means Cira's own
+names can never be claimed by naming an app badly, since every app address
+contains `--` and no ordinary hostname does.
+
+The proxy decides nothing. Cira checks who someone is and whether they may open
+the app, then signs a token saying so; the proxy verifies the signature and
+forwards. Signing rather than asking avoids a round trip for every image on a
+page, and the cost is that revoking access takes effect when the token expires
+
+- `SESSION_SECONDS` in `packages/core/src/proxy-session.ts`, fifteen minutes.
+
+### Deploying the proxy
+
+Nothing deploys it automatically. Cira itself ships through CI on every push,
+so a change to the web app is live minutes later; the worker in the same
+repository does not work that way, and editing it and pushing does nothing at
+all - the old code keeps running with no error anywhere to say so.
+
+```sh
+pnpm --filter @cira/app-proxy build
+CLOUDFLARE_ACCOUNT_ID=... CIRA_ORIGIN=https://cira.dev CIRA_APPS_DOMAIN=cira.dev \
+  CIRA_PROXY_SECRET=... pnpm --filter @cira/app-proxy ship
+```
+
+`ship`, not `deploy`: pnpm has a built-in command by that name which shadows a
+script and fails with an error about deploy targets.
+
+The Cloudflare API token is read from `~/.cloudflare-token`, or
+`CLOUDFLARE_API_TOKEN` if set. It needs Workers Scripts:Edit on the account,
+and DNS:Edit plus Workers Routes:Edit on the zone.
+
+### What is configured outside the repository
+
+Four things, none of which a deploy recreates:
+
+| Where          | What                                                                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                                           |
+| Cloudflare DNS | apex and `www`, **unproxied** - they must stay grey, or the wildcard route sends them to the worker, which has no app to serve them |
+| Cloudflare     | a route `*.cira.dev/*` to `cira-app-proxy`                                                                                          |
+| Vercel         | `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`, on all three environments                                                               |
+
+`CIRA_PROXY_SECRET` is the same value in both places. Cira signs with it and
+the worker verifies with it, so changing it in one place and not the other
+locks everyone out of every app until they agree again.
+
+Google needs one binding that is easy to miss: the deployer service account
+must hold `roles/iam.serviceAccountTokenCreator` **on itself**, or minting an
+identity token fails and every app becomes unreachable - to assistants as well
+as to browsers, since capability calls use the same token.
+
 ## Capabilities
 
 Deploying an app also publishes what it can _do_. Nobody writes a manifest:

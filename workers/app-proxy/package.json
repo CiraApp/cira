@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --build && node scripts/bundle.mjs"
+    "build": "tsc --build && node scripts/bundle.mjs",
+    "ship": "node scripts/deploy.mjs"
   },
   "devDependencies": {
     "@cira/core": "workspace:*",

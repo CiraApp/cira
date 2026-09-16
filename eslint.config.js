@@ -20,7 +20,16 @@ export default tseslint.config(
     // compiler; these do not, so `no-undef` needs telling what exists.
     files: ["**/*.mjs"],
     languageOptions: {
-      globals: { process: "readonly", console: "readonly", URL: "readonly" },
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        URL: "readonly",
+        // Node has had these since 18. They are globals rather than imports,
+        // so `no-undef` has to be told, the same as the three above.
+        fetch: "readonly",
+        FormData: "readonly",
+        Blob: "readonly",
+      },
     },
   },
   {
