@@ -17,6 +17,7 @@ import { listEnvVars } from "@/lib/env-vars";
 import { CapabilityPanel } from "@/components/capability-panel";
 import { ServicePanel } from "@/components/service-panel";
 import { AppIcon } from "@/components/app-icon";
+import { AppIdentity } from "@/components/app-identity";
 import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
 import { appColor } from "@/lib/app-color";
@@ -141,12 +142,13 @@ export default async function AppPage({
               <AppIcon appId={app.id} name={app.name} icon={app.icon} size="lg" />
 
               <div className="min-w-0 flex-1">
-                <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-                  {app.name}
-                </h1>
-                {app.description !== null && app.description !== "" ? (
-                  <p className="mt-1 text-[13.5px] text-ink-muted">{app.description}</p>
-                ) : null}
+                <AppIdentity
+                  spaceSlug={spaceSlug}
+                  appSlug={appSlug}
+                  name={app.name}
+                  description={app.description}
+                  canManage={manages}
+                />
                 <div className="mt-2.5">
                   <StatusDot status={resolved.state} label={resolved.label} />
                 </div>
@@ -267,7 +269,6 @@ export default async function AppPage({
               spaceSlug={spaceSlug}
               appSlug={appSlug}
               appName={app.name}
-              appDescription={app.description}
               appHomepageUrl={app.homepageUrl}
             />
           ) : null}

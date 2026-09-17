@@ -9,14 +9,25 @@ import { tearDownApp } from "@/lib/app-teardown";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
+/**
+ * Every field is optional, and absent means "leave it alone".
+ *
+ * Because there is more than one form. The name and description are edited
+ * where they are read, at the top of the page; the homepage is edited in
+ * settings. Neither shows the other's fields, and a form that cleared what it
+ * never displayed would be a form that loses data the first time anybody used
+ * it. Empty still means empty - that is how a description or an address is
+ * deliberately taken back.
+ */
 const detailsInput = z.object({
   name: z
     .string()
     .trim()
     .min(2, "Give the app a name.")
-    .max(60, "That name is too long."),
-  description: z.string().trim().max(140, "That description is too long.").nullable(),
-  homepageUrl: z.string().trim().nullable(),
+    .max(60, "That name is too long.")
+    .optional(),
+  description: z.string().trim().max(140, "That description is too long.").optional(),
+  homepageUrl: z.string().trim().optional(),
 });
 
 /**
@@ -36,10 +47,15 @@ export async function updateAppDetails(
   appSlug: string,
   formData: FormData,
 ): Promise<ActionResult<{ appSlug: string }>> {
+  const given = (field: string): Record<string, string> => {
+    const value = formData.get(field);
+    return value === null ? {} : { [field]: String(value) };
+  };
+
   const parsed = detailsInput.safeParse({
-    name: formData.get("name"),
-    description: formData.get("description"),
-    homepageUrl: formData.get("homepageUrl"),
+    ...given("name"),
+    ...given("description"),
+    ...given("homepageUrl"),
   });
   if (!parsed.success) {
     return {
@@ -50,55 +66,66 @@ export async function updateAppDetails(
 
   // Emptied on purpose is a real edit: it is how someone takes back an address
   // that has moved, and it has to mean "Cira serves this again" rather than
-  // being ignored as a blank field.
-  const raw = parsed.data.homepageUrl ?? "";
-  const homepageUrl = raw === "" ? null : normalizeHomepageUrl(raw);
-  if (raw !== "" && homepageUrl === null) {
+  // being ignored as a blank field. Not sent at all is not an edit.
+  const raw = parsed.data.homepageUrl;
+  const homepageUrl = raw === undefined || raw === "" ? null : normalizeHomepageUrl(raw);
+  if (raw !== undefined && raw !== "" && homepageUrl === null) {
     return {
       ok: false,
       error: "That is not a web address. Give the full one, starting with https://.",
     };
   }
 
+  const name = parsed.data.name;
+
   try {
     const ctx = await requireAppManage(spaceSlug, appSlug);
     const database = db();
 
-    const base = slugify(parsed.data.name);
-    if (base === "") {
-      return { ok: false, error: "Use at least a couple of letters or numbers." };
-    }
+    // The slug moves with the name, because an app called "Payroll" living at
+    // /revenue-dashboard is its own small lie. A form that did not send a name
+    // leaves both alone.
+    let slug = ctx.app.slug;
 
-    const [clash] = await database
-      .select({ id: apps.id })
-      .from(apps)
-      .where(
-        and(eq(apps.spaceId, ctx.space.id), eq(apps.slug, base), ne(apps.id, ctx.app.id)),
-      )
-      .limit(1);
+    if (name !== undefined) {
+      slug = slugify(name);
+      if (slug === "") {
+        return { ok: false, error: "Use at least a couple of letters or numbers." };
+      }
 
-    if (clash !== undefined) {
-      return {
-        ok: false,
-        error: `Another app here is already called "${parsed.data.name}".`,
-      };
+      const [clash] = await database
+        .select({ id: apps.id })
+        .from(apps)
+        .where(
+          and(
+            eq(apps.spaceId, ctx.space.id),
+            eq(apps.slug, slug),
+            ne(apps.id, ctx.app.id),
+          ),
+        )
+        .limit(1);
+
+      if (clash !== undefined) {
+        return { ok: false, error: `Another app here is already called "${name}".` };
+      }
     }
 
     await database
       .update(apps)
       .set({
-        name: parsed.data.name,
-        slug: base,
-        description:
-          parsed.data.description === null || parsed.data.description === ""
-            ? null
-            : parsed.data.description,
-        homepageUrl,
+        ...(name === undefined ? {} : { name, slug }),
+        ...(parsed.data.description === undefined
+          ? {}
+          : {
+              description:
+                parsed.data.description === "" ? null : parsed.data.description,
+            }),
+        ...(raw === undefined ? {} : { homepageUrl }),
         updatedAt: new Date(),
       })
       .where(eq(apps.id, ctx.app.id));
 
-    return { ok: true, data: { appSlug: base } };
+    return { ok: true, data: { appSlug: slug } };
   } catch (error) {
     return asError(error);
   }

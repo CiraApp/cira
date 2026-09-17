@@ -7,18 +7,22 @@ import { deleteApp, updateAppDetails } from "@/lib/app-settings-actions";
 /**
  * Settings sit behind a disclosure because they are rare and one of them is
  * destructive. Nothing here should be a thing you click on the way past.
+ *
+ * The name and description used to live here and now live at the top of the
+ * page, where they are read - which is where somebody notices they are wrong.
+ * Leaving a copy behind would have been two forms for one field, able to
+ * disagree about what is in it.
  */
 export function AppSettings({
   spaceSlug,
   appSlug,
   appName,
-  appDescription,
   appHomepageUrl,
 }: {
   spaceSlug: string;
   appSlug: string;
+  /** Only for the delete confirmation; renaming happens at the top of the page. */
   appName: string;
-  appDescription: string | null;
   appHomepageUrl: string | null;
 }) {
   const router = useRouter();
@@ -68,10 +72,7 @@ export function AppSettings({
         setError(result.error);
         return;
       }
-      // The slug may have moved under us, so this replaces the address even
-      // when it has not: one path out is simpler than two.
       setSaved(true);
-      router.replace(`/${spaceSlug}/${result.data.appSlug}`);
       router.refresh();
     });
   };
@@ -105,44 +106,7 @@ export function AppSettings({
 
       <div className="enter-up mt-4 flex flex-col gap-6 rounded-[var(--radius-edge)] border border-line bg-surface p-5">
         <form action={save} className="flex flex-col gap-2">
-          <label htmlFor="app-name" className="text-[12.5px] font-medium text-ink">
-            Name
-          </label>
-          <p className="text-[11.5px] leading-relaxed text-ink-subtle">
-            Renaming changes this app&rsquo;s address, so existing links to it will stop
-            working.
-          </p>
-          <input
-            id="app-name"
-            name="name"
-            defaultValue={appName}
-            className="field mt-1"
-          />
-
-          <label
-            htmlFor="app-description"
-            className="mt-4 text-[12.5px] font-medium text-ink"
-          >
-            Description
-          </label>
-          <p className="text-[11.5px] leading-relaxed text-ink-subtle">
-            One line, shown in the gallery. Cira writes this from the code the first time
-            the app is deployed; edit it and it stays edited.
-          </p>
-          <textarea
-            id="app-description"
-            name="description"
-            rows={2}
-            maxLength={140}
-            defaultValue={appDescription ?? ""}
-            placeholder="What this app is for."
-            className="field mt-1 resize-none"
-          />
-
-          <label
-            htmlFor="app-homepage"
-            className="mt-4 text-[12.5px] font-medium text-ink"
-          >
+          <label htmlFor="app-homepage" className="text-[12.5px] font-medium text-ink">
             Homepage
           </label>
           <p className="text-[11.5px] leading-relaxed text-ink-subtle">
