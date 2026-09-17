@@ -8,9 +8,10 @@ cira login
 cira deploy
 ```
 
-That is the whole workflow. Build a normal Next.js app; Cira packages it, hosts
-it, and puts it on the shelf your colleagues already open. Nobody configures
-cloud infrastructure, and nobody outside your company can reach it.
+That is the whole workflow. Build a normal app in whatever it is written in;
+Cira packages it, hosts it, and puts it on the shelf your colleagues already
+open. Nobody configures cloud infrastructure, and nobody outside your company
+can reach it.
 
 ## Commands
 
@@ -30,10 +31,39 @@ Deploying also publishes what your app can _do_. Cira reads the code, works out
 which routes are business operations worth exposing, and registers them - no
 manifest, no MCP server, nothing Cira-specific in your repository.
 
-A confident read-only capability turns itself on. Anything that writes is
-registered and left off until someone reviews it. Anything destructive stays
-off. Authorised colleagues can then reach those operations from their own AI
-assistants, through Cira's permission checks.
+A read-only capability turns itself on. Anything that writes is registered and
+left off until someone reviews it. Nothing is offered to an assistant until the
+running app has confirmed it serves the route, because reading code can be
+wrong and the app cannot. Authorised colleagues can then reach those operations
+from their own AI assistants, through Cira's permission checks.
+
+## An app that is a frontend and an API
+
+Plenty of internal software is two things: a frontend, and the API behind it.
+They are one product, so Cira keeps them one entry on the shelf - and one
+address, one set of permissions, one thing to open.
+
+You do not configure this. `cira deploy` reads what each half already carries -
+a Dockerfile, a `package.json` with a way to start, a `pyproject.toml` - and
+says what it found before it builds:
+
+```text
+Found 2 services
+  api  apps/api  Dockerfile, internal, port 8000
+  web  apps/web  nextjs, front door
+```
+
+Both halves run together, sharing `localhost`. So a frontend already written to
+proxy to its backend in development finds it at the same address in production,
+with no change and no environment variable to set - in development it was
+already talking to localhost.
+
+The half a browser opens is the one that gets the address. The other is
+reachable only from inside, which is what keeps an API private without it
+needing an address of its own.
+
+If Cira cannot tell which half a browser should open, it says so and stops
+rather than deploying something that builds, runs, and serves the wrong thing.
 
 ## The Cira Skill
 
