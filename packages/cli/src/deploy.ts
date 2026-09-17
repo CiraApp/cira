@@ -7,7 +7,7 @@ import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
-import { confirmAnyway } from "./confirm.js";
+import { resolveMissing } from "./confirm.js";
 import { discoverServices } from "./services.js";
 import {
   checkBundle,
@@ -245,10 +245,22 @@ export async function deploy(argv: string[] = []): Promise<number> {
     warn(
       `${missing.length} missing. It will build, and the app may not work without ${missing.length === 1 ? "it" : "them"}.`,
     );
-    info(dim("  Set them in .env, or pass --env NAME=value."));
     info("");
 
-    if (!(await confirmAnyway(argv))) {
+    const resolved = await resolveMissing(
+      root,
+      missing.map((need) => ({
+        name: need.name,
+        note: `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
+      })),
+      argv,
+      collected.source,
+    );
+
+    // Whatever was typed goes to this deploy, the same as anything from a file.
+    Object.assign(collected.env, resolved.added);
+
+    if (!resolved.proceed) {
       fail("Nothing was deployed.");
       return 1;
     }
