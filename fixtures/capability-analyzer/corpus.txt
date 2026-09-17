@@ -1,0 +1,108 @@
+--- svc-orders/app/main.py ---
+from fastapi import FastAPI
+from app.routers import orders, health
+from app.config import settings
+
+app = FastAPI()
+API_PREFIX = f"/api/{settings.VERSION}"        # VERSION = "v2"
+
+app.include_router(orders.router, prefix=API_PREFIX)
+app.include_router(health.router)
+
+@app.get("/livez")
+def livez():
+    return {"ok": True}
+
+--- svc-orders/app/config.py ---
+class Settings:
+    VERSION = "v2"
+settings = Settings()
+
+--- svc-orders/app/routers/orders.py ---
+from fastapi import APIRouter
+router = APIRouter(prefix="/orders", tags=["orders"])
+
+@router.get("")
+def list_orders(status: str | None = None, limit: int = 50):
+    """Orders, newest first."""
+
+@router.get("/{order_id}")
+def get_order(order_id: str):
+    """One order."""
+
+@router.post("/{order_id}/refund")
+def refund_order(order_id: str, amount_cents: int, reason: str):
+    """Refund an order to the customer's card."""
+
+--- svc-orders/app/routers/health.py ---
+from fastapi import APIRouter
+router = APIRouter()
+
+@router.get("/healthz")
+def healthz():
+    return {"ok": True}
+
+--- web/src/app/api/invoices/route.ts ---
+export async function GET(request: Request) {
+  const q = new URL(request.url).searchParams.get("vendor");
+  return Response.json({ invoices: [] });
+}
+export async function POST(request: Request) {
+  const body = await request.json();
+  return Response.json({ id: "inv_1" });
+}
+
+--- web/src/app/api/invoices/[id]/void/route.ts ---
+export async function POST(_: Request, { params }: { params: { id: string } }) {
+  return Response.json({ voided: params.id });
+}
+
+--- web/src/app/api/auth/[...nextauth]/route.ts ---
+export { GET, POST } from "@/auth";
+
+--- gateway/src/server.js ---
+const express = require("express");
+const users = require("./routes/users");
+const app = express();
+app.use("/internal/v1", users);
+app.get("/metrics", (_, res) => res.send("# HELP"));
+app.listen(8080);
+
+--- gateway/src/routes/users.js ---
+const router = require("express").Router();
+router.get("/users/:handle", (req, res) => res.json({ handle: req.params.handle }));
+router.delete("/users/:handle", (req, res) => res.json({ deleted: true }));
+module.exports = router;
+
+--- reporting/app.rb ---
+require "sinatra"
+get "/reports/:kind" do
+  # Generate a report of the given kind.
+end
+post "/reports/:kind/email" do
+  # Email the report to the finance list.
+end
+
+--- ingest/main.go ---
+package main
+
+import "net/http"
+
+func main() {
+  mux := http.NewServeMux()
+  mux.HandleFunc("GET /inventory/{sku}", getStock)
+  mux.HandleFunc("POST /inventory/{sku}/adjust", adjustStock)
+  mux.HandleFunc("GET /healthz", ok)
+  http.ListenAndServe(":8080", mux)
+}
+
+// getStock returns on-hand quantity for a SKU across warehouses.
+func getStock(w http.ResponseWriter, r *http.Request) {}
+
+// adjustStock applies a manual stock correction and writes an audit row.
+func adjustStock(w http.ResponseWriter, r *http.Request) {}
+
+--- svc-orders/tests/test_orders.py ---
+def test_list(client):
+    r = client.get("/api/v2/orders?limit=10")
+    assert r.status_code == 200

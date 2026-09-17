@@ -1,0 +1,12 @@
+DELETE /internal/v1/users/{handle}
+GET /api/invoices
+GET /api/v2/orders
+GET /api/v2/orders/{order_id}
+GET /internal/v1/users/{handle}
+GET /inventory/{sku}
+GET /reports/{kind}
+POST /api/invoices
+POST /api/invoices/{id}/void
+POST /api/v2/orders/{order_id}/refund
+POST /inventory/{sku}/adjust
+POST /reports/{kind}/email

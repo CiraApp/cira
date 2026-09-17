@@ -1,0 +1,4 @@
+GET /healthz
+GET /livez
+GET /metrics
+GET|POST /api/auth/*   (nextauth)
