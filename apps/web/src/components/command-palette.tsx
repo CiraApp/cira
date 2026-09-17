@@ -100,7 +100,15 @@ export function CommandPalette({
       group: "Apps",
       haystack: `${app.name} ${app.description ?? ""}`.toLowerCase(),
       run: () => router.push(`/${spaceSlug}/${app.slug}`),
-      face: <AppIcon appId={app.id} name={app.name} icon={app.icon} size="sm" />,
+      face: (
+        <AppIcon
+          appId={app.id}
+          name={app.name}
+          icon={app.icon}
+          image={app.image}
+          size="sm"
+        />
+      ),
     }));
 
     const navCommands: Command[] = items.map((item) => ({

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { listMySpaces } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
-import { deploymentHistory, listServicesForApp } from "@/lib/queries";
+import { appSlugMovedTo, deploymentHistory, listServicesForApp } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
@@ -139,14 +139,23 @@ export default async function AppPage({
             />
 
             <div className="relative flex flex-wrap items-start gap-4">
-              <AppIcon appId={app.id} name={app.name} icon={app.icon} size="lg" />
+              <AppIcon
+                appId={app.id}
+                name={app.name}
+                icon={app.icon}
+                image={app.image}
+                size="lg"
+              />
 
               <div className="min-w-0 flex-1">
                 <AppIdentity
                   spaceSlug={spaceSlug}
                   appSlug={appSlug}
+                  appId={app.id}
                   name={app.name}
                   description={app.description}
+                  icon={app.icon}
+                  image={app.image}
                   canManage={manages}
                 />
                 <div className="mt-2.5">
@@ -276,7 +285,15 @@ export default async function AppPage({
       </AppShell>
     );
   } catch (error) {
-    if (error instanceof NotFoundError) notFound();
+    if (error instanceof NotFoundError) {
+      // Nothing answers on this address now - but something may have, before
+      // it was renamed. A link somebody shared months ago should still arrive
+      // where they meant it to, rather than at a 404 that tells them the app
+      // is gone when it is sitting there under another name.
+      const moved = await appSlugMovedTo(spaceSlug, appSlug);
+      if (moved !== null) redirect(`/${spaceSlug}/${moved}`);
+      notFound();
+    }
     throw error;
   }
 }

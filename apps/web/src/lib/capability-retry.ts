@@ -1,7 +1,12 @@
 "use server";
 
 import { deploymentProvider } from "@cira/deploy";
-import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import {
+  ForbiddenError,
+  NotFoundError,
+  requireAppAccess,
+  requireAppManage,
+} from "@/lib/authz";
 import { analyzeAppSource } from "@/lib/capability-analysis";
 import { verifyAppCapabilities } from "@/lib/capability-verification";
 import { latestDeployment } from "@/lib/queries";
@@ -78,5 +83,37 @@ export async function retryCapabilityAnalysis(
       return { ok: false, error: "That app no longer exists." };
     }
     throw error;
+  }
+}
+
+/**
+ * Ask the app about whatever is still waiting to be asked about.
+ *
+ * Verification is a separate act from finding, and anything that interrupts
+ * between the two leaves a capability registered but unusable - no agent can
+ * reach it, and the panel says "Checking" for ever. That state used to have no
+ * way out at all: the only control that ran verification lived in the empty
+ * state, which by definition was not on screen once there were capabilities to
+ * look at.
+ *
+ * So it is not a control any more. Looking at the app is what settles it, the
+ * same bargain the deployment status and the front-door probe already make.
+ */
+export async function verifyPendingCapabilities(
+  spaceSlug: string,
+  appSlug: string,
+): Promise<{ settled: boolean }> {
+  try {
+    // Access rather than manage: this writes nothing a person chose. It asks
+    // an app what it serves and records the answer, which is bookkeeping, and
+    // holding it behind management would leave the panel stuck for everybody
+    // else who can open the app.
+    const ctx = await requireAppAccess(spaceSlug, appSlug);
+    const outcome = await verifyAppCapabilities(ctx.app.id);
+    return { settled: outcome.ok };
+  } catch {
+    // Nothing here is worth interrupting a page for. The panel goes on saying
+    // it is checking, which remains true.
+    return { settled: false };
   }
 }

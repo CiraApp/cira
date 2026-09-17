@@ -54,6 +54,7 @@ const app = (hasWebUi: boolean | null): App => ({
   description: null,
   status: "live",
   icon: null,
+  image: null,
   ownerUserId: "usr_1",
   homepageUrl: null,
   hasWebUi,

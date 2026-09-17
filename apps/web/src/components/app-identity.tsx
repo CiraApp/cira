@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { updateAppDetails } from "@/lib/app-settings-actions";
+import { updateAppDetails, updateAppImage } from "@/lib/app-settings-actions";
+import { IMAGE_EDGE } from "@cira/core";
+import { AppIcon } from "./app-icon";
 
 /**
  * An app's name and description, editable where they are read.
@@ -22,14 +24,20 @@ import { updateAppDetails } from "@/lib/app-settings-actions";
 export function AppIdentity({
   spaceSlug,
   appSlug,
+  appId,
   name,
   description,
+  icon,
+  image,
   canManage,
 }: {
   spaceSlug: string;
   appSlug: string;
+  appId: string;
   name: string;
   description: string | null;
+  icon: string | null;
+  image: string | null;
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -39,6 +47,57 @@ export function AppIdentity({
   const [draftName, setDraftName] = useState(name);
   const [draftDescription, setDraftDescription] = useState(description ?? "");
   const field = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+
+  const choose = (file: File | undefined) => {
+    if (file === undefined) return;
+    setError(null);
+
+    // Redrawn before it is sent. Whatever was picked becomes a 128 square, so
+    // what crosses the wire is a few kilobytes of a known shape rather than
+    // the photograph somebody dragged in - which is what lets the picture live
+    // in the app's own row instead of needing somewhere to be stored.
+    const reader = new FileReader();
+    reader.onerror = () => setError("That file could not be read.");
+    reader.onload = () => {
+      const picture = new Image();
+      picture.onerror = () => setError("That file is not an image.");
+      picture.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = IMAGE_EDGE;
+        canvas.height = IMAGE_EDGE;
+        const brush = canvas.getContext("2d");
+        if (brush === null) return;
+
+        // Cropped to the square from the middle, the same way the tile crops
+        // it on screen, so what is chosen is what appears.
+        const edge = Math.min(picture.width, picture.height);
+        brush.drawImage(
+          picture,
+          (picture.width - edge) / 2,
+          (picture.height - edge) / 2,
+          edge,
+          edge,
+          0,
+          0,
+          IMAGE_EDGE,
+          IMAGE_EDGE,
+        );
+
+        storeImage(canvas.toDataURL("image/webp", 0.88));
+      };
+      picture.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const storeImage = (picture: string) => {
+    startTransition(async () => {
+      const result = await updateAppImage(spaceSlug, appSlug, picture);
+      if (!result.ok) setError(result.error);
+      else router.refresh();
+    });
+  };
 
   useEffect(() => {
     if (editing) field.current?.focus();
@@ -108,6 +167,53 @@ export function AppIdentity({
 
   return (
     <div className="min-w-0 flex-1">
+      {/*
+        The picture is changed by clicking the picture, which is the only place
+        anyone would look for it. Hidden until editing starts, because an app's
+        face is not a button the rest of the time.
+      */}
+      <div className="mb-2 flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => picker.current?.click()}
+          disabled={pending}
+          className="group relative rounded-[5px] outline-none"
+          aria-label="Change this app's picture"
+        >
+          <AppIcon appId={appId} name={name} icon={icon} image={image} size="md" />
+          <span className="absolute inset-0 flex items-center justify-center rounded-[4px] bg-black/55 text-[10px] font-semibold tracking-[0.04em] text-white uppercase opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            Change
+          </span>
+        </button>
+
+        {image !== null ? (
+          <button
+            type="button"
+            onClick={() => storeImage("")}
+            disabled={pending}
+            className="text-[11.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
+          >
+            Remove picture
+          </button>
+        ) : (
+          <span className="text-[11.5px] text-ink-subtle">
+            PNG or JPEG. Cropped to a square.
+          </span>
+        )}
+
+        <input
+          ref={picker}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            choose(event.target.files?.[0]);
+            // Cleared so picking the same file twice still counts as a change.
+            event.target.value = "";
+          }}
+        />
+      </div>
+
       <input
         ref={field}
         value={draftName}
@@ -166,7 +272,7 @@ export function AppIdentity({
           Cancel
         </button>
         <span className="text-ink-subtle">
-          Renaming changes the address, so existing links will stop working.
+          Renaming changes the address. Old links keep working.
         </span>
       </div>
     </div>

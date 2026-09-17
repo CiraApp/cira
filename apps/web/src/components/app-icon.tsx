@@ -11,11 +11,14 @@ export function AppIcon({
   appId,
   name,
   icon,
+  image,
   size = "md",
 }: {
   appId: string;
   name: string;
   icon?: string | null;
+  /** A picture chosen for the app. Wins over the letter when there is one. */
+  image?: string | null;
   size?: "sm" | "md" | "lg";
 }) {
   const color = appColor(appId);
@@ -37,9 +40,23 @@ export function AppIcon({
           "--bg-dark": color.bgDark,
         } as React.CSSProperties
       }
-      className={`app-icon ${dimensions} flex shrink-0 items-center justify-center font-semibold`}
+      className={`app-icon ${dimensions} flex shrink-0 items-center justify-center overflow-hidden font-semibold`}
     >
-      {icon ?? appInitial(name)}
+      {/*
+        A picture fills the tile rather than sitting inside it, cropped to the
+        square by the tile's own corners, so an app with one and an app without
+        are the same object on the shelf and the grid does not flinch.
+
+        A plain `img` rather than the framework's: the source is a data URL
+        already sitting in the row, so there is nothing to fetch, resize or
+        cache, and routing it through an image pipeline would only add work to
+        bytes that have already arrived.
+      */}
+      {image ? (
+        <img src={image} alt="" className="h-full w-full object-cover" />
+      ) : (
+        (icon ?? appInitial(name))
+      )}
     </span>
   );
 }

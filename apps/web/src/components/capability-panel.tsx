@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Capability } from "@cira/core";
 import { setCapabilityEnabled } from "@/lib/capability-actions";
-import { retryCapabilityAnalysis } from "@/lib/capability-retry";
+import {
+  retryCapabilityAnalysis,
+  verifyPendingCapabilities,
+} from "@/lib/capability-retry";
 
 /**
  * What Cira found this app can do.
@@ -40,6 +43,26 @@ export function CapabilityPanel({
   spaceSlug: string;
   appSlug: string;
 }) {
+  const router = useRouter();
+  const asked = useRef(false);
+  const waiting = capabilities.some((capability) => !capability.verified);
+
+  // Anything still waiting to be asked about gets asked about, here, because
+  // somebody is looking. Finding a capability and confirming it are two acts,
+  // and whatever interrupts between them - a failed deploy, a closed laptop,
+  // a version of this code that only did the first - used to leave the set
+  // stuck on "Checking" with nothing anywhere to move it along. The one
+  // control that ran verification lived in the empty state, which by
+  // definition was not on screen once there was anything to look at.
+  useEffect(() => {
+    if (!waiting || !running || asked.current) return;
+    asked.current = true;
+
+    void verifyPendingCapabilities(spaceSlug, appSlug).then((result) => {
+      if (result.settled) router.refresh();
+    });
+  }, [waiting, running, spaceSlug, appSlug, router]);
+
   // An empty list used to draw nothing at all, which quietly told whoever was
   // looking that this app has nothing to offer. Sometimes that is true. Often
   // it means the one step of a deploy that depends on a model did not happen,

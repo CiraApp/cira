@@ -6,3 +6,4 @@ export * from "./permissions.js";
 export * from "./deployment-provider.js";
 export * from "./id.js";
 export * from "./app-homepage.js";
+export * from "./app-image.js";

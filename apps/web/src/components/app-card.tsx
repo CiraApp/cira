@@ -67,7 +67,7 @@ export function AppCard({
 
       <div className="flex items-start justify-between gap-3">
         <span className="transition-transform duration-300 ease-[var(--ease-spring)] group-hover:-translate-y-[2px] group-hover:scale-[1.06]">
-          <AppIcon appId={app.id} name={app.name} icon={app.icon} />
+          <AppIcon appId={app.id} name={app.name} icon={app.icon} image={app.image} />
         </span>
 
         {app.status !== "live" ? <StatusDot status={app.status} compact /> : null}

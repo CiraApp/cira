@@ -175,6 +175,20 @@ export const apps = pgTable(
     description: text("description"),
     status: appStatusEnum("status").notNull().default("draft"),
     icon: text("icon"),
+    /**
+     * A picture for the app, as a data URL.
+     *
+     * Kept in the row rather than in a bucket because it is small by
+     * construction - the browser redraws whatever was chosen to 128 square and
+     * encodes it before it is ever sent, so what arrives is a few kilobytes and
+     * a known shape. A bucket would mean an object store, a lifecycle rule, a
+     * signing step and a serving route, all to hold something smaller than this
+     * app's description.
+     *
+     * Null is the ordinary case, and the icon above - a letter, or a character
+     * somebody picked - is what gets drawn instead.
+     */
+    image: text("image"),
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -246,6 +260,41 @@ export const apps = pgTable(
  * A row here is a grant. No row means no access: membership in the space is a
  * precondition, never a grant on its own.
  */
+/**
+ * Addresses an app used to answer on.
+ *
+ * The slug follows the name, because an app called "Payroll" living at
+ * /revenue-dashboard is its own small lie. The cost used to be that renaming
+ * broke every link anybody had ever shared - a message in Slack, a bookmark, a
+ * line in somebody's runbook - and a rename is the most ordinary edit there
+ * is. Warning people about it first is not the same as not doing it to them.
+ *
+ * So the old address is kept and keeps working. Nothing here grants access:
+ * it resolves a name to an app and the usual checks happen afterwards, exactly
+ * as they do for the current one.
+ */
+export const appSlugHistory = pgTable(
+  "app_slug_history",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One space, one meaning for an address - whether it is in use now or was
+    // in use before. This is also what stops a new app quietly taking over a
+    // name that still points somewhere.
+    uniqueIndex("app_slug_history_space_slug_idx").on(t.spaceId, t.slug),
+    index("app_slug_history_app_idx").on(t.appId),
+  ],
+);
+
 export const appAccess = pgTable(
   "app_access",
   {

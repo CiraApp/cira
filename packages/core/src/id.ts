@@ -12,6 +12,7 @@ export const ID_PREFIXES = {
   team: "tem",
   teamMember: "tmm",
   app: "app",
+  appSlug: "aps",
   access: "acc",
   deployment: "dep",
   service: "svc",

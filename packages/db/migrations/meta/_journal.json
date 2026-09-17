@@ -99,6 +99,20 @@
       "when": 1789624738484,
       "tag": "0013_drop_unused_service_routes",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789633488181,
+      "tag": "0014_remember_old_app_addresses",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789633615782,
+      "tag": "0015_app_image",
+      "breakpoints": true
     }
   ]
 }

@@ -17,6 +17,7 @@ function app(
     description: null,
     status,
     icon: null,
+    image: null,
     ownerUserId: "usr_1",
     homepageUrl: null,
     hasWebUi: null,

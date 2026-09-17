@@ -32,7 +32,13 @@ export function RecentStrip({ apps, spaceSlug }: { apps: App[]; spaceSlug: strin
                 }
                 className="enter-up group flex items-center gap-2.5 rounded-[var(--radius-edge)] border border-line bg-surface py-2 pr-3.5 pl-2 transition-[transform,border-color] duration-200 ease-[var(--ease-settle)] hover:-translate-y-[2px] hover:border-[rgb(var(--glow)/0.55)] active:translate-y-0 active:duration-75"
               >
-                <AppIcon appId={app.id} name={app.name} icon={app.icon} size="sm" />
+                <AppIcon
+                  appId={app.id}
+                  name={app.name}
+                  icon={app.icon}
+                  image={app.image}
+                  size="sm"
+                />
                 <span className="max-w-[160px] truncate text-[12.5px] font-medium text-ink">
                   {app.name}
                 </span>

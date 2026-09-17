@@ -8,6 +8,7 @@ export interface PaletteApp {
   slug: string;
   description: string | null;
   icon: string | null;
+  image: string | null;
   status: string;
 }
 
@@ -30,6 +31,7 @@ export async function spaceIndex(spaceSlug: string): Promise<PaletteApp[]> {
     slug: app.slug,
     description: app.description,
     icon: app.icon,
+    image: app.image,
     status: app.status,
   }));
 }

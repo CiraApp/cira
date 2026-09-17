@@ -71,6 +71,8 @@ export interface App {
   description: string | null;
   status: AppStatus;
   icon: string | null;
+  /** A picture for the app, as a data URL. Null means draw the icon. */
+  image: string | null;
   ownerUserId: UserId;
   /** Where the app really lives, when Cira is not what serves it. */
   homepageUrl: string | null;

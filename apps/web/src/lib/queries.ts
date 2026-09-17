@@ -1,7 +1,15 @@
 import "server-only";
 
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { appOpens, db, deployments, services } from "@cira/db";
+import {
+  appOpens,
+  apps,
+  appSlugHistory,
+  db,
+  deployments,
+  services,
+  spaces,
+} from "@cira/db";
 import type { Deployment, Service } from "@cira/core";
 import { newId } from "@cira/core";
 
@@ -90,4 +98,27 @@ export async function listServicesForApp(appId: string): Promise<Service[]> {
         Number(b.hasWebUi === true) - Number(a.hasWebUi === true) ||
         a.slug.localeCompare(b.slug),
     );
+}
+
+/**
+ * The app an address used to belong to, if it belonged to one.
+ *
+ * Consulted only when nothing answers on that address now, so a live app
+ * always wins over a forwarding note and this can never shadow one. It returns
+ * a slug rather than an app because it grants nothing: the caller redirects,
+ * and the ordinary access check happens there, exactly as it would have.
+ */
+export async function appSlugMovedTo(
+  spaceSlug: string,
+  oldSlug: string,
+): Promise<string | null> {
+  const [row] = await db()
+    .select({ slug: apps.slug })
+    .from(appSlugHistory)
+    .innerJoin(apps, eq(apps.id, appSlugHistory.appId))
+    .innerJoin(spaces, eq(spaces.id, appSlugHistory.spaceId))
+    .where(and(eq(spaces.slug, spaceSlug), eq(appSlugHistory.slug, oldSlug)))
+    .limit(1);
+
+  return row?.slug ?? null;
 }

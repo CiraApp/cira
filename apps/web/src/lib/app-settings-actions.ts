@@ -2,8 +2,8 @@
 
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
-import { apps, db } from "@cira/db";
-import { normalizeHomepageUrl, slugify } from "@cira/core";
+import { apps, appSlugHistory, db } from "@cira/db";
+import { newId, normalizeAppImage, normalizeHomepageUrl, slugify } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 import { tearDownApp } from "@/lib/app-teardown";
 
@@ -108,7 +108,34 @@ export async function updateAppDetails(
       if (clash !== undefined) {
         return { ok: false, error: `Another app here is already called "${name}".` };
       }
+
+      // An address another app used to answer on is still spoken for, because
+      // it still resolves. Handing it to a second app would silently redirect
+      // somebody's old link into a different app than the one they saved.
+      const [taken] = await database
+        .select({ appId: appSlugHistory.appId })
+        .from(appSlugHistory)
+        .where(
+          and(
+            eq(appSlugHistory.spaceId, ctx.space.id),
+            eq(appSlugHistory.slug, slug),
+            ne(appSlugHistory.appId, ctx.app.id),
+          ),
+        )
+        .limit(1);
+
+      if (taken !== undefined) {
+        return {
+          ok: false,
+          error: `Another app here used to be called "${name}", and links to it still work.`,
+        };
+      }
     }
+
+    // Keep the address it is leaving behind. Written with the rename rather
+    // than after it, because an app that has moved and left no forwarding note
+    // is exactly the broken link this exists to prevent.
+    const moved = name !== undefined && slug !== ctx.app.slug;
 
     await database
       .update(apps)
@@ -124,6 +151,28 @@ export async function updateAppDetails(
         updatedAt: new Date(),
       })
       .where(eq(apps.id, ctx.app.id));
+
+    if (moved) {
+      await database
+        .insert(appSlugHistory)
+        .values({
+          id: newId("appSlug"),
+          appId: ctx.app.id,
+          spaceId: ctx.space.id,
+          slug: ctx.app.slug,
+        })
+        // Renamed back to something it was called before: the note is already
+        // there and says the right thing.
+        .onConflictDoNothing();
+
+      // And the address it has just taken is no longer a forwarding note, or
+      // opening the app would bounce through itself.
+      await database
+        .delete(appSlugHistory)
+        .where(
+          and(eq(appSlugHistory.spaceId, ctx.space.id), eq(appSlugHistory.slug, slug)),
+        );
+    }
 
     return { ok: true, data: { appSlug: slug } };
   } catch (error) {
@@ -169,4 +218,41 @@ function asError(error: unknown): ActionResult<never> {
     return { ok: false, error: "That app no longer exists." };
   }
   throw error;
+}
+
+/**
+ * Give an app a picture, or take it away.
+ *
+ * Sent as a data URL rather than a file, because the browser has already
+ * redrawn it: whatever was chosen is scaled to a square and re-encoded before
+ * it leaves the page, so this receives a few kilobytes of a known shape
+ * instead of a photograph. Checked again here regardless - the browser is the
+ * wrong place to enforce anything.
+ *
+ * An empty string is a real edit: it is how somebody takes the picture off
+ * again and goes back to the letter.
+ */
+export async function updateAppImage(
+  spaceSlug: string,
+  appSlug: string,
+  image: string,
+): Promise<ActionResult<null>> {
+  const stored = image.trim() === "" ? null : normalizeAppImage(image);
+
+  if (image.trim() !== "" && stored === null) {
+    return { ok: false, error: "That image could not be used. Try a PNG or JPEG." };
+  }
+
+  try {
+    const ctx = await requireAppManage(spaceSlug, appSlug);
+
+    await db()
+      .update(apps)
+      .set({ image: stored, updatedAt: new Date() })
+      .where(eq(apps.id, ctx.app.id));
+
+    return { ok: true, data: null };
+  } catch (error) {
+    return asError(error);
+  }
 }
