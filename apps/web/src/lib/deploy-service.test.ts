@@ -166,6 +166,51 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
     expect(rows[0]?.id).toBe(outcome.deploymentId);
   });
 
+  /**
+   * The quiet one. Rename an app and its old address becomes a forwarding
+   * note; deploy something new under the old name and - because live apps and
+   * forwarding notes live in different tables - nothing collides and nothing
+   * complains. Every link anybody shared to the first app would simply start
+   * arriving at the second.
+   */
+  it("will not hand a new app an address another app still forwards from", async () => {
+    const { apps, appSlugHistory } = await import("@cira/db");
+
+    // A name no other test in this file uses, so what this asserts is this
+    // rule and not an address some earlier deploy happened to take.
+    const first = await deploy("Vault");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.appSlug).toBe("vault");
+
+    // Renamed, the way somebody would: /vault now forwards to /archive.
+    await database
+      .update(apps)
+      .set({ slug: "archive", name: "Archive" })
+      .where(eq(apps.id, first.appId));
+    await database.insert(appSlugHistory).values({
+      id: newId("appSlug"),
+      appId: first.appId,
+      spaceId,
+      slug: "vault",
+    });
+
+    const second = await deploy("Vault");
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.appSlug).not.toBe("vault");
+    expect(second.appSlug).toBe("vault-2");
+
+    // And the old address still means what it always meant.
+    const [note] = await database
+      .select({ appId: appSlugHistory.appId })
+      .from(appSlugHistory)
+      .where(eq(appSlugHistory.slug, "vault"))
+      .limit(1);
+    expect(note?.appId).toBe(first.appId);
+  });
+
   it("marks the app failed when the builder refuses, and keeps its grant", async () => {
     providerFails = true;
     const outcome = await deploy("Broken");

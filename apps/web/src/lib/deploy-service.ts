@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
+  appSlugHistory,
   atomically,
   db,
   deployments,
@@ -273,18 +274,43 @@ export async function deployToSpace(args: {
   };
 }
 
+/**
+ * An address no app in this space answers on, now or before.
+ *
+ * "Or before" is the part that is easy to leave out, and leaving it out is
+ * silent. Rename Wave to Wave Beats and `wave` becomes a forwarding note;
+ * deploy something new called Wave and it would take `wave` back, because the
+ * two live in different tables and nothing collides. No error, no warning -
+ * just every link anybody ever shared to the first app quietly arriving at a
+ * different one.
+ *
+ * So a forwarding note holds its address as firmly as a live app does, and the
+ * new app becomes `wave-2`. Being asked to look at a name you did not expect
+ * is a great deal better than a link that goes somewhere plausible and wrong.
+ *
+ * Notes do not outlive their app: the history rows cascade when it is deleted,
+ * so a name genuinely given up becomes available again.
+ */
 async function freeSlug(spaceId: string, base: string): Promise<string> {
   const database = db();
   const start = base === "" ? "app" : base;
 
   for (let attempt = 1; attempt <= 25; attempt += 1) {
     const candidate = attempt === 1 ? start : `${start}-${attempt}`;
-    const [taken] = await database
+
+    const [live] = await database
       .select({ id: apps.id })
       .from(apps)
       .where(and(eq(apps.spaceId, spaceId), eq(apps.slug, candidate)))
       .limit(1);
-    if (taken === undefined) return candidate;
+    if (live !== undefined) continue;
+
+    const [forwarded] = await database
+      .select({ id: appSlugHistory.id })
+      .from(appSlugHistory)
+      .where(and(eq(appSlugHistory.spaceId, spaceId), eq(appSlugHistory.slug, candidate)))
+      .limit(1);
+    if (forwarded === undefined) return candidate;
   }
 
   return `${start}-${newId("app").slice(-6)}`;
