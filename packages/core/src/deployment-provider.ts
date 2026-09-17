@@ -75,8 +75,19 @@ export interface AppDeploymentInput {
   appSlug: string;
   framework: Framework;
   source: SourceArchive;
-  /** Present when the source carries its own Dockerfile. */
-  container: ContainerHints | null;
+  /**
+   * The things to build and run, in one instance, sharing localhost.
+   *
+   * Almost always one. An app that is a frontend with an API behind it has two,
+   * and they belong together rather than apart: a frontend written to proxy to
+   * its backend in development finds it at the same address in production,
+   * because in development it was already talking to localhost.
+   *
+   * Exactly one of them takes the port and receives requests. The rest sit
+   * beside it, reachable only from inside the instance, which is what keeps a
+   * backend private without any of them needing an address of its own.
+   */
+  services: readonly DeployableService[];
   /**
    * Build-time and run-time variables.
    *
@@ -86,6 +97,19 @@ export interface AppDeploymentInput {
    * not this interface's to prevent.
    */
   env: Readonly<Record<string, string>>;
+}
+
+export interface DeployableService {
+  /** Names the container, and distinguishes its image from its siblings'. */
+  slug: string;
+  /** Where in the archive it builds from. Empty for the root. */
+  sourcePath: string;
+  /** Named from the archive root, since that is the build context. */
+  dockerfile: string | null;
+  /** What its Dockerfile said it listens on, when it said. */
+  port: number | null;
+  /** Whether this is the one that takes the port and receives requests. */
+  ingress: boolean;
 }
 
 export interface DeploymentResult {

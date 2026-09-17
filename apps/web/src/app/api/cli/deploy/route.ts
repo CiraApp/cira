@@ -28,6 +28,34 @@ const body = z.object({
     })
     .nullable()
     .default(null),
+  /**
+   * The deployable halves of the repository, when the CLI found more than one.
+   *
+   * Absent from an older CLI, and from any repository that is one thing, which
+   * is almost all of them - `container` above still describes that case and
+   * still means what it meant.
+   */
+  services: z
+    .array(
+      z.object({
+        slug: z
+          .string()
+          .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+          .max(24),
+        sourcePath: z
+          .string()
+          .max(256)
+          .refine((v) => !v.includes(".."), "Not a usable path"),
+        dockerfile: z
+          .string()
+          .refine(isSafeDockerfilePath, "Not a usable Dockerfile path")
+          .nullable(),
+        port: z.number().int().positive().max(65535).nullable(),
+        ingress: z.boolean(),
+      }),
+    )
+    .max(8)
+    .optional(),
   // Values pass straight through to the provider and are never stored; see
   // docs/secrets.md. Absent means "this app has none", which clears any the
   // app was previously deployed with.
@@ -56,6 +84,7 @@ export async function POST(request: Request) {
     sourceId: parsed.data.sourceId,
     framework: parsed.data.framework,
     container: parsed.data.container,
+    services: parsed.data.services ?? null,
     env: parsed.data.env ?? {},
   });
 

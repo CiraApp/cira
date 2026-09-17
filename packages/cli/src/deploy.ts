@@ -7,6 +7,7 @@ import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
+import { discoverServices } from "./services.js";
 import {
   checkBundle,
   isRootDockerfile,
@@ -151,6 +152,36 @@ export async function deploy(argv: string[] = []): Promise<number> {
     );
   }
 
+  // Whether this repository is one thing or two. Nobody writes this down: each
+  // half already carries whatever its own toolchain needs, which is the same
+  // evidence a person would use.
+  const found = discoverServices(root);
+  let services = null;
+
+  if (found.services.length > 1) {
+    if (found.ingress === null) {
+      fail(
+        `This repository has more than one thing to deploy, and ${found.ambiguity}. ` +
+          "Deploy them from their own directories for now.",
+      );
+      return 1;
+    }
+
+    services = found.services.map((part) => ({
+      ...part,
+      ingress: part.slug === found.ingress?.slug,
+    }));
+
+    info(`${dim(`Found ${services.length} services`)}`);
+    for (const part of services) {
+      const how = part.dockerfile === null ? part.framework : "Dockerfile";
+      const role = part.ingress
+        ? "front door"
+        : `internal${part.port === null ? "" : `, port ${part.port}`}`;
+      success(`  ${part.slug}  ${dim(part.sourcePath)}  ${dim(`${how}, ${role}`)}`);
+    }
+  }
+
   const bytes = files.reduce((n, f) => n + f.size, 0);
   info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)})...`)}`);
 
@@ -206,6 +237,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         sourceId,
         framework,
         container,
+        ...(services === null ? {} : { services }),
         env: collected.env,
       },
     });

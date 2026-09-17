@@ -26,8 +26,17 @@ const TAG = imageTag(SOURCE_URI);
 const SERVICE = "acme-ledger-0000app1";
 const IMAGE = `us-central1-docker.pkg.dev/proj/cira-apps/${SERVICE}:${TAG}`;
 
+/** The ordinary app: one thing, built from the root, taking the port. */
+const oneService = {
+  slug: "app",
+  sourcePath: "",
+  dockerfile: null,
+  port: null,
+  ingress: true,
+} as const;
+
 const input: AppDeploymentInput = {
-  container: null,
+  services: [oneService],
   appId: "app_00000000000000000000000000000app1",
   spaceSlug: "acme",
   appSlug: "ledger",
@@ -503,7 +512,7 @@ describe("teardown", () => {
 describe("a Dockerfile wins when there is one", () => {
   const dockerised: AppDeploymentInput = {
     ...input,
-    container: { dockerfile: "Dockerfile", port: 8000 },
+    services: [{ ...oneService, dockerfile: "Dockerfile", port: 8000 }],
   };
 
   it("builds the image the project describes", async () => {
@@ -614,7 +623,7 @@ describe("a Dockerfile that is not at the root", () => {
 
     await provider().deploy({
       ...input,
-      container: { dockerfile: "apps/api/Dockerfile", port: 8000 },
+      services: [{ ...oneService, dockerfile: "apps/api/Dockerfile", port: 8000 }],
     });
 
     const build = calls.find((c) => c.url.includes("cloudbuild"))?.body as {
@@ -628,5 +637,147 @@ describe("a Dockerfile that is not at the root", () => {
       IMAGE,
       ".",
     ]);
+  });
+});
+
+/**
+ * A frontend and the API behind it, in one instance, sharing localhost.
+ *
+ * The point of doing it this way rather than deploying two services and
+ * routing between them: an app already written to proxy to its backend in
+ * development finds it at the same address in production, because in
+ * development it was already talking to localhost. Wave needs no change at all.
+ */
+describe("an app that is two halves", () => {
+  const web = {
+    slug: "web",
+    sourcePath: "apps/web",
+    dockerfile: null,
+    port: null,
+    ingress: true,
+  } as const;
+
+  const api = {
+    slug: "api",
+    sourcePath: "apps/api",
+    dockerfile: "apps/api/Dockerfile",
+    port: 8000,
+    ingress: false,
+  } as const;
+
+  const both: AppDeploymentInput = { ...input, services: [web, api] };
+
+  const deployBoth = async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+    await provider().deploy(both);
+
+    return {
+      build: calls.find((c) => c.url.includes("cloudbuild"))?.body as {
+        steps: Array<{ name: string; args: string[] }>;
+      },
+      service: (
+        calls.find((c) => c.method === "PATCH")?.body as {
+          template: {
+            containers: Array<{
+              name?: string;
+              image: string;
+              ports?: Array<{ containerPort: number }>;
+              dependsOn?: string[];
+              resources: { limits: { memory: string }; cpuIdle: boolean };
+            }>;
+          };
+        }
+      ).template.containers,
+    };
+  };
+
+  it("builds each half the way that half asks to be built", async () => {
+    const { build } = await deployBoth();
+
+    // Buildpacks for the frontend, pointed at its own directory; the API's own
+    // Dockerfile for the API, with the whole upload still as the context.
+    expect(build.steps.map((s) => s.name)).toEqual([
+      "gcr.io/k8s-skaffold/pack",
+      "gcr.io/cloud-builders/docker",
+      "gcr.io/cloud-builders/docker",
+    ]);
+    expect(build.steps[0]?.args).toContain("--path");
+    expect(build.steps[0]?.args).toContain("apps/web");
+    expect(build.steps[1]?.args).toContain("apps/api/Dockerfile");
+  });
+
+  it("builds them in one build, so they succeed or fail together", async () => {
+    await deployBoth();
+    expect(calls.filter((c) => c.url.includes("/builds"))).toHaveLength(1);
+  });
+
+  it("gives each half an image of its own", async () => {
+    const { service } = await deployBoth();
+    const images = service.map((c) => c.image);
+    expect(new Set(images).size).toBe(2);
+    expect(images.every((i) => i.includes("acme-ledger"))).toBe(true);
+  });
+
+  it("gives the port to the front door and to nothing else", async () => {
+    const { service } = await deployBoth();
+
+    const ingress = service.find((c) => c.name === "web");
+    const sidecar = service.find((c) => c.name === "api");
+
+    expect(ingress?.ports?.[0]?.containerPort).toBe(8080);
+    // Cloud Run permits exactly one container to expose a port, and the API is
+    // reached at localhost by the half in front of it.
+    expect(sidecar?.ports).toBeUndefined();
+  });
+
+  it("starts the backend before the half that calls it", async () => {
+    const { service } = await deployBoth();
+    expect(service.find((c) => c.name === "web")?.dependsOn).toEqual(["api"]);
+  });
+
+  /**
+   * The setting that would really have bitten. `cpuIdle` throttles CPU outside
+   * request handling, which is right for a lone web server and wrong the moment
+   * anything runs beside it: a backend with a subscriber loop or a queue thread
+   * simply stops being scheduled, and returns looking like flakiness.
+   */
+  it("keeps the CPU on, and makes room for two runtimes", async () => {
+    const { service } = await deployBoth();
+
+    for (const container of service) {
+      expect(container.resources.cpuIdle).toBe(false);
+      expect(container.resources.limits.memory).toBe("1Gi");
+    }
+  });
+
+  it("leaves an ordinary single app exactly as it was", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+    await provider().deploy(input);
+
+    const containers = (
+      calls.find((c) => c.method === "PATCH")?.body as {
+        template: {
+          containers: Array<{
+            name?: string;
+            resources: { limits: { memory: string }; cpuIdle: boolean };
+          }>;
+        };
+      }
+    ).template.containers;
+
+    expect(containers).toHaveLength(1);
+    // Unnamed, because naming the sole container of a service that already
+    // exists replaces it rather than updating it.
+    expect(containers[0]?.name).toBeUndefined();
+    expect(containers[0]?.resources).toEqual({
+      limits: { cpu: "1", memory: "512Mi" },
+      cpuIdle: true,
+    });
   });
 });

@@ -1,6 +1,6 @@
 import type {
   AppDeploymentInput,
-  ContainerHints,
+  DeployableService,
   DeploymentLogLine,
   DeploymentProvider,
   DeploymentResult,
@@ -89,6 +89,8 @@ export class CloudRunError extends Error {
 }
 
 interface RunContainer {
+  /** Required once there is more than one, and how each is recognised later. */
+  name?: string;
   image?: string;
   env?: Array<{ name?: string; value?: string }>;
   ports?: Array<{ name?: string; containerPort?: number }>;
@@ -111,19 +113,27 @@ interface Build {
   source?: { storageSource?: { bucket?: string; object?: string } };
 }
 
-/** What one write to a service is allowed to say. */
-interface ServiceSpec {
+/** One container inside the instance. */
+interface ContainerPlan {
+  name: string;
   image: string;
-  env: Readonly<Record<string, string>>;
-  labels: Record<string, string>;
   /**
-   * Where Cloud Run should send traffic, and what it sets `PORT` to.
+   * Where Cloud Run should send traffic, and what it sets `PORT` to. Only the
+   * ingress container has one; Cloud Run permits exactly one.
    *
    * Taken from the image when the image says. An app that hardcodes 8000
    * because its Dockerfile says `EXPOSE 8000` is correct if Cira names 8000
    * and unreachable if Cira assumes its own default.
    */
-  port: number;
+  port: number | null;
+  ingress: boolean;
+}
+
+/** What one write to a service is allowed to say. */
+interface ServiceSpec {
+  containers: ContainerPlan[];
+  env: Readonly<Record<string, string>>;
+  labels: Record<string, string>;
 }
 
 export class CloudRunProvider implements DeploymentProvider {
@@ -141,10 +151,21 @@ export class CloudRunProvider implements DeploymentProvider {
       appId: app.appId,
     });
     const tag = imageTag(app.source.uri);
-    const image = this.imageFor(service, tag);
     const archive = parseArchiveUri(app.source.uri);
 
-    const buildId = await this.startBuild(archive, image, app.container);
+    // The tag carries the service's name only when there is more than one to
+    // tell apart. An ordinary app keeps the image name it has always had, so
+    // nothing about redeploying one changes.
+    const several = app.services.length > 1;
+    const planned = app.services.map((part) => ({
+      ...part,
+      image: this.imageFor(service, tag, several ? part.slug : undefined),
+    }));
+
+    // One build, not one per service. They share an upload, they succeed or
+    // fail as a unit, and one build id is one thing to poll - which is what
+    // lets the rest of the deploy stay exactly as it was.
+    const buildId = await this.startBuild(archive, planned);
 
     // The environment is written now, while Cira is holding it, because this
     // is the only moment it has it: Cira stores no values, so nothing later in
@@ -156,11 +177,22 @@ export class CloudRunProvider implements DeploymentProvider {
     // length of its own build. The swap happens in `getStatus`, once there is
     // something to swap to.
     const current = await this.getService(service);
+    const serving = current?.template?.containers ?? [];
+    // By name when there are several, and by position when there is one -
+    // because a lone container is written without a name, so there is nothing
+    // to match it by. Getting this wrong points a live app at an image that
+    // does not exist yet, which is the whole thing the carry-forward prevents.
+    const running = new Map(serving.map((c) => [c.name ?? "", c.image]));
+
     await this.putService(service, {
-      image: current?.template?.containers?.[0]?.image ?? image,
+      containers: planned.map((part) => ({
+        name: part.slug,
+        image: (several ? running.get(part.slug) : serving[0]?.image) ?? part.image,
+        port: part.ingress ? (part.port ?? CONTAINER_PORT) : null,
+        ingress: part.ingress,
+      })),
       env: app.env,
       labels: current?.template?.labels ?? {},
-      port: app.container?.port ?? CONTAINER_PORT,
     });
 
     return {
@@ -201,13 +233,21 @@ export class CloudRunProvider implements DeploymentProvider {
       // Cloud Run is, which is where a running app's environment belongs. It
       // passes through this process and is written straight back, the same way
       // it passed through on the way in.
+      // Every container the deploy wrote, carried forward by name. The names
+      // and ports are read back from the service rather than recomputed,
+      // because the deploy that knew them is long over - the same reason the
+      // environment is read back rather than remembered.
+      const containers = (current.template?.containers ?? []).map((c) => ({
+        name: c.name ?? "",
+        image: this.imageFor(service, tag, c.name === undefined ? undefined : c.name),
+        port: c.ports?.[0]?.containerPort ?? null,
+        ingress: (c.ports?.length ?? 0) > 0,
+      }));
+
       await this.putService(service, {
-        image: this.imageFor(service, tag),
+        containers,
         env: envOf(current),
         labels: { ...current.template?.labels, [BUILD_LABEL]: buildId },
-        // Carried forward for the same reason the environment is: the deploy
-        // that knew which port the image wanted is long over.
-        port: portOf(current),
       });
 
       // Changing the template starts a new revision. Its readiness is the next
@@ -352,13 +392,18 @@ export class CloudRunProvider implements DeploymentProvider {
     return this.tokens.identityToken(new URL(serviceUrl).origin);
   }
 
-  private imageFor(service: string, tag: string): string {
+  /**
+   * An app's images are named for the app and tagged for the service, so
+   * everything belonging to one app sits under one repository entry and comes
+   * away together when the app does.
+   */
+  private imageFor(service: string, tag: string, slug?: string): string {
     return imageRef({
       region: this.config.region,
       projectId: this.config.projectId,
       repository: this.config.artifactRepo,
       service,
-      tag,
+      tag: slug === undefined ? tag : `${slug}-${tag}`,
     });
   }
 
@@ -380,8 +425,7 @@ export class CloudRunProvider implements DeploymentProvider {
    */
   private async startBuild(
     archive: ParsedArchive,
-    image: string,
-    container: ContainerHints | null,
+    parts: ReadonlyArray<DeployableService & { image: string }>,
   ): Promise<string> {
     const { projectId, region, serviceAccountEmail, sourceBucket } = this.config;
 
@@ -397,8 +441,15 @@ export class CloudRunProvider implements DeploymentProvider {
               generation: archive.generation,
             },
           },
-          steps:
-            container === null ? buildpackStep(image) : dockerSteps(image, container),
+          // Every service in one build, in order. Cloud Build runs steps
+          // sequentially, so two halves take about as long as they would apart
+          // - and a failure in either fails the deploy, which is the honest
+          // outcome for two halves of one app.
+          steps: parts.flatMap((part) =>
+            part.dockerfile === null
+              ? buildpackStep(part.image, part.sourcePath)
+              : dockerSteps(part.image, part.dockerfile),
+          ),
           // Both paths push the image themselves - `pack --publish` directly,
           // and docker with an explicit push step. Naming it under `images` as
           // well would have Cloud Build try to push an image that is not in its
@@ -488,6 +539,15 @@ export class CloudRunProvider implements DeploymentProvider {
    * minted for its own URL, and to nothing else.
    */
   private async putService(service: string, spec: ServiceSpec): Promise<void> {
+    const several = spec.containers.length > 1;
+
+    const env = Object.entries(spec.env)
+      .filter(([name]) => !RESERVED.has(name))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, value]) => ({ name, value }));
+
+    const sidecars = spec.containers.filter((c) => !c.ingress).map((c) => c.name);
+
     await this.request(`${this.serviceUrl(service)}?allowMissing=true`, {
       method: "PATCH",
       body: JSON.stringify({
@@ -496,17 +556,31 @@ export class CloudRunProvider implements DeploymentProvider {
         template: {
           labels: spec.labels,
           scaling: { minInstanceCount: 0, maxInstanceCount: 10 },
-          containers: [
-            {
-              image: spec.image,
-              ports: [{ name: "http1", containerPort: spec.port }],
-              env: Object.entries(spec.env)
-                .filter(([name]) => !RESERVED.has(name))
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([name, value]) => ({ name, value })),
-              resources: { limits: { cpu: "1", memory: "512Mi" }, cpuIdle: true },
-            },
-          ],
+          containers: spec.containers.map((container) => ({
+            // Named only when there is more than one, because naming the sole
+            // container of an existing service would replace it rather than
+            // update it, and every app deployed so far has exactly one.
+            ...(several ? { name: container.name } : {}),
+            image: container.image,
+            ...(container.ingress
+              ? {
+                  ports: [
+                    { name: "http1", containerPort: container.port ?? CONTAINER_PORT },
+                  ],
+                }
+              : {}),
+            // The environment goes to every container, the way a single `.env`
+            // file does when the same repository is run locally. Cira has no
+            // way to know which half wants which name, and a frontend missing
+            // the variable its build needs is a worse failure than a backend
+            // seeing one it ignores.
+            env,
+            // Nothing starts before what it depends on. The front door is the
+            // half that calls the other, so it waits; a backend that is not
+            // listening yet is a proxy error on the first request otherwise.
+            ...(container.ingress && sidecars.length > 0 ? { dependsOn: sidecars } : {}),
+            resources: resourcesFor(several),
+          })),
         },
       }),
     });
@@ -544,9 +618,27 @@ export class CloudRunProvider implements DeploymentProvider {
 }
 
 /** The port a service is already routing to. */
-function portOf(service: RunService): number {
-  const port = service.template?.containers?.[0]?.ports?.[0]?.containerPort;
-  return typeof port === "number" && port > 0 ? port : CONTAINER_PORT;
+/**
+ * What one container is allowed to use.
+ *
+ * An instance's limits are the sum of its containers', so two halves of an app
+ * need roughly twice what one did - 512Mi does not hold a Node server and a
+ * Python one at the same time, and the failure is an out-of-memory kill rather
+ * than anything that names the cause.
+ *
+ * `cpuIdle` is the setting that would really have bitten. It throttles CPU
+ * outside request handling, which is free and correct for a lone web server
+ * and wrong the moment something runs beside it: a backend with a subscriber
+ * loop or a queue thread stops being scheduled between requests, and comes
+ * back looking like intermittent flakiness rather than a configuration choice.
+ */
+function resourcesFor(several: boolean): {
+  limits: { cpu: string; memory: string };
+  cpuIdle: boolean;
+} {
+  return several
+    ? { limits: { cpu: "1", memory: "1Gi" }, cpuIdle: false }
+    : { limits: { cpu: "1", memory: "512Mi" }, cpuIdle: true };
 }
 
 /**
@@ -555,7 +647,7 @@ function portOf(service: RunService): number {
  * The reason Cira deploys more than Next.js: `pack` reads the source and
  * decides the language for itself, so nothing here has to know.
  */
-function buildpackStep(image: string): unknown[] {
+function buildpackStep(image: string, sourcePath: string): unknown[] {
   return [
     {
       name: "gcr.io/k8s-skaffold/pack",
@@ -568,6 +660,9 @@ function buildpackStep(image: string): unknown[] {
         "--network",
         "cloudbuild",
         "--publish",
+        // Which part of the upload to read. Empty for an ordinary app, whose
+        // whole repository is the thing being built.
+        ...(sourcePath === "" ? [] : ["--path", sourcePath]),
       ],
     },
   ];
@@ -581,7 +676,7 @@ function buildpackStep(image: string): unknown[] {
  * recognise. Wave's build installed 53 packages and then failed for want of an
  * entrypoint that was written down in a file Cira was ignoring.
  */
-function dockerSteps(image: string, container: ContainerHints): unknown[] {
+function dockerSteps(image: string, dockerfile: string): unknown[] {
   return [
     {
       name: "gcr.io/cloud-builders/docker",
@@ -589,7 +684,7 @@ function dockerSteps(image: string, container: ContainerHints): unknown[] {
       // it, because those are separate facts in any monorepo. Wave keeps its
       // Dockerfile in `apps/api` and says plainly that the context must be the
       // workspace.
-      args: ["build", "-f", container.dockerfile, "-t", image, "."],
+      args: ["build", "-f", dockerfile, "-t", image, "."],
       // BuildKit, because a Dockerfile written any time recently assumes it.
       // `RUN --mount=type=cache` is the common one and it is not an extension
       // people opt into - it is the default everywhere the file was tested,

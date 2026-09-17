@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
@@ -8,9 +8,11 @@ import {
   db,
   deployments,
   memberships,
+  services,
   spaces,
 } from "@cira/db";
 import { newId, slugify, canManageApp } from "@cira/core";
+import type { DeployableService } from "@cira/core";
 import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
 import { recordEnvVars } from "@/lib/env-vars";
@@ -42,6 +44,14 @@ export async function deployToSpace(args: {
    * not have gets a build that fails, which is its own problem.
    */
   container: ContainerHints | null;
+  /**
+   * The halves of the repository, when there is more than one.
+   *
+   * Null covers both an older CLI and the ordinary single-service app, and
+   * both resolve to the same one-service shape below, so nothing downstream
+   * has to care which it was.
+   */
+  services?: readonly DeployableService[] | null;
   /** Handed to the provider and then forgotten. See docs/secrets.md. */
   env?: Readonly<Record<string, string>>;
 }): Promise<DeployOutcome> {
@@ -184,6 +194,38 @@ export async function deployToSpace(args: {
     return { ok: false, error: "That upload did not finish. Try deploying again." };
   }
 
+  // One shape from here down, whatever the CLI sent. An app that is a single
+  // process is a single service called `app`, which is what every app deployed
+  // before this already became when its row was written.
+  const parts: DeployableService[] =
+    args.services !== null && args.services !== undefined && args.services.length > 0
+      ? [...args.services]
+      : [
+          {
+            slug: "app",
+            sourcePath: "",
+            dockerfile: args.container?.dockerfile ?? null,
+            port: args.container?.port ?? null,
+            ingress: true,
+          },
+        ];
+
+  // Exactly one takes the port. A repository the CLI could not read that way
+  // does not reach here - it is stopped before anything is uploaded - so this
+  // is the last line of defence rather than the decision.
+  if (parts.filter((part) => part.ingress).length !== 1) {
+    await database
+      .update(apps)
+      .set({ status: "failed", updatedAt: new Date() })
+      .where(eq(apps.id, app.id));
+    return {
+      ok: false,
+      error: "Cira could not tell which part of this app a browser should open.",
+    };
+  }
+
+  await recordServices(app.id, parts);
+
   let result;
   try {
     const provider = deploymentProvider();
@@ -193,7 +235,7 @@ export async function deployToSpace(args: {
       appSlug: app.slug,
       framework: args.framework,
       source: { uri: archiveUri(source), size: source.size },
-      container: args.container,
+      services: parts,
       env,
     });
   } catch (error) {
@@ -246,4 +288,48 @@ async function freeSlug(spaceId: string, base: string): Promise<string> {
   }
 
   return `${start}-${newId("app").slice(-6)}`;
+}
+
+/**
+ * What this app is made of, as of this deploy.
+ *
+ * A redeploy is the truth about that, the same way it is the truth about an
+ * app's capabilities: a half that has been deleted from the repository stops
+ * existing here rather than lingering as a container nobody builds. Written as
+ * one act, because a half-replaced list of an app's parts is not a list of
+ * anything.
+ */
+async function recordServices(
+  appId: string,
+  parts: readonly DeployableService[],
+): Promise<void> {
+  const database = db();
+
+  const existing = await database
+    .select({ id: services.id, slug: services.slug })
+    .from(services)
+    .where(eq(services.appId, appId));
+
+  const bySlug = new Map(existing.map((row) => [row.slug, row.id]));
+  const wanted = new Set(parts.map((part) => part.slug));
+  const gone = existing.filter((row) => !wanted.has(row.slug)).map((row) => row.id);
+
+  const columns = (part: DeployableService) => ({
+    appId,
+    slug: part.slug,
+    sourcePath: part.sourcePath,
+    dockerfile: part.dockerfile,
+    port: part.port === null ? null : String(part.port),
+    updatedAt: new Date(),
+  });
+
+  await atomically(database, (on) => [
+    ...(gone.length > 0 ? [on.delete(services).where(inArray(services.id, gone))] : []),
+    ...parts.map((part) => {
+      const id = bySlug.get(part.slug);
+      return id === undefined
+        ? on.insert(services).values({ id: newId("service"), ...columns(part) })
+        : on.update(services).set(columns(part)).where(eq(services.id, id));
+    }),
+  ]);
 }
