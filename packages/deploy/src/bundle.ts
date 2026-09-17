@@ -11,13 +11,33 @@
  *
  * `.env` is the one that matters: a developer's local secrets must not be
  * shipped to a build server because they happened to be in the folder.
+ *
+ * This list was written when Cira only deployed Next.js and stayed that way
+ * after it stopped. Deploying Wave sent 154 files of compiled Python bytecode -
+ * 44% of the upload - and a repository with its virtual environment beside it
+ * would have sent hundreds of megabytes and failed on the size limit, for
+ * files the build regenerates before it uses them.
  */
 const EXCLUDED_DIRECTORIES = new Set([
+  // JavaScript
   "node_modules",
-  ".git",
   ".next",
   ".turbo",
   ".vercel",
+  // Python
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".tox",
+  ".eggs",
+  // JVM and Rust, both of which build into `target`
+  "target",
+  ".gradle",
+  // Everyone
+  ".git",
   ".cira",
   "dist",
   "build",
@@ -27,6 +47,16 @@ const EXCLUDED_DIRECTORIES = new Set([
   ".DS_Store",
 ]);
 
+/**
+ * Deliberately not excluded, though it looks like it belongs above.
+ *
+ * `vendor` is dependencies in PHP and in Go - but a Go module that commits it
+ * builds *from* it, and dropping it would turn a working repository into one
+ * that cannot resolve its own imports. Sending it costs space; removing it
+ * costs correctness, and only one of those is recoverable.
+ */
+export const KEPT_DESPITE_LOOKING_LIKE_JUNK = ["vendor"] as const;
+
 const EXCLUDED_FILE_PATTERNS = [
   /^\.env($|\.)/,
   /\.log$/,
@@ -34,6 +64,9 @@ const EXCLUDED_FILE_PATTERNS = [
   /\.tsbuildinfo$/,
   /^npm-debug\.log/,
   /^yarn-error\.log/,
+  // Compiled output, whatever produced it. The build makes its own.
+  /\.py[co]$/,
+  /\.class$/,
 ];
 
 export function isExcludedDirectory(name: string): boolean {

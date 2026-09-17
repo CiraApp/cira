@@ -77,3 +77,70 @@ describe("checkBundle", () => {
     if (!v.ok) expect(v.reason).toContain("100 MB");
   });
 });
+
+/**
+ * The rules were written when Cira only deployed Next.js and stayed that way
+ * after it stopped. Deploying Wave sent 154 files of compiled Python bytecode,
+ * 44% of the upload, and a repository with its virtual environment beside it
+ * would have sent hundreds of megabytes of files the build regenerates anyway.
+ */
+describe("shouldUpload, in languages that are not JavaScript", () => {
+  it("leaves out what the build makes for itself", () => {
+    for (const path of [
+      ".venv/lib/python3.12/site-packages/fastapi/__init__.py",
+      "venv/bin/activate",
+      "app/__pycache__/main.cpython-312.pyc",
+      "alembic/versions/__pycache__/0001_initial.cpython-312.pyc",
+      ".pytest_cache/v/cache/lastfailed",
+      ".mypy_cache/3.12/app.json",
+      ".ruff_cache/content",
+      ".tox/py312/bin/python",
+      "target/debug/deps/app.rlib",
+      "target/classes/com/acme/App.class",
+      ".gradle/caches/modules-2/files",
+      "app/main.pyc",
+      "com/acme/App.class",
+    ]) {
+      expect(shouldUpload(path), path).toBe(false);
+    }
+  });
+
+  it("still sends the source those languages are written in", () => {
+    for (const path of [
+      "app/main.py",
+      "app/routers/orders.py",
+      "pyproject.toml",
+      "uv.lock",
+      "go.mod",
+      "main.go",
+      "Gemfile",
+      "app.rb",
+      "pom.xml",
+      "src/main/java/com/acme/App.java",
+      "Cargo.toml",
+      "src/main.rs",
+      "Dockerfile",
+      "Procfile",
+    ]) {
+      expect(shouldUpload(path), path).toBe(true);
+    }
+  });
+
+  /**
+   * `vendor` is dependencies in PHP and in Go - but a Go module that commits
+   * it builds *from* it, so dropping it turns a working repository into one
+   * that cannot resolve its own imports. Sending it costs space; removing it
+   * costs correctness, and only one of those is recoverable.
+   */
+  it("keeps vendored dependencies, which a Go build reads", () => {
+    expect(shouldUpload("vendor/github.com/pkg/errors/errors.go")).toBe(true);
+    expect(shouldUpload("vendor/modules.txt")).toBe(true);
+  });
+
+  // A directory whose name happens to match is excluded at any depth, which is
+  // what makes nested __pycache__ go rather than only the one at the root.
+  it("excludes at any depth, not only at the root", () => {
+    expect(shouldUpload("services/api/app/__pycache__/x.pyc")).toBe(false);
+    expect(shouldUpload("packages/worker/.venv/pyvenv.cfg")).toBe(false);
+  });
+});
