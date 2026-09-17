@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
+  atomically,
   capabilities,
   db,
   memberships,
@@ -182,10 +183,6 @@ export async function replaceCapabilities(args: {
   // rule that a person's decision survives a redeploy is testable on its own.
   const plan = reconcileCapabilities(existing, args.detected);
 
-  if (plan.remove.length > 0) {
-    await database.delete(capabilities).where(inArray(capabilities.id, plan.remove));
-  }
-
   const columns = (detected: AnalyzedCapability, enabled: boolean) => ({
     appId: args.appId,
     spaceId: args.spaceId,
@@ -201,33 +198,43 @@ export async function replaceCapabilities(args: {
     updatedAt: new Date(),
   });
 
-  for (const entry of plan.create) {
-    await database
-      .insert(capabilities)
-      .values({ id: newId("capability"), ...columns(entry.detected, entry.enabled) });
-  }
-
   const before = new Map(existing.map((row) => [row.id, row]));
 
-  for (const entry of plan.update) {
-    const prior = before.get(entry.id);
-    // A capability whose target moved has not been confirmed at its new
-    // address, so its stamp is cleared and the app is asked again. One whose
-    // target is unchanged keeps it, because clearing it would take every
-    // working capability away for the seconds between deploying and checking.
-    const moved =
-      prior === undefined ||
-      prior.method !== entry.detected.method ||
-      prior.path !== entry.detected.path;
+  // The deletion has to land with the writes that replace it. On its own it is
+  // the destructive half of a swap, and a failure after it leaves the app
+  // advertising a fraction of what it can do - every write having succeeded,
+  // and nothing anywhere to say the set is incomplete.
+  await atomically(database, (on) => [
+    ...(plan.remove.length > 0
+      ? [on.delete(capabilities).where(inArray(capabilities.id, plan.remove))]
+      : []),
 
-    await database
-      .update(capabilities)
-      .set({
-        ...columns(entry.detected, entry.enabled),
-        ...(moved ? { verifiedAt: null } : {}),
-      })
-      .where(eq(capabilities.id, entry.id));
-  }
+    ...plan.create.map((entry) =>
+      on
+        .insert(capabilities)
+        .values({ id: newId("capability"), ...columns(entry.detected, entry.enabled) }),
+    ),
+
+    ...plan.update.map((entry) => {
+      const prior = before.get(entry.id);
+      // A capability whose target moved has not been confirmed at its new
+      // address, so its stamp is cleared and the app is asked again. One whose
+      // target is unchanged keeps it, because clearing it would take every
+      // working capability away for the seconds between deploying and checking.
+      const moved =
+        prior === undefined ||
+        prior.method !== entry.detected.method ||
+        prior.path !== entry.detected.path;
+
+      return on
+        .update(capabilities)
+        .set({
+          ...columns(entry.detected, entry.enabled),
+          ...(moved ? { verifiedAt: null } : {}),
+        })
+        .where(eq(capabilities.id, entry.id));
+    }),
+  ]);
 
   return { enabled: plan.enabledCount, review: plan.reviewCount };
 }
@@ -246,29 +253,39 @@ export async function recordVerification(args: {
   rejected: readonly string[];
 }): Promise<void> {
   const database = db();
+  const stamped = new Date();
 
-  if (args.rejected.length > 0) {
-    await database
-      .delete(capabilities)
-      .where(
-        and(
-          eq(capabilities.appId, args.appId),
-          inArray(capabilities.name, [...args.rejected]),
-        ),
-      );
-  }
+  // One answer from the app, so one write. Splitting it would allow a state
+  // where the rejected ones are gone but the confirmed ones are still waiting
+  // to be confirmed, which is no app's actual answer.
+  await atomically(database, (on) => [
+    ...(args.rejected.length > 0
+      ? [
+          on
+            .delete(capabilities)
+            .where(
+              and(
+                eq(capabilities.appId, args.appId),
+                inArray(capabilities.name, [...args.rejected]),
+              ),
+            ),
+        ]
+      : []),
 
-  if (args.verified.length > 0) {
-    await database
-      .update(capabilities)
-      .set({ verifiedAt: new Date(), updatedAt: new Date() })
-      .where(
-        and(
-          eq(capabilities.appId, args.appId),
-          inArray(capabilities.name, [...args.verified]),
-        ),
-      );
-  }
+    ...(args.verified.length > 0
+      ? [
+          on
+            .update(capabilities)
+            .set({ verifiedAt: stamped, updatedAt: stamped })
+            .where(
+              and(
+                eq(capabilities.appId, args.appId),
+                inArray(capabilities.name, [...args.verified]),
+              ),
+            ),
+        ]
+      : []),
+  ]);
 }
 
 export async function listCapabilitiesForApp(appId: string): Promise<Capability[]> {

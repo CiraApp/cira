@@ -2,7 +2,7 @@
 
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { db, invites, memberships, spaces, users } from "@cira/db";
+import { atomically, db, invites, memberships, spaces, users } from "@cira/db";
 import { isInviteToken, newId, newInviteToken } from "@cira/core";
 import type { Role } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
@@ -188,19 +188,25 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
     .where(and(eq(memberships.userId, user.id), eq(memberships.spaceId, row.space.id)))
     .limit(1);
 
-  if (already === undefined) {
-    await database.insert(memberships).values({
-      id: newId("membership"),
-      userId: user.id,
-      spaceId: row.space.id,
-      role: row.invite.role,
-    });
-  }
-
-  await database
-    .update(invites)
-    .set({ acceptedAt: new Date() })
-    .where(eq(invites.id, row.invite.id));
+  // Joining and spending the invite are one act. Were the second to fail on its
+  // own, the person would be inside and the link would still work - a single
+  // invite that admits whoever else it is forwarded to.
+  await atomically(database, (on) => [
+    ...(already === undefined
+      ? [
+          on.insert(memberships).values({
+            id: newId("membership"),
+            userId: user.id,
+            spaceId: row.space.id,
+            role: row.invite.role,
+          }),
+        ]
+      : []),
+    on
+      .update(invites)
+      .set({ acceptedAt: new Date() })
+      .where(eq(invites.id, row.invite.id)),
+  ]);
 
   return { ok: true, spaceSlug: row.space.slug, spaceName: row.space.name };
 }

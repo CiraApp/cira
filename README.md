@@ -98,11 +98,20 @@ ordinary Postgres to the container behind it.
 
 It is worth knowing why this is not solved by letting the application pick a
 different driver when it sees a local address, which is smaller and obvious.
-Neon's HTTP driver cannot do transactions and an ordinary Postgres driver can,
-so local work would silently gain a capability production does not have. The
-first `db.transaction()` anyone wrote would pass every test here and throw in
-production. Running the real driver against a real proxy means a thing that
-cannot work in production does not appear to work here either.
+The two drivers do not agree about what a transaction is: an ordinary Postgres
+driver holds one open across statements, and Neon's HTTP driver cannot. Local
+work would silently gain a capability production does not have, and the first
+`db.transaction()` anyone wrote would pass every test here and throw once it
+shipped. Running the real driver against a real proxy means a thing that cannot
+work in production does not appear to work here either.
+
+What Cira uses instead is `atomically` in `packages/db`, which sends a set of
+writes as one statement batch that Neon runs inside a transaction. Every
+statement has to be known before the first one runs, so it cannot read a result
+and decide what to write next - but the writes that need to land together
+already know their whole plan before they start. It falls back to a real
+transaction on the ordinary driver, so the integration tests exercise the same
+code rather than walking around it.
 
 Clerk is in test mode, so signing in locally uses a `+clerk_test` address with
 the verification code `424242`. The first sign-in creates the local user, and

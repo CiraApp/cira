@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, memberships, spaces } from "@cira/db";
+import { atomically, db, memberships, spaces } from "@cira/db";
 import { newId, slugify } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
 import { claimableDomain } from "@/lib/email-domain";
@@ -49,19 +49,23 @@ export async function createSpace(
   // The founder's company domain becomes the space's, so colleagues can join
   // without being invited one at a time. Only a domain they hold an address
   // at, and never a public provider.
-  await database.insert(spaces).values({
-    id: spaceId,
-    name: parsed.data.name,
-    slug,
-    domain: claimableDomain(user.email),
-  });
-
-  await database.insert(memberships).values({
-    id: newId("membership"),
-    userId: user.id,
-    spaceId,
-    role: "owner",
-  });
+  // Together, because a space whose owner never landed is worse than no space
+  // at all: nobody is a member, so nobody can open it, invite anyone to it or
+  // delete it, and its slug is taken for good.
+  await atomically(database, (on) => [
+    on.insert(spaces).values({
+      id: spaceId,
+      name: parsed.data.name,
+      slug,
+      domain: claimableDomain(user.email),
+    }),
+    on.insert(memberships).values({
+      id: newId("membership"),
+      userId: user.id,
+      spaceId,
+      role: "owner",
+    }),
+  ]);
 
   return { ok: true, data: { slug } };
 }
