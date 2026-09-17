@@ -50,12 +50,26 @@ export interface SourceArchive {
   size: number;
 }
 
+/**
+ * What the source says about building and running itself, when it says.
+ *
+ * Null means it said nothing and the provider should work it out. Present
+ * means there is a Dockerfile, and its author already answered a question the
+ * provider would otherwise have to guess at.
+ */
+export interface ContainerHints {
+  /** The port the image declares, or null when it declares none. */
+  port: number | null;
+}
+
 export interface AppDeploymentInput {
   appId: string;
   spaceSlug: string;
   appSlug: string;
   framework: Framework;
   source: SourceArchive;
+  /** Present when the source carries its own Dockerfile. */
+  container: ContainerHints | null;
   /**
    * Build-time and run-time variables.
    *

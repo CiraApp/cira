@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { apps, appAccess, db, deployments, memberships, spaces } from "@cira/db";
 import { newId, slugify, canManageApp } from "@cira/core";
-import type { Framework, User } from "@cira/core";
+import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
 import { recordEnvVars } from "@/lib/env-vars";
 
@@ -26,6 +26,14 @@ export async function deployToSpace(args: {
   sourceId: string;
   /** What the source looks like. A label on the app, not a gate on the build. */
   framework: Framework;
+  /**
+   * What the source says about building itself, when it says.
+   *
+   * Read by the CLI, which is walking the files anyway, rather than by
+   * unpacking the archive again here. A client claiming a Dockerfile it does
+   * not have gets a build that fails, which is its own problem.
+   */
+  container: ContainerHints | null;
   /** Handed to the provider and then forgotten. See docs/secrets.md. */
   env?: Readonly<Record<string, string>>;
 }): Promise<DeployOutcome> {
@@ -159,6 +167,7 @@ export async function deployToSpace(args: {
       appSlug: app.slug,
       framework: args.framework,
       source: { uri: archiveUri(source), size: source.size },
+      container: args.container,
       env,
     });
   } catch (error) {

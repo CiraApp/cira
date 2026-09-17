@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
 import { collectFiles } from "./files.js";
@@ -6,7 +7,7 @@ import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
-import { checkBundle } from "@cira/deploy/packaging";
+import { checkBundle, isRootDockerfile, readDockerfile } from "@cira/deploy/packaging";
 import { bold, dim, fail, info, success } from "./ui.js";
 
 interface MeResponse {
@@ -123,6 +124,19 @@ export async function deploy(argv: string[] = []): Promise<number> {
     return 1;
   }
 
+  // A Dockerfile is the project saying how it wants to be built and run, and
+  // it is read here because the walk already has the file list. Without it the
+  // build has to work the language out and then guess at an entrypoint, which
+  // is where a great deal of real software stops.
+  const container = readContainer(root, files);
+  if (container !== null) {
+    success(
+      container.port === null
+        ? "Dockerfile"
+        : `Dockerfile, listening on ${container.port}`,
+    );
+  }
+
   const bytes = files.reduce((n, f) => n + f.size, 0);
   info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)})...`)}`);
 
@@ -177,6 +191,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         appId: link?.appId ?? null,
         sourceId,
         framework,
+        container,
         env: collected.env,
       },
     });
@@ -262,6 +277,21 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** What the folder's own Dockerfile says, or null when there is none. */
+function readContainer(
+  root: string,
+  files: readonly { path: string }[],
+): { port: number | null } | null {
+  if (!files.some((file) => isRootDockerfile(file.path))) return null;
+  try {
+    return readDockerfile(readFileSync(join(root, "Dockerfile"), "utf8"));
+  } catch {
+    // Listed but unreadable. Building from it would fail anyway, so this falls
+    // back to letting the builder work the project out.
+    return null;
+  }
 }
 
 /** Read `--flag value` or `--flag=value` from the arguments. */

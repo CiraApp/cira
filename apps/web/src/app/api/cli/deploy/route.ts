@@ -15,6 +15,12 @@ const body = z.object({
   // Cira; this is the receipt for them.
   sourceId: z.string().regex(/^src_[0-9a-f]{32}$/),
   framework: z.enum(FRAMEWORKS).default("unknown"),
+  // Present when the folder carries a Dockerfile. Its port, when it declares
+  // one, is what Cloud Run routes to and what the container sees as PORT.
+  container: z
+    .object({ port: z.number().int().positive().max(65535).nullable() })
+    .nullable()
+    .default(null),
   // Values pass straight through to the provider and are never stored; see
   // docs/secrets.md. Absent means "this app has none", which clears any the
   // app was previously deployed with.
@@ -42,6 +48,7 @@ export async function POST(request: Request) {
     appId: parsed.data.appId ?? null,
     sourceId: parsed.data.sourceId,
     framework: parsed.data.framework,
+    container: parsed.data.container,
     env: parsed.data.env ?? {},
   });
 

@@ -27,6 +27,7 @@ const SERVICE = "acme-ledger-0000app1";
 const IMAGE = `us-central1-docker.pkg.dev/proj/cira-apps/${SERVICE}:${TAG}`;
 
 const input: AppDeploymentInput = {
+  container: null,
   appId: "app_00000000000000000000000000000app1",
   spaceSlug: "acme",
   appSlug: "ledger",
@@ -490,5 +491,103 @@ describe("teardown", () => {
 
     await expect(provider().teardown(SERVICE)).rejects.toThrow();
     expect(calls.some((c) => c.url.includes("artifactregistry"))).toBe(false);
+  });
+});
+
+/**
+ * Buildpacks work the language out, which is why Cira deploys more than
+ * Next.js - but they cannot work out how to start something they do not
+ * recognise. A project that already says so in a Dockerfile has answered the
+ * question, and Wave's build failed for want of an answer it had written down.
+ */
+describe("a Dockerfile wins when there is one", () => {
+  const dockerised: AppDeploymentInput = { ...input, container: { port: 8000 } };
+
+  it("builds the image the project describes", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy(dockerised);
+
+    const build = calls.find((c) => c.url.includes("cloudbuild"))?.body as {
+      steps: Array<{ name: string; args: string[] }>;
+    };
+    expect(build.steps.map((s) => s.name)).toEqual([
+      "gcr.io/cloud-builders/docker",
+      "gcr.io/cloud-builders/docker",
+    ]);
+    expect(build.steps[0]?.args).toContain("build");
+    expect(build.steps[1]?.args).toContain("push");
+    expect(JSON.stringify(build)).not.toContain("pack");
+  });
+
+  /**
+   * The half that makes the other half work. Cloud Run routes to the port the
+   * service names and sets `PORT` to match, so an image hardcoding 8000 is
+   * correct only if Cira says 8000. Assuming a default leaves a container that
+   * built, started, and never receives a request.
+   */
+  it("routes to the port the image declares", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy(dockerised);
+
+    const body = calls.find((c) => c.method === "PATCH")?.body as {
+      template: { containers: Array<{ ports: Array<{ containerPort: number }> }> };
+    };
+    expect(body.template.containers[0]?.ports[0]?.containerPort).toBe(8000);
+  });
+
+  it("falls back to buildpacks when the project says nothing", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy(input);
+
+    const build = calls.find((c) => c.url.includes("cloudbuild"))?.body as {
+      steps: Array<{ name: string }>;
+    };
+    expect(build.steps[0]?.name).toBe("gcr.io/k8s-skaffold/pack");
+
+    const body = calls.find((c) => c.method === "PATCH")?.body as {
+      template: { containers: Array<{ ports: Array<{ containerPort: number }> }> };
+    };
+    expect(body.template.containers[0]?.ports[0]?.containerPort).toBe(8080);
+  });
+
+  // The deploy that knew which port the image wanted is long over by the time
+  // the built image is rolled out, so the service is asked rather than assumed.
+  it("keeps the port when the image is swapped in later", async () => {
+    serve([
+      [/cloudbuild/, () => built],
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET"
+            ? serviceAt("older-image", {
+                template: {
+                  labels: {},
+                  containers: [
+                    { image: "older-image", env: [], ports: [{ containerPort: 8000 }] },
+                  ],
+                },
+              })
+            : {},
+      ],
+    ]);
+
+    await provider().getStatus(`b-1:${SERVICE}:${TAG}`);
+
+    const body = calls.find((c) => c.method === "PATCH")?.body as {
+      template: { containers: Array<{ ports: Array<{ containerPort: number }> }> };
+    };
+    expect(body.template.containers[0]?.ports[0]?.containerPort).toBe(8000);
   });
 });

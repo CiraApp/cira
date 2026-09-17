@@ -1,5 +1,6 @@
 import type {
   AppDeploymentInput,
+  ContainerHints,
   DeploymentLogLine,
   DeploymentProvider,
   DeploymentResult,
@@ -46,7 +47,7 @@ const BUILD_TIMEOUT = "1200s";
  */
 const BUILD_LABEL = "cira-build";
 
-/** Cloud Run's own default, stated rather than assumed. */
+/** Cloud Run's own default, used when an image does not name one. */
 const CONTAINER_PORT = 8080;
 
 /**
@@ -84,6 +85,7 @@ export class CloudRunError extends Error {
 interface RunContainer {
   image?: string;
   env?: Array<{ name?: string; value?: string }>;
+  ports?: Array<{ name?: string; containerPort?: number }>;
 }
 
 interface RunService {
@@ -107,6 +109,14 @@ interface ServiceSpec {
   image: string;
   env: Readonly<Record<string, string>>;
   labels: Record<string, string>;
+  /**
+   * Where Cloud Run should send traffic, and what it sets `PORT` to.
+   *
+   * Taken from the image when the image says. An app that hardcodes 8000
+   * because its Dockerfile says `EXPOSE 8000` is correct if Cira names 8000
+   * and unreachable if Cira assumes its own default.
+   */
+  port: number;
 }
 
 export class CloudRunProvider implements DeploymentProvider {
@@ -127,7 +137,7 @@ export class CloudRunProvider implements DeploymentProvider {
     const image = this.imageFor(service, tag);
     const archive = parseArchiveUri(app.source.uri);
 
-    const buildId = await this.startBuild(archive, image);
+    const buildId = await this.startBuild(archive, image, app.container);
 
     // The environment is written now, while Cira is holding it, because this
     // is the only moment it has it: Cira stores no values, so nothing later in
@@ -143,6 +153,7 @@ export class CloudRunProvider implements DeploymentProvider {
       image: current?.template?.containers?.[0]?.image ?? image,
       env: app.env,
       labels: current?.template?.labels ?? {},
+      port: app.container?.port ?? CONTAINER_PORT,
     });
 
     return {
@@ -187,6 +198,9 @@ export class CloudRunProvider implements DeploymentProvider {
         image: this.imageFor(service, tag),
         env: envOf(current),
         labels: { ...current.template?.labels, [BUILD_LABEL]: buildId },
+        // Carried forward for the same reason the environment is: the deploy
+        // that knew which port the image wanted is long over.
+        port: portOf(current),
       });
 
       // Changing the template starts a new revision. Its readiness is the next
@@ -357,7 +371,11 @@ export class CloudRunProvider implements DeploymentProvider {
    * app's own configuration. A build request and its logs are readable by
    * anyone with access to the project.
    */
-  private async startBuild(archive: ParsedArchive, image: string): Promise<string> {
+  private async startBuild(
+    archive: ParsedArchive,
+    image: string,
+    container: ContainerHints | null,
+  ): Promise<string> {
     const { projectId, region, serviceAccountEmail, sourceBucket } = this.config;
 
     const created = await this.request<{ metadata?: { build?: Build } }>(
@@ -372,24 +390,11 @@ export class CloudRunProvider implements DeploymentProvider {
               generation: archive.generation,
             },
           },
-          steps: [
-            {
-              name: "gcr.io/k8s-skaffold/pack",
-              entrypoint: "pack",
-              args: [
-                "build",
-                image,
-                "--builder",
-                "gcr.io/buildpacks/builder:latest",
-                "--network",
-                "cloudbuild",
-                "--publish",
-              ],
-            },
-          ],
-          // `--publish` means `pack` pushes the image itself. Naming it under
-          // `images` as well would have Cloud Build try to push an image that
-          // is not in its local daemon, and fail after a build that worked.
+          steps: container === null ? buildpackStep(image) : dockerSteps(image),
+          // Both paths push the image themselves - `pack --publish` directly,
+          // and docker with an explicit push step. Naming it under `images` as
+          // well would have Cloud Build try to push an image that is not in its
+          // local daemon, and fail after a build that worked.
           timeout: BUILD_TIMEOUT,
           // Named explicitly: new projects no longer have the legacy Cloud
           // Build account, and a build with no service account fails at create
@@ -458,7 +463,7 @@ export class CloudRunProvider implements DeploymentProvider {
           containers: [
             {
               image: spec.image,
-              ports: [{ name: "http1", containerPort: CONTAINER_PORT }],
+              ports: [{ name: "http1", containerPort: spec.port }],
               env: Object.entries(spec.env)
                 .filter(([name]) => !RESERVED.has(name))
                 .sort(([a], [b]) => a.localeCompare(b))
@@ -500,6 +505,51 @@ export class CloudRunProvider implements DeploymentProvider {
 
     return (await response.json()) as T;
   }
+}
+
+/** The port a service is already routing to. */
+function portOf(service: RunService): number {
+  const port = service.template?.containers?.[0]?.ports?.[0]?.containerPort;
+  return typeof port === "number" && port > 0 ? port : CONTAINER_PORT;
+}
+
+/**
+ * Let buildpacks work out what this is.
+ *
+ * The reason Cira deploys more than Next.js: `pack` reads the source and
+ * decides the language for itself, so nothing here has to know.
+ */
+function buildpackStep(image: string): unknown[] {
+  return [
+    {
+      name: "gcr.io/k8s-skaffold/pack",
+      entrypoint: "pack",
+      args: [
+        "build",
+        image,
+        "--builder",
+        "gcr.io/buildpacks/builder:latest",
+        "--network",
+        "cloudbuild",
+        "--publish",
+      ],
+    },
+  ];
+}
+
+/**
+ * Build the image the project already describes.
+ *
+ * Preferred over buildpacks whenever a Dockerfile exists, because it answers
+ * the one question buildpacks cannot: how to start something they did not
+ * recognise. Wave's build installed 53 packages and then failed for want of an
+ * entrypoint that was written down in a file Cira was ignoring.
+ */
+function dockerSteps(image: string): unknown[] {
+  return [
+    { name: "gcr.io/cloud-builders/docker", args: ["build", "-t", image, "."] },
+    { name: "gcr.io/cloud-builders/docker", args: ["push", image] },
+  ];
 }
 
 /** The environment a service is already running with. */
