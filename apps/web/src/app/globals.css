@@ -465,17 +465,20 @@ select:focus-visible {
 }
 
 /*
- * A live thing has a pulse.
+ * A state that is current and not going to change on its own.
  *
- * Not the ring above, which sweeps out and vanishes to say work is leaving -
- * this stays close and never goes, the way something running does. What keeps
- * the two apart is reach rather than speed: this one barely leaves the dot,
- * and the other crosses three times its width before disappearing.
+ * Used for two opposite things - running, and failed - because the motion is
+ * not what distinguishes them; the colour is. What it says is "this is the
+ * situation now", which is true of both a live app and a broken deploy.
  *
- * The dot itself holds steady. A dot that dims reads as a fault light, which
- * is the opposite of what is being said.
+ * Not the ring above, which sweeps out and vanishes to say work is leaving.
+ * What keeps the two apart is reach rather than speed: this one barely leaves
+ * the dot, and the other crosses three times its width before disappearing.
+ *
+ * The dot itself holds steady either way. A dot that dims reads as something
+ * losing power rather than something reporting.
  */
-@keyframes live-pulse {
+@keyframes dot-pulse {
   0%,
   100% {
     transform: scale(1);
@@ -486,13 +489,13 @@ select:focus-visible {
     opacity: 0;
   }
 }
-.alive::after {
+.pulse-dot::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: 9999px;
   background: currentColor;
-  animation: live-pulse 1.4s var(--ease-settle) infinite;
+  animation: dot-pulse 1.4s var(--ease-settle) infinite;
 }
 
 /* The older, quieter version: used where a ring would not fit. */

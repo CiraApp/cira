@@ -116,13 +116,16 @@ export async function deleteApp(
       .from(deployments)
       .where(eq(deployments.appId, ctx.app.id));
 
-    // Only ours. A handful of apps were deployed before Cloud Run, and their
-    // rows hold the previous provider's ids: asking Google to remove one fails,
-    // which would leave those apps permanently undeletable from Cira. The
-    // record goes either way; what is skipped is the call to take it down.
-    const live = rows.filter(
-      (r) => r.status !== "removed" && r.status !== "failed" && r.provider === "cloudrun",
-    );
+    // A failed deploy is not nothing to take down. The service is created
+    // before the build finishes - it has to be, because that is the only
+    // moment Cira holds the environment - so a build that fails leaves a
+    // service behind whose revision never started. Skipping those, as this
+    // used to, meant deleting an app in Cira quietly left it in Google forever.
+    //
+    // Still only ours: a handful of apps were deployed before Cloud Run and
+    // their rows hold the previous provider's ids. Asking Google to remove one
+    // of those fails, which would make those apps undeletable from Cira.
+    const live = rows.filter((r) => r.status !== "removed" && r.provider === "cloudrun");
 
     if (live.length > 0) {
       try {
