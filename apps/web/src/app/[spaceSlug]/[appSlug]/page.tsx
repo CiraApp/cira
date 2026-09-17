@@ -21,6 +21,7 @@ import { latestDeployment } from "@/lib/queries";
 import { appColor } from "@/lib/app-color";
 import { resolveAppState } from "@/lib/app-state";
 import { appOpenPath } from "@/lib/app-open";
+import { learnWebUi } from "@/lib/app-web-ui";
 
 export default async function AppPage({
   params,
@@ -31,18 +32,24 @@ export default async function AppPage({
 
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
-    const { app, space } = ctx;
+    const { space } = ctx;
     const [rawDeployment, history, spaces, capabilities] = await Promise.all([
-      latestDeployment(app.id),
-      deploymentHistory(app.id),
+      latestDeployment(ctx.app.id),
+      deploymentHistory(ctx.app.id),
       listMySpaces(),
-      listCapabilitiesForApp(app.id),
+      listCapabilitiesForApp(ctx.app.id),
     ]);
 
     // Someone is looking at this app right now, so this is exactly when its
     // status has to be true rather than whatever was last written down.
     const deployment =
       rawDeployment === null ? null : await reconcileDeployment(rawDeployment);
+
+    // Whether this app has a front door is settled the same way its deploy
+    // status is: by asking, at the moment somebody wants to know. Deploying is
+    // not the only chance to find out, and for every app that predates Cira
+    // asking at all it was never a chance in the first place.
+    const app = await learnWebUi(ctx.app, deployment);
 
     // Only someone who can change access is shown it; for everyone else the
     // page stays the simple "open this app" screen it should be.
@@ -61,6 +68,14 @@ export default async function AppPage({
       deployment,
       appOpenPath({ appSlug, spaceSlug }),
     );
+    // Somewhere to go when the answer is "this app's front door is elsewhere".
+    // The setting lives with the app's other details, which is the right place
+    // for it and the wrong place to discover it: the person who needs it is
+    // the one looking at an app that will not open.
+    const offerHomepage =
+      manages &&
+      (resolved.state === "no-ui" || resolved.state === "unreachable") &&
+      (app.homepageUrl === null || app.homepageUrl === "");
     // An app Cira serves is opened through `/open`, which checks access again
     // and hands over to the door on Cira's own domain. One that carries its
     // own address is simply linked to: Cira does not serve it, cannot vouch
@@ -167,6 +182,17 @@ export default async function AppPage({
                   }`}
                 >
                   {resolved.blockedReason}
+                  {offerHomepage ? (
+                    <>
+                      {" "}
+                      <a
+                        href="#settings"
+                        className="text-ink underline underline-offset-2 transition-colors duration-150 hover:text-ink-muted"
+                      >
+                        Opens somewhere else?
+                      </a>
+                    </>
+                  ) : null}
                 </p>
               )}
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteApp, updateAppDetails } from "@/lib/app-settings-actions";
 
@@ -27,6 +27,37 @@ export function AppSettings({
   const [confirmName, setConfirmName] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [saved, setSaved] = useState(false);
+  const panel = useRef<HTMLDetailsElement>(null);
+
+  // Opened by a link from elsewhere on the page, because the one setting here
+  // that someone arrives looking for - where this app really opens - is the
+  // one they are sent to rather than the one they go hunting for.
+  //
+  // On the hash changing as well as on mount. The link is on this same page,
+  // so following it never remounts anything: checking only once would leave
+  // the panel shut for exactly the person who was sent here to open it.
+  useEffect(() => {
+    const reveal = () => {
+      if (window.location.hash !== "#settings") return;
+      const element = panel.current;
+      if (element === null) return;
+      element.open = true;
+
+      // To the field itself, not to the panel that contains it. Opening the
+      // panel puts its heading at the top of the screen and leaves Homepage
+      // below the fold under Name and Description - which is the same hunt the
+      // link existed to save. Focused as well as scrolled to, so the cursor is
+      // already where the answer goes.
+      const field = element.querySelector<HTMLInputElement>("#app-homepage");
+      const target = field ?? element;
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      field?.focus({ preventScroll: true });
+    };
+
+    reveal();
+    window.addEventListener("hashchange", reveal);
+    return () => window.removeEventListener("hashchange", reveal);
+  }, []);
 
   const save = (formData: FormData) => {
     setError(null);
@@ -55,7 +86,7 @@ export function AppSettings({
   };
 
   return (
-    <details className="group mt-10">
+    <details id="settings" ref={panel} className="group mt-10 scroll-mt-6">
       <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink">
         <svg
           viewBox="0 0 12 12"
