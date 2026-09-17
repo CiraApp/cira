@@ -1,8 +1,8 @@
 import "server-only";
 
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { appOpens, db, deployments } from "@cira/db";
-import type { Deployment } from "@cira/core";
+import { appOpens, db, deployments, services } from "@cira/db";
+import type { Deployment, Service } from "@cira/core";
 import { newId } from "@cira/core";
 
 /**
@@ -61,4 +61,33 @@ export async function recentlyOpened(
     .limit(limit);
 
   return rows.map((r) => r.appId);
+}
+
+/**
+ * The parts an app is built from.
+ *
+ * Ordered with the front door first, because that is the half a person is
+ * asking about when they wonder what they are looking at; the rest are behind
+ * it in every sense.
+ */
+export async function listServicesForApp(appId: string): Promise<Service[]> {
+  const rows = await db().select().from(services).where(eq(services.appId, appId));
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      appId: row.appId,
+      slug: row.slug,
+      sourcePath: row.sourcePath,
+      dockerfile: row.dockerfile,
+      port: row.port,
+      hasWebUi: row.hasWebUi,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.hasWebUi === true) - Number(a.hasWebUi === true) ||
+        a.slug.localeCompare(b.slug),
+    );
 }

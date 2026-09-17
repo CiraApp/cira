@@ -6,7 +6,7 @@ import { listMySpaces } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { canManageApp } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
-import { deploymentHistory } from "@/lib/queries";
+import { deploymentHistory, listServicesForApp } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
@@ -15,6 +15,7 @@ import { AppSettings } from "@/components/app-settings";
 import { EnvPanel } from "@/components/env-panel";
 import { listEnvVars } from "@/lib/env-vars";
 import { CapabilityPanel } from "@/components/capability-panel";
+import { ServicePanel } from "@/components/service-panel";
 import { AppIcon } from "@/components/app-icon";
 import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
@@ -40,11 +41,12 @@ export default async function AppPage({
   try {
     const ctx = await requireAppAccess(spaceSlug, appSlug);
     const { space } = ctx;
-    const [rawDeployment, history, spaces, capabilities] = await Promise.all([
+    const [rawDeployment, history, spaces, capabilities, services] = await Promise.all([
       latestDeployment(ctx.app.id),
       deploymentHistory(ctx.app.id),
       listMySpaces(),
       listCapabilitiesForApp(ctx.app.id),
+      listServicesForApp(ctx.app.id),
     ]);
 
     // Someone is looking at this app right now, so this is exactly when its
@@ -217,6 +219,8 @@ export default async function AppPage({
               {deployment === null ? "Not deployed" : deployment.provider}
             </Fact>
           </dl>
+
+          <ServicePanel services={services} />
 
           <CapabilityPanel
             capabilities={capabilities}
