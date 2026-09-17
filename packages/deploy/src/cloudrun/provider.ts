@@ -7,7 +7,13 @@ import type {
 } from "@cira/core";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
-import { deploymentHandle, imageRef, parseHandle, serviceName } from "./names.js";
+import {
+  deploymentHandle,
+  imageRef,
+  parseHandle,
+  parseSourceObject,
+  serviceName,
+} from "./names.js";
 import { imageTag, parseArchiveUri, type ParsedArchive } from "./source.js";
 import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
 
@@ -102,6 +108,7 @@ interface Build {
   logsBucket?: string;
   createTime?: string;
   startTime?: string;
+  source?: { storageSource?: { bucket?: string; object?: string } };
 }
 
 /** What one write to a service is allowed to say. */
@@ -415,6 +422,34 @@ export class CloudRunProvider implements DeploymentProvider {
       throw new CloudRunError("Google accepted the build but did not name it.", 502);
     }
     return id;
+  }
+
+  /**
+   * Which upload this deploy was built from, if Google still has it.
+   *
+   * Cira does not write this down anywhere, and deliberately does not need to:
+   * the build is the record of what was actually used, so asking it cannot
+   * disagree with reality and works for every deploy that ever happened rather
+   * than only those made after somebody thought to store it.
+   *
+   * Null when the build is gone, when it recorded no source, or when the path
+   * is not one of ours. The archives themselves expire after thirty days, so a
+   * path coming back is not a promise the bytes are still there - the caller
+   * finds that out by asking for them.
+   */
+  async sourceOf(
+    deploymentId: string,
+  ): Promise<{ userId: string; sourceId: string } | null> {
+    let build: Build;
+    try {
+      const { buildId } = parseHandle(deploymentId);
+      build = await this.getBuild(buildId);
+    } catch {
+      return null;
+    }
+
+    const object = build.source?.storageSource?.object;
+    return object === undefined ? null : parseSourceObject(object);
   }
 
   private async getBuild(buildId: string): Promise<Build> {

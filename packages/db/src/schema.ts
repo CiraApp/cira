@@ -201,6 +201,22 @@ export const apps = pgTable(
      */
     hasWebUi: boolean("has_web_ui"),
     /**
+     * When the analyzer last read this app's source and finished.
+     *
+     * The difference between "nothing to offer" and "nobody has looked", which
+     * an empty capability list cannot tell you and which are opposite things to
+     * say to somebody. An app whose analysis never ran - the model refused, the
+     * account was out of credit, the upload had gone - looks exactly like one
+     * that genuinely serves no routes, and only one of those is worth offering
+     * to try again.
+     *
+     * Set on a run that produced an answer, whether or not the answer had
+     * anything in it.
+     */
+    capabilitiesAnalyzedAt: timestamp("capabilities_analyzed_at", {
+      withTimezone: true,
+    }),
+    /**
      * Both dead. Nothing reads or writes either any more.
      *
      * They belonged to a provider that needed a per-app project and a shared

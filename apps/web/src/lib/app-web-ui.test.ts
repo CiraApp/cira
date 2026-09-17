@@ -57,6 +57,7 @@ const app = (hasWebUi: boolean | null): App => ({
   ownerUserId: "usr_1",
   homepageUrl: null,
   hasWebUi,
+  capabilitiesAnalyzedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });

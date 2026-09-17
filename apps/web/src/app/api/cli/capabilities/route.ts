@@ -2,10 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apps, db, memberships } from "@cira/db";
-import { packSource, sourceStore, tarUngzip } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
-import { analyzeCapabilities } from "@/lib/capability-analyzer";
-import { replaceCapabilities } from "@/lib/capabilities";
+import { analyzeAppSource } from "@/lib/capability-analysis";
 
 /**
  * Work out what a deployed app can do.
@@ -60,57 +58,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });
   }
 
-  const store = sourceStore();
-  const stored = await store.find({ userId: user.id, sourceId: parsed.data.sourceId });
-  if (stored === null) {
-    return NextResponse.json({ error: "That upload is not there" }, { status: 404 });
-  }
-
-  let source;
-  try {
-    source = packSource(tarUngzip(await store.download(stored)));
-  } catch {
-    return NextResponse.json({ error: "Could not read that upload" }, { status: 400 });
-  }
-
-  const result = await analyzeCapabilities(source.text, { appName: app.name });
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 502 });
-  }
-
-  // Written once and then left alone. A description someone has edited is a
-  // human decision, and a later deploy re-running the analyzer is not a reason
-  // to overwrite it - which is also why this checks the column rather than
-  // tracking a flag nobody would remember to set.
-  if (
-    result.summary !== "" &&
-    (app.description === null || app.description.trim() === "")
-  ) {
-    await db()
-      .update(apps)
-      .set({ description: result.summary, updatedAt: new Date() })
-      .where(eq(apps.id, app.id));
-  }
-
-  await replaceCapabilities({
-    appId: app.id,
-    spaceId: app.spaceId,
-    detected: result.capabilities,
+  const outcome = await analyzeAppSource({
+    app,
+    userId: user.id,
+    sourceId: parsed.data.sourceId,
   });
+
+  if (!outcome.ok) {
+    return NextResponse.json(
+      { error: outcome.error },
+      { status: outcome.reason === "source" ? 404 : 502 },
+    );
+  }
 
   // Deliberately no count of what is enabled. Nothing is, yet: these are
   // registered unverified, and whether any of them can be used is settled by
   // the app itself a moment later. Reporting the policy's answer here would
   // have said "3 enabled" about three capabilities nobody could call.
+  //
+  // What was read is said plainly, because an analysis that only saw half a
+  // repository is worth knowing about when the answer looks thin.
   return NextResponse.json({
-    detected: result.capabilities.map((c) => ({
+    detected: outcome.detected.map((c) => ({
       name: c.name,
       description: c.description,
       risk: c.risk,
     })),
-    // Said plainly, because an analysis that only saw half a repository is
-    // worth knowing about when the answer looks thin.
-    read: source.included.length,
-    skipped: source.omitted.length,
+    read: outcome.read,
+    skipped: outcome.skipped,
   });
 }

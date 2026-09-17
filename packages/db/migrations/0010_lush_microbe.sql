@@ -1,0 +1,1 @@
+ALTER TABLE "apps" ADD COLUMN "capabilities_analyzed_at" timestamp with time zone;

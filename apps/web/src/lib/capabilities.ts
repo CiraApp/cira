@@ -414,6 +414,7 @@ function toApp(row: typeof apps.$inferSelect): App {
     ownerUserId: row.ownerUserId,
     homepageUrl: row.homepageUrl,
     hasWebUi: row.hasWebUi,
+    capabilitiesAnalyzedAt: row.capabilitiesAnalyzedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

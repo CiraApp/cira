@@ -23,6 +23,13 @@ import { resolveAppState } from "@/lib/app-state";
 import { appOpenPath } from "@/lib/app-open";
 import { learnWebUi } from "@/lib/app-web-ui";
 
+/**
+ * Long because one of this page's actions re-reads an app's whole source and
+ * asks a model about it. Next applies a page's limit to the Server Actions it
+ * hosts, so it is set here rather than beside the action.
+ */
+export const maxDuration = 300;
+
 export default async function AppPage({
   params,
 }: {
@@ -211,7 +218,19 @@ export default async function AppPage({
             </Fact>
           </dl>
 
-          <CapabilityPanel capabilities={capabilities} canManage={manages} />
+          <CapabilityPanel
+            capabilities={capabilities}
+            canManage={manages}
+            analyzed={app.capabilitiesAnalyzedAt !== null}
+            // From the deployment, not from whether a browser could open it.
+            // An app with no web address is still running and its code can
+            // still be read; asking the openability question here would have
+            // withheld the button from exactly the headless apps that are
+            // most likely to have interesting capabilities.
+            running={deployment?.status === "live"}
+            spaceSlug={spaceSlug}
+            appSlug={appSlug}
+          />
 
           <DeploymentHistory
             spaceSlug={spaceSlug}

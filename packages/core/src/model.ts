@@ -76,6 +76,8 @@ export interface App {
   homepageUrl: string | null;
   /** Whether the running app answers a browser. Null until it has been asked. */
   hasWebUi: boolean | null;
+  /** When the analyzer last finished. Null means nobody has read this code. */
+  capabilitiesAnalyzedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

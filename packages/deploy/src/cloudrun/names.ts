@@ -141,6 +141,27 @@ export function sourceObject(userId: string, sourceId: string): string {
 }
 
 /**
+ * Read an upload's path back into the two ids that made it.
+ *
+ * Kept next to the function that builds the path so the pair cannot drift, and
+ * needed because the only durable record of which upload a deploy was built
+ * from is the one Google keeps: Cira asks the build, and the build answers with
+ * a path.
+ */
+export function parseSourceObject(
+  object: string,
+): { userId: string; sourceId: string } | null {
+  const match = /^sources\/([A-Za-z0-9_-]{1,80})\/([A-Za-z0-9_-]{1,80})\.tar\.gz$/.exec(
+    object,
+  );
+  if (match === null) return null;
+
+  const [, userId, sourceId] = match;
+  if (userId === undefined || sourceId === undefined) return null;
+  return { userId, sourceId };
+}
+
+/**
  * Both halves end up inside a URL path, so they are checked rather than
  * trusted. Cira's own ids always pass; this exists for the day something
  * constructs one from user input and nobody notices.
