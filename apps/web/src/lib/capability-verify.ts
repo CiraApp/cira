@@ -162,6 +162,26 @@ async function reachOf(
 
   // `Allow` on a 405 is the useful answer: it names the methods this path
   // really serves, and asking for it cannot have changed anything.
+  //
+  // It is a weaker answer than a read's, and deliberately so. A framework
+  // decides a method is wrong before it decides who is asking, so `OPTIONS`
+  // comes back with `Allow` whether or not the app would have let Cira post
+  // there - measured on Wave, where `/api/v1/beats` advertises `Allow: POST`
+  // to an unauthenticated probe and answers 401 to the POST itself. A GET does
+  // not separate them either; it is a method mismatch too, so it gets the same
+  // 405 from an open path and a guarded one alike.
+  //
+  // Nothing safe distinguishes the two, and the one thing that would is
+  // performing the write, which is the whole point of not doing this by
+  // calling. Inferring it from the app's reads was tried on paper and is worse
+  // than the gap: an app that guards every read still leaves its sign-up and
+  // password-reset routes open, so the inference would mark exactly the
+  // capabilities that do work as refused.
+  //
+  // So `callable` on a write means the app serves this method at this path,
+  // and not that Cira got through. That is all `OPTIONS` can prove. The claim
+  // is contained by the fact that a write is off until a person turns it on,
+  // and the honest place to settle it is the first real invocation.
   const allow = await allowed(fetcher, args, path);
   if (allow === null) return "unknown";
   if (shut(allow.status)) return "refused";
