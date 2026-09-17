@@ -31,6 +31,7 @@ import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
 
 const BUILD_API = "https://cloudbuild.googleapis.com/v1";
 const RUN_API = "https://run.googleapis.com/v2";
+const ARTIFACTS_API = "https://artifactregistry.googleapis.com/v1";
 const STORAGE = "https://storage.googleapis.com/storage/v1";
 
 /** Long enough for a cold buildpacks build of a large app, short of forever. */
@@ -270,7 +271,10 @@ export class CloudRunProvider implements DeploymentProvider {
   }
 
   async remove(deploymentId: string): Promise<void> {
-    const { service } = parseHandle(deploymentId);
+    await this.removeService(parseHandle(deploymentId).service);
+  }
+
+  private async removeService(service: string): Promise<void> {
     const access = await this.tokens.accessToken();
 
     const response = await fetch(this.serviceUrl(service), {
@@ -284,6 +288,37 @@ export class CloudRunProvider implements DeploymentProvider {
       `Removing the app failed (${response.status}).`,
       response.status,
     );
+  }
+
+  /**
+   * Remove an app from Google entirely.
+   *
+   * Two things, not one. `remove` takes the service down, which is what stops
+   * it serving - but every deploy also pushed an image, and those stay in
+   * Artifact Registry forever with nothing to remove them. An app deleted a
+   * year ago would still be paying for the images of every version it ever
+   * had.
+   *
+   * The service goes first. If deleting the images fails the app is already
+   * unreachable, which is the part that matters; storage left behind is a bill,
+   * not a hazard, so it is reported rather than allowed to block the rest.
+   */
+  async teardown(service: string): Promise<{ images: boolean }> {
+    await this.removeService(service);
+
+    const access = await this.tokens.accessToken();
+    const { projectId, region, artifactRepo } = this.config;
+
+    // The package holds every version ever pushed for this service, so one
+    // delete is the whole history rather than a tag at a time.
+    const response = await fetch(
+      `${ARTIFACTS_API}/projects/${projectId}/locations/${region}` +
+        `/repositories/${encodeURIComponent(artifactRepo)}` +
+        `/packages/${encodeURIComponent(service)}`,
+      { method: "DELETE", headers: { authorization: `Bearer ${access}` } },
+    );
+
+    return { images: response.ok || response.status === 404 };
   }
 
   /**

@@ -2,6 +2,7 @@
 import { api, ApiError } from "./api.js";
 import { clearConfig, readConfig } from "./config.js";
 import { deploy } from "./deploy.js";
+import { remove } from "./remove.js";
 import { login } from "./login.js";
 import { mcpCommand } from "./mcp.js";
 import { skillCommand } from "./skill/command.js";
@@ -18,6 +19,9 @@ const USAGE = `
                --env-file <p>   read variables from this file instead
                --env K=V        set one variable (repeatable, wins over a file)
                --no-env         deploy with no variables, clearing any set
+    remove     Take this folder's app down and delete what it left behind
+               --space <slug>   which space, when the folder is not linked
+               --app <slug>     which app, when the folder is not linked
     login      Connect this machine to your Cira account
     skill      install    Add the Cira Skill to your coding agents
     mcp        connect    Point this machine's assistants at your company
@@ -81,6 +85,9 @@ async function main(): Promise<number> {
   switch (command) {
     case "deploy":
       return deploy(process.argv.slice(3));
+    case "remove":
+    case "undeploy":
+      return remove(process.argv.slice(3));
     case "login":
       return login();
     case "skill":

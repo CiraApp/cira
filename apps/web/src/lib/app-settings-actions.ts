@@ -2,10 +2,10 @@
 
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
-import { apps, db, deployments } from "@cira/db";
+import { apps, db } from "@cira/db";
 import { slugify } from "@cira/core";
-import { deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import { tearDownApp } from "@/lib/app-teardown";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -110,40 +110,8 @@ export async function deleteApp(
       return { ok: false, error: "That name does not match, so nothing was deleted." };
     }
 
-    const database = db();
-    const rows = await database
-      .select()
-      .from(deployments)
-      .where(eq(deployments.appId, ctx.app.id));
-
-    // A failed deploy is not nothing to take down. The service is created
-    // before the build finishes - it has to be, because that is the only
-    // moment Cira holds the environment - so a build that fails leaves a
-    // service behind whose revision never started. Skipping those, as this
-    // used to, meant deleting an app in Cira quietly left it in Google forever.
-    //
-    // Still only ours: a handful of apps were deployed before Cloud Run and
-    // their rows hold the previous provider's ids. Asking Google to remove one
-    // of those fails, which would make those apps undeletable from Cira.
-    const live = rows.filter((r) => r.status !== "removed" && r.provider === "cloudrun");
-
-    if (live.length > 0) {
-      try {
-        const provider = deploymentProvider();
-        for (const row of live) {
-          await provider.remove(row.providerDeploymentId);
-        }
-      } catch {
-        return {
-          ok: false,
-          error:
-            "Cira could not take the running app down, so nothing was deleted. Try again shortly.",
-        };
-      }
-    }
-
-    // Deployments and access rows fall away with the app; the schema says so.
-    await database.delete(apps).where(eq(apps.id, ctx.app.id));
+    const outcome = await tearDownApp(ctx.app);
+    if (!outcome.ok) return { ok: false, error: outcome.error };
 
     return { ok: true, data: null };
   } catch (error) {

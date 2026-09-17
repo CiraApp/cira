@@ -429,3 +429,66 @@ describe("invocationToken", () => {
     expect(token).toBe("id-for-https://acme-ledger-abc-uc.a.run.app");
   });
 });
+
+describe("teardown", () => {
+  const SERVICE = "acme-ledger-0000app1";
+
+  /**
+   * The service is what stops it serving; the images are what stop it costing.
+   * Every deploy pushed one and nothing else ever removes them, so an app
+   * deleted a year ago would still be paying for every version it ever had.
+   */
+  it("removes the service and every image it was built into", async () => {
+    serve([[/./, () => ({})]]);
+
+    const result = await provider().teardown(SERVICE);
+
+    const deletes = calls.filter((c) => c.method === "DELETE");
+    expect(deletes.some((c) => c.url.includes(`/services/${SERVICE}`))).toBe(true);
+    expect(
+      deletes.some(
+        (c) =>
+          c.url.includes("artifactregistry") && c.url.endsWith(`/packages/${SERVICE}`),
+      ),
+    ).toBe(true);
+    expect(result.images).toBe(true);
+  });
+
+  it("takes the service down before touching the images", async () => {
+    serve([[/./, () => ({})]]);
+
+    await provider().teardown(SERVICE);
+
+    const order = calls.filter((c) => c.method === "DELETE").map((c) => c.url);
+    const service = order.findIndex((u) => u.includes("/services/"));
+    const images = order.findIndex((u) => u.includes("artifactregistry"));
+    expect(service).toBeLessThan(images);
+  });
+
+  // Storage left behind is a bill, not a hazard. The app is already down.
+  it("still counts as done when the images will not delete", async () => {
+    serve([
+      [/artifactregistry/, () => new Response(null, { status: 403 })],
+      [/run\.googleapis/, () => ({})],
+    ]);
+
+    const result = await provider().teardown(SERVICE);
+    expect(result.images).toBe(false);
+  });
+
+  it("treats images that are already gone as deleted", async () => {
+    serve([
+      [/artifactregistry/, () => new Response(null, { status: 404 })],
+      [/run\.googleapis/, () => ({})],
+    ]);
+
+    expect((await provider().teardown(SERVICE)).images).toBe(true);
+  });
+
+  it("does not delete anything when the service will not go", async () => {
+    serve([[/./, () => new Response(null, { status: 500 })]]);
+
+    await expect(provider().teardown(SERVICE)).rejects.toThrow();
+    expect(calls.some((c) => c.url.includes("artifactregistry"))).toBe(false);
+  });
+});
