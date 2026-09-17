@@ -161,9 +161,11 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         method: "GET",
         path: "/api/revenue",
         risk: "read",
-        // Seeded as already confirmed by the app: an unverified capability
-        // is deliberately invisible, which would make every case below vacuous.
+        // Seeded as already confirmed by the app: anything the app has not
+        // said yes to is deliberately invisible, which would make every case
+        // below vacuous.
         verifiedAt: new Date(),
+        reach: "callable" as const,
         enabled: true,
       },
       {
@@ -176,9 +178,11 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         method: "POST",
         path: "/api/refunds",
         risk: "write",
-        // Seeded as already confirmed by the app: an unverified capability
-        // is deliberately invisible, which would make every case below vacuous.
+        // Seeded as already confirmed by the app: anything the app has not
+        // said yes to is deliberately invisible, which would make every case
+        // below vacuous.
         verifiedAt: new Date(),
+        reach: "callable" as const,
         enabled: false,
       },
     ]);
@@ -357,6 +361,64 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     expect(received).toHaveLength(0);
   });
 
+  /**
+   * The whole point of the third state, seen from where it matters.
+   *
+   * A capability the app itself refuses reads as `enabled: false`, and an
+   * agent that sees only that concludes an admin can switch it on. The first
+   * agent to meet this spent its closing turns recommending exactly that,
+   * about an app where no such switch exists. So the refusal has to say what
+   * it is, and it has to say so in search as well as on invocation - an agent
+   * that has to call a capability to find out it cannot call it has already
+   * wasted the turn.
+   */
+  it("tells an agent a refused capability is the app's doing, not a missing switch", async () => {
+    const { runTool } = await import("./mcp");
+    const { recordVerification } = await import("./capabilities");
+    received.length = 0;
+
+    await recordVerification({
+      appId,
+      callable: [],
+      refused: ["getRevenue"],
+      absent: [],
+    });
+
+    // In a finally, because these cases share one app and one database: a
+    // failure here would otherwise leave getRevenue refused and take five
+    // later cases down with it, which is a cascade that hides whichever
+    // assertion actually broke.
+    try {
+      const search = await runTool(employee, "search_capabilities", { query: "revenue" });
+      const listed = JSON.parse(search.content) as {
+        capabilities: Array<{ name: string; enabled: boolean; unavailable?: string }>;
+      };
+      const found = listed.capabilities.find((c) => c.name.endsWith("getRevenue"));
+      expect(found?.enabled).toBe(false);
+      expect(found?.unavailable).toContain("signs");
+      expect(found?.unavailable).toContain("do not suggest enabling it");
+
+      const invoked = await runTool(employee, "invoke_capability", {
+        capabilityId: revenueId,
+        input: { startDate: "2026-08-01", endDate: "2026-08-31" },
+      });
+
+      expect(invoked.isError).toBe(true);
+      expect(invoked.content).toContain("will not let Cira call it");
+      // And crucially not the sentence that sends someone to an admin.
+      expect(invoked.content).not.toContain("An admin can turn it on");
+      // The app is never contacted, because the answer is already known.
+      expect(received).toHaveLength(0);
+    } finally {
+      await recordVerification({
+        appId,
+        callable: ["getRevenue"],
+        refused: [],
+        absent: [],
+      });
+    }
+  });
+
   it("rejects input the schema does not allow, without calling the app", async () => {
     const { runTool } = await import("./mcp");
     received.length = 0;
@@ -509,14 +571,35 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     const { recordVerification } = await import("./capabilities");
     await recordVerification({
       appId,
-      verified: ["getMonthlyGrowth"],
-      rejected: [],
+      callable: ["getMonthlyGrowth"],
+      refused: [],
+      absent: [],
     });
     const confirmed = await listCapabilitiesForApp(appId);
     expect(confirmed.find((c) => c.name === "getMonthlyGrowth")?.enabled).toBe(true);
 
-    // And one the app will not answer for stops existing at all.
-    await recordVerification({ appId, verified: [], rejected: ["getMonthlyGrowth"] });
+    // One the app serves and will not let Cira through is kept and switched
+    // off, rather than deleted. The route is real and the description of it is
+    // right; the only thing missing is a way in, and deleting it would throw
+    // away a true account of the app and leave the page nothing to explain.
+    await recordVerification({
+      appId,
+      callable: [],
+      refused: ["getMonthlyGrowth"],
+      absent: [],
+    });
+    const shut = await listCapabilitiesForApp(appId);
+    const barred = shut.find((c) => c.name === "getMonthlyGrowth");
+    expect(barred?.reach).toBe("refused");
+    expect(barred?.enabled).toBe(false);
+
+    // And one the app has no route for stops existing at all.
+    await recordVerification({
+      appId,
+      callable: [],
+      refused: [],
+      absent: ["getMonthlyGrowth"],
+    });
     expect((await listCapabilitiesForApp(appId)).map((c) => c.name)).not.toContain(
       "getMonthlyGrowth",
     );

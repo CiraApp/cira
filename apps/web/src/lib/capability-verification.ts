@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { apps, capabilities, db } from "@cira/db";
 import { deploymentProvider } from "@cira/deploy";
 import { probeWebUi } from "@/lib/browser-ui";
@@ -20,14 +20,30 @@ import { latestDeployment } from "@/lib/queries";
  */
 
 export type VerificationOutcome =
-  | { ok: true; verified: number; rejected: number; inconclusive: boolean }
+  | {
+      ok: true;
+      callable: number;
+      /** Served, and shut to Cira. Kept and explained rather than deleted. */
+      refused: number;
+      absent: number;
+      inconclusive: boolean;
+    }
   | { ok: false; reason: "not-running" | "unreachable" };
+
+const SETTLED = {
+  ok: true,
+  callable: 0,
+  refused: 0,
+  absent: 0,
+  inconclusive: false,
+} as const;
 
 export async function verifyAppCapabilities(appId: string): Promise<VerificationOutcome> {
   const database = db();
 
-  // Only what has not been asked about. A redeploy clears the stamp, so this
-  // is everything new plus anything the last deploy moved.
+  // Only what has not been asked about. A redeploy sets a moved capability
+  // back to pending, so this is everything new plus anything that shifted -
+  // and, once, everything that was stamped under the rule 0016 replaced.
   const pending = await database
     .select({
       name: capabilities.name,
@@ -37,14 +53,14 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
       probe: capabilities.probe,
     })
     .from(capabilities)
-    .where(and(eq(capabilities.appId, appId), isNull(capabilities.verifiedAt)));
+    .where(and(eq(capabilities.appId, appId), eq(capabilities.reach, "pending")));
 
   const deployment = await latestDeployment(appId);
   const url = deployment !== null && deployment.status === "live" ? deployment.url : null;
 
   if (url === null) {
     if (pending.length === 0) {
-      return { ok: true, verified: 0, rejected: 0, inconclusive: false };
+      return SETTLED;
     }
     return { ok: false, reason: "not-running" };
   }
@@ -54,7 +70,7 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
     token = await deploymentProvider().invocationToken(url);
   } catch {
     if (pending.length === 0) {
-      return { ok: true, verified: 0, rejected: 0, inconclusive: false };
+      return SETTLED;
     }
     return { ok: false, reason: "unreachable" };
   }
@@ -73,9 +89,7 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
       .where(eq(apps.id, appId));
   }
 
-  if (pending.length === 0) {
-    return { ok: true, verified: 0, rejected: 0, inconclusive: false };
-  }
+  if (pending.length === 0) return SETTLED;
 
   const outcome = await verifyCapabilities({
     origin,
@@ -94,15 +108,17 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
   if (!outcome.inconclusive) {
     await recordVerification({
       appId,
-      verified: outcome.verified,
-      rejected: outcome.rejected,
+      callable: outcome.callable,
+      refused: outcome.refused,
+      absent: outcome.absent,
     });
   }
 
   return {
     ok: true,
-    verified: outcome.verified.length,
-    rejected: outcome.rejected.length,
+    callable: outcome.callable.length,
+    refused: outcome.refused.length,
+    absent: outcome.absent.length,
     inconclusive: outcome.inconclusive,
   };
 }

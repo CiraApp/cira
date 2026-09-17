@@ -230,7 +230,7 @@ export async function replaceCapabilities(args: {
         .update(capabilities)
         .set({
           ...columns(entry.detected, entry.enabled),
-          ...(moved ? { verifiedAt: null } : {}),
+          ...(moved ? { verifiedAt: null, reach: "pending" as const } : {}),
         })
         .where(eq(capabilities.id, entry.id));
     }),
@@ -243,46 +243,49 @@ export async function replaceCapabilities(args: {
 /**
  * Record what the deployed app said about the capabilities credited to it.
  *
- * Those it will not answer for are deleted rather than kept and flagged: a
+ * Those it has no route for are deleted rather than kept and flagged: a
  * capability nothing serves is not a finding, it is a mistake, and leaving it
  * in the table means every reader has to know to skip it.
+ *
+ * A refusal is the opposite case and is kept. The route is real and the
+ * analysis was right about it; the only thing missing is a way for Cira to be
+ * somebody the app will talk to. Deleting those would throw away a true
+ * description of the app and leave the page with nothing to explain, which is
+ * how nineteen working routes came to look like nineteen mysterious 401s.
  */
 export async function recordVerification(args: {
   appId: string;
-  verified: readonly string[];
-  rejected: readonly string[];
+  callable: readonly string[];
+  refused: readonly string[];
+  absent: readonly string[];
 }): Promise<void> {
   const database = db();
   const stamped = new Date();
 
-  // One answer from the app, so one write. Splitting it would allow a state
-  // where the rejected ones are gone but the confirmed ones are still waiting
-  // to be confirmed, which is no app's actual answer.
-  await atomically(database, (on) => [
-    ...(args.rejected.length > 0
-      ? [
-          on
-            .delete(capabilities)
-            .where(
-              and(
-                eq(capabilities.appId, args.appId),
-                inArray(capabilities.name, [...args.rejected]),
-              ),
-            ),
-        ]
-      : []),
+  const mine = (names: readonly string[]) =>
+    and(eq(capabilities.appId, args.appId), inArray(capabilities.name, [...names]));
 
-    ...(args.verified.length > 0
+  // One answer from the app, so one write. Splitting it would allow a state
+  // where the absent ones are gone but the confirmed ones are still waiting to
+  // be confirmed, which is no app's actual answer.
+  await atomically(database, (on) => [
+    ...(args.absent.length > 0 ? [on.delete(capabilities).where(mine(args.absent))] : []),
+
+    ...(args.callable.length > 0
       ? [
           on
             .update(capabilities)
-            .set({ verifiedAt: stamped, updatedAt: stamped })
-            .where(
-              and(
-                eq(capabilities.appId, args.appId),
-                inArray(capabilities.name, [...args.verified]),
-              ),
-            ),
+            .set({ reach: "callable", verifiedAt: stamped, updatedAt: stamped })
+            .where(mine(args.callable)),
+        ]
+      : []),
+
+    ...(args.refused.length > 0
+      ? [
+          on
+            .update(capabilities)
+            .set({ reach: "refused", verifiedAt: stamped, updatedAt: stamped })
+            .where(mine(args.refused)),
         ]
       : []),
   ]);
@@ -390,13 +393,15 @@ function toCapability(row: CapabilityRow): Capability {
     // It was always withheld exactly as a write was, so reading it as one
     // loses nothing and keeps a single meaning in the rest of the code.
     risk: row.risk === "read" ? "read" : "write",
-    // Unverified is not enabled, whatever the policy decided. Publication is
-    // settled when the capability is detected; whether the app actually serves
-    // it is settled later, by asking. Folding the two here means every reader -
-    // the panel, the agent surface, invocation - gets the same answer from one
-    // rule rather than each remembering to check.
-    enabled: row.enabled && row.verifiedAt !== null,
-    verified: row.verifiedAt !== null,
+    // Anything the app has not said yes to is not enabled, whatever the policy
+    // decided. Publication is settled when the capability is detected; whether
+    // the app will actually let Cira call it is settled later, by asking.
+    // Folding the two here means every reader - the panel, the agent surface,
+    // invocation - gets the same answer from one rule rather than each
+    // remembering to check. That is also why widening it from a boolean fixed
+    // the agent surface without the agent surface being touched.
+    enabled: row.enabled && row.reach === "callable",
+    reach: row.reach,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

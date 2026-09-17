@@ -56,8 +56,8 @@ describe("verifyCapabilities", () => {
       ],
     });
 
-    expect(result.verified).toEqual(["listOrders"]);
-    expect(result.rejected).toEqual(["listGhosts"]);
+    expect(result.callable).toEqual(["listOrders"]);
+    expect(result.absent).toEqual(["listGhosts"]);
     expect(result.inconclusive).toBe(false);
   });
 
@@ -90,8 +90,8 @@ describe("verifyCapabilities", () => {
       ],
     });
 
-    expect(result.verified).toEqual(["createOrder"]);
-    expect(result.rejected).toEqual(["replaceOrder"]);
+    expect(result.callable).toEqual(["createOrder"]);
+    expect(result.absent).toEqual(["replaceOrder"]);
   });
 
   /**
@@ -108,7 +108,7 @@ describe("verifyCapabilities", () => {
       capabilities: [read("listOrders", "/api/v1/orders")],
     });
 
-    expect(result).toEqual({ verified: [], rejected: [], inconclusive: true });
+    expect(result).toEqual({ callable: [], refused: [], absent: [], inconclusive: true });
   });
 
   it("puts a harmless value where a path parameter goes", async () => {
@@ -120,7 +120,7 @@ describe("verifyCapabilities", () => {
       capabilities: [read("getOrder", "/api/v1/orders/{order_id}")],
     });
 
-    expect(result.verified).toEqual(["getOrder"]);
+    expect(result.callable).toEqual(["getOrder"]);
     expect(seen.some((s) => s.path.includes("cira-probe"))).toBe(true);
   });
 
@@ -140,11 +140,16 @@ describe("verifyCapabilities", () => {
   });
 
   /**
-   * An app that routed the request has the route, whatever it then did with
-   * it. Deleting a capability because the handler threw, or because the app
-   * has its own login, would be wrong.
+   * This test used to assert the opposite - that a 401 confirmed the
+   * capability - and asserting that is what published nineteen of Wave's
+   * routes to agents as ready to call when not one of them could be called.
+   *
+   * Both halves of it are real answers and they are different answers. The
+   * route is there, so it is not deleted; Cira cannot get through it, so it
+   * is not offered. There was no third state to put that in, so it went in
+   * the wrong one.
    */
-  it("counts a route that exists but refuses", async () => {
+  it("separates a route that refuses from one that is not there", async () => {
     const fetcher = async (url: string): Promise<Response> =>
       new URL(url).pathname === "/api/v1/orders"
         ? new Response(null, { status: 401 })
@@ -156,7 +161,98 @@ describe("verifyCapabilities", () => {
       capabilities: [read("listOrders", "/api/v1/orders")],
     });
 
-    expect(result.verified).toEqual(["listOrders"]);
+    expect(result.refused).toEqual(["listOrders"]);
+    expect(result.callable).toEqual([]);
+    expect(result.absent).toEqual([]);
+  });
+
+  it("treats a forbidden route the same as an unauthorized one", async () => {
+    const fetcher = async (url: string): Promise<Response> =>
+      new URL(url).pathname === "/api/v1/orders"
+        ? new Response(null, { status: 403 })
+        : new Response(null, { status: 404 });
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [read("listOrders", "/api/v1/orders")],
+    });
+
+    expect(result.refused).toEqual(["listOrders"]);
+  });
+
+  /**
+   * A refusal is about the door, not about the room. Anything the app's own
+   * code produced - a 400 saying the probe value was wrong, a 500 from inside
+   * the handler - means Cira got through, which is the thing being measured.
+   */
+  it("counts a route that answered badly as one Cira can reach", async () => {
+    const fetcher = async (url: string): Promise<Response> => {
+      const { pathname } = new URL(url);
+      if (pathname === "/api/v1/orders") return new Response(null, { status: 422 });
+      if (pathname === "/api/v1/reports") return new Response(null, { status: 500 });
+      return new Response(null, { status: 404 });
+    };
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [
+        read("listOrders", "/api/v1/orders"),
+        read("listReports", "/api/v1/reports"),
+      ],
+    });
+
+    expect(result.callable.sort()).toEqual(["listOrders", "listReports"]);
+    expect(result.refused).toEqual([]);
+  });
+
+  it("refuses a write whose methods the app will not disclose", async () => {
+    const fetcher = async (url: string): Promise<Response> =>
+      new URL(url).pathname === "/api/v1/orders"
+        ? new Response(null, { status: 401 })
+        : new Response(null, { status: 404 });
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [write("createOrder", "POST", "/api/v1/orders")],
+    });
+
+    expect(result.refused).toEqual(["createOrder"]);
+    expect(result.absent).toEqual([]);
+  });
+
+  /**
+   * The other half of the same mistake, in the other direction: `ask` returns
+   * null when the app did not answer at all, and that used to be read as
+   * "no such route" - which deleted the capability. Its own comment said that
+   * was not the intent.
+   */
+  it("leaves a capability alone when the app did not answer about it", async () => {
+    const fetcher = async (url: string): Promise<Response> => {
+      const { pathname } = new URL(url);
+      // The control still answers, so the run itself is conclusive.
+      if (pathname.startsWith("/__cira-probe-")) {
+        return new Response(null, { status: 404 });
+      }
+      if (pathname === "/api/v1/orders") throw new Error("timed out");
+      return new Response("{}", { status: 200 });
+    };
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [
+        read("listOrders", "/api/v1/orders"),
+        read("listReports", "/api/v1/reports"),
+      ],
+    });
+
+    expect(result.inconclusive).toBe(false);
+    expect(result.callable).toEqual(["listReports"]);
+    // Named nowhere, so nothing is recorded for it and it is asked again.
+    expect([...result.refused, ...result.absent]).not.toContain("listOrders");
   });
 
   // Briefly unreachable is not the same as absent, and treating it as absent
@@ -178,7 +274,12 @@ describe("verifyCapabilities", () => {
   it("does nothing when there is nothing to check", async () => {
     const { fetcher, seen } = app({});
     const result = await verifyCapabilities({ ...base, fetcher, capabilities: [] });
-    expect(result).toEqual({ verified: [], rejected: [], inconclusive: false });
+    expect(result).toEqual({
+      callable: [],
+      refused: [],
+      absent: [],
+      inconclusive: false,
+    });
     expect(seen).toHaveLength(0);
   });
 });
@@ -216,9 +317,9 @@ describe("a path can never leave the app it belongs to", () => {
     });
 
     // The control proves probing really happened: the honest one came back.
-    expect(result.verified).toEqual(["honest"]);
+    expect(result.callable).toEqual(["honest"]);
     expect(result.inconclusive).toBe(false);
-    expect(result.rejected.sort()).toEqual(["poster", "schemeless", "stealer"]);
+    expect(result.absent.sort()).toEqual(["poster", "schemeless", "stealer"]);
     expect(reached.join(" ")).not.toContain("evil.test");
   });
 });

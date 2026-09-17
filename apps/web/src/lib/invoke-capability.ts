@@ -45,6 +45,27 @@ export async function invokeCapability(args: {
   const capability = await getCapabilityForUser(args.user, args.capabilityId);
   if (capability === null) return { ok: false, error: NO_SUCH_CAPABILITY };
 
+  // Asked before `enabled`, because `enabled` is false for both of these and
+  // the sentence it offers - go and ask an admin - is only true for one of
+  // them. Telling an agent to get a refused capability switched on sends it
+  // after something nobody can do.
+  if (capability.reach === "refused") {
+    return {
+      ok: false,
+      error:
+        `${capability.appName} serves ${capability.name} but will not let Cira ` +
+        `call it: the app signs its own users in. Nothing in Cira can turn ` +
+        `this on.`,
+    };
+  }
+
+  if (capability.reach === "pending") {
+    return {
+      ok: false,
+      error: `Cira has not confirmed ${capability.name} with ${capability.appName} yet.`,
+    };
+  }
+
   if (!capability.enabled) {
     return {
       ok: false,

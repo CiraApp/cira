@@ -39,11 +39,23 @@ export interface ProbeTarget {
   probe?: Record<string, unknown> | undefined;
 }
 
+/**
+ * What the app said about one capability.
+ *
+ * Four answers rather than two, because the two hid the interesting ones.
+ * `refused` used to be filed as confirmation, and `unknown` used to be filed
+ * as absence - so a guarded route was published as ready, and a route that
+ * timed out was deleted.
+ */
+export type Reach = "callable" | "refused" | "absent" | "unknown";
+
 export interface Verification {
-  /** Names the app answered for. */
-  verified: string[];
-  /** Names the app has no route for. */
-  rejected: string[];
+  /** The app answered, so Cira can really call these. */
+  callable: string[];
+  /** The app serves these and would not let Cira through. */
+  refused: string[];
+  /** The app has no route for these. */
+  absent: string[];
   /**
    * True when the app answers everything, so no probe distinguishes anything.
    * Nothing is verified in that case - a catch-all that returns 200 for a path
@@ -51,6 +63,14 @@ export interface Verification {
    */
   inconclusive: boolean;
 }
+
+/** An empty answer, for the several ways there is nothing to say. */
+const NOTHING: Verification = {
+  callable: [],
+  refused: [],
+  absent: [],
+  inconclusive: false,
+};
 
 type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -64,9 +84,7 @@ export async function verifyCapabilities(args: {
   const fetcher = args.fetcher ?? ((url, init) => fetch(url, init));
   const names = args.capabilities.map((c) => c.name);
 
-  if (args.capabilities.length === 0) {
-    return { verified: [], rejected: [], inconclusive: false };
-  }
+  if (args.capabilities.length === 0) return NOTHING;
 
   // The control comes first, and its failure ends the exercise. Verifying
   // against an app that answers everything is worse than not verifying: it
@@ -76,43 +94,54 @@ export async function verifyCapabilities(args: {
     path: `/__cira-probe-${Math.random().toString(36).slice(2, 10)}`,
   });
 
-  if (control !== 404) {
-    return { verified: [], rejected: [], inconclusive: true };
-  }
+  // An app that refuses unknown paths as well as real ones tells us nothing
+  // by refusing a real one, so the control catches that case too: it comes
+  // back 401 rather than 404, and the whole run is inconclusive.
+  if (control !== 404) return { ...NOTHING, inconclusive: true };
 
-  const verified: string[] = [];
-  const rejected: string[] = [];
+  const callable: string[] = [];
+  const refused: string[] = [];
+  const absent: string[] = [];
 
   for (let i = 0; i < args.capabilities.length; i += CONCURRENCY) {
     const batch = args.capabilities.slice(i, i + CONCURRENCY);
     const outcomes = await Promise.all(
       batch.map(async (capability) => ({
         capability,
-        exists: await exists(fetcher, args, capability),
+        reach: await reachOf(fetcher, args, capability),
       })),
     );
 
-    for (const { capability, exists: ok } of outcomes) {
-      (ok ? verified : rejected).push(capability.name);
+    for (const { capability, reach } of outcomes) {
+      // `unknown` lands in none of them on purpose. A capability the app did
+      // not answer about stays pending and is asked again next time, which is
+      // the difference between a slow app and an app that does not serve it.
+      if (reach === "callable") callable.push(capability.name);
+      else if (reach === "refused") refused.push(capability.name);
+      else if (reach === "absent") absent.push(capability.name);
     }
   }
 
   void names;
-  return { verified, rejected, inconclusive: false };
+  return { callable, refused, absent, inconclusive: false };
 }
 
 /**
- * Does the app serve this?
+ * What does the app say about this?
  *
- * A read is called; anything but 404 means the route is there, because an app
- * refusing on its own authentication, or failing inside a handler, has still
- * routed the request. A write is only asked which methods it allows.
+ * A read is called and a write is only asked which methods it allows, which
+ * cannot change anything.
+ *
+ * The distinction that matters is between a route that is not there and a
+ * route that is there and shut. Both used to read as "the request was routed,
+ * so the capability is real", and only the first of those is a reason to
+ * publish it: an agent handed the second gets a 401 and no idea why.
  */
-async function exists(
+async function reachOf(
   fetcher: Fetcher,
   args: { origin: string; token: string },
   capability: ProbeTarget,
-): Promise<boolean> {
+): Promise<Reach> {
   const path = fill(capability.path, capability.probe);
 
   // Re-checked here even though nothing malformed should have been stored,
@@ -121,23 +150,49 @@ async function exists(
   // the path is absolute, so an unchecked `https://elsewhere/` would send that
   // credential somewhere else - and this call happens on every deploy with
   // nobody watching.
-  if (!isSafeTargetPath(path)) return false;
+  if (!isSafeTargetPath(path)) return "absent";
 
   if (capability.risk === "read") {
     const status = await ask(fetcher, args, {
       method: capability.method === "HEAD" ? "HEAD" : "GET",
       path: withQuery(path, capability.probe),
     });
-    return status !== null && status !== 404;
+    return read(status);
   }
 
   // `Allow` on a 405 is the useful answer: it names the methods this path
   // really serves, and asking for it cannot have changed anything.
   const allow = await allowed(fetcher, args, path);
-  if (allow === null) return false;
-  if (allow.status === 404) return false;
-  if (allow.methods.length === 0) return true;
-  return allow.methods.includes(capability.method.toUpperCase());
+  if (allow === null) return "unknown";
+  if (shut(allow.status)) return "refused";
+  if (allow.status === 404) return "absent";
+  if (allow.methods.length === 0) return "callable";
+  return allow.methods.includes(capability.method.toUpperCase()) ? "callable" : "absent";
+}
+
+/** What one status code means about a route. */
+function read(status: number | null): Reach {
+  // Not an answer at all. Asked again next time rather than acted on, because
+  // the alternative is deleting an app's capabilities because it was briefly
+  // slow.
+  if (status === null) return "unknown";
+  if (status === 404) return "absent";
+  if (shut(status)) return "refused";
+  // Anything else routed and ran: a 200, a 400 saying the probe value was
+  // wrong, even a 500 from inside the handler. All of them prove Cira got
+  // through to the app's own code, which is what calling it requires.
+  return "callable";
+}
+
+/**
+ * Is this the app turning Cira away at its own door?
+ *
+ * 401 and 403 only. Cloud Run answers 403 before the app sees anything when
+ * the token is wrong, but that fails the control probe first and the whole run
+ * is inconclusive, so a 403 reaching here came from the app.
+ */
+function shut(status: number): boolean {
+  return status === 401 || status === 403;
 }
 
 async function ask(

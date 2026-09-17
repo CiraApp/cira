@@ -40,8 +40,9 @@ interface CapabilitiesResponse {
 }
 
 interface VerifyResponse {
-  verified: number;
-  rejected: number;
+  callable: number;
+  refused: number;
+  absent: number;
   inconclusive: boolean;
 }
 
@@ -510,11 +511,26 @@ function reportCapabilities(
   }
 
   const reads = result.detected.filter((c) => c.risk === "read").length;
-  const parts = [`${confirmed.verified} confirmed by the app`];
-  if (confirmed.rejected > 0) parts.push(`${confirmed.rejected} it does not serve`);
+  const parts = [`${confirmed.callable} confirmed by the app`];
+  if (confirmed.absent > 0) parts.push(`${confirmed.absent} it does not serve`);
+  if (confirmed.refused > 0)
+    parts.push(`${confirmed.refused} it would not let Cira call`);
   info(`  ${parts.join(", ")}`);
 
-  if (confirmed.verified > reads) {
+  // Worth its own line, because it is the one outcome a developer can do
+  // something about and the one that used to be invisible. These routes are
+  // real and the description of them is right; the app just asks whoever calls
+  // it to sign in, and Cira is not one of its users. Said here rather than
+  // only on the app's page because this is the moment the person who could
+  // change it is looking at the terminal.
+  if (confirmed.refused > 0) {
+    info(
+      dim(`  Those ${confirmed.refused} are real routes behind your app's own sign-in.`),
+    );
+    info(dim("  Agents cannot reach them until the app lets Cira in."));
+  }
+
+  if (confirmed.callable > reads) {
     info(dim("  Anything that writes stays off until someone turns it on."));
   }
   info("");

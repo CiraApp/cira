@@ -45,7 +45,7 @@ export function CapabilityPanel({
 }) {
   const router = useRouter();
   const asked = useRef(false);
-  const waiting = capabilities.some((capability) => !capability.verified);
+  const waiting = capabilities.some((capability) => capability.reach === "pending");
 
   // Anything still waiting to be asked about gets asked about, here, because
   // somebody is looking. Finding a capability and confirming it are two acts,
@@ -80,9 +80,10 @@ export function CapabilityPanel({
     );
   }
 
-  const checking = capabilities.filter((c) => !c.verified);
-  const live = capabilities.filter((c) => c.verified && c.enabled);
-  const review = capabilities.filter((c) => c.verified && !c.enabled);
+  const checking = capabilities.filter((c) => c.reach === "pending");
+  const live = capabilities.filter((c) => c.reach === "callable" && c.enabled);
+  const review = capabilities.filter((c) => c.reach === "callable" && !c.enabled);
+  const refused = capabilities.filter((c) => c.reach === "refused");
 
   return (
     <section className="enter-up mt-10">
@@ -114,6 +115,19 @@ export function CapabilityPanel({
           note="Registered, but off until someone turns them on."
           items={review}
           canManage={canManage}
+        />
+        {/*
+          Shown rather than hidden, and shown with the reason. These are real
+          routes correctly described - the app served every one of them - and
+          the only thing standing between an agent and them is that the app
+          signs its own users in and Cira is not one of them. No switch,
+          because there is nothing here a person can turn on.
+        */}
+        <Group
+          title="Refused"
+          note="Real routes behind the app's own sign-in. Agents cannot reach them."
+          items={refused}
+          canManage={false}
         />
       </div>
     </section>

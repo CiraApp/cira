@@ -43,6 +43,32 @@ export const CAPABILITY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as c
 
 export type CapabilityMethod = (typeof CAPABILITY_METHODS)[number];
 
+/**
+ * What happened when Cira asked the app about a capability.
+ *
+ * This was a boolean called `verified`, and the boolean was the bug. Asking
+ * "did the app answer for this?" collapsed two different answers into one:
+ * an app that served the route and an app that served the route and refused
+ * to let Cira through it. Anything but a 404 counted as confirmation, so a
+ * 401 published the capability as ready to use.
+ *
+ * It was not a theoretical hole. Every one of Wave's nineteen enabled reads
+ * was published this way, and every one of them returned 401 to the first
+ * agent that tried, after Cira had told it they were available. The third
+ * state is what stops Cira being confidently wrong about its own shelf:
+ * a refusal is a real answer, it is just not a yes.
+ */
+export type CapabilityReach =
+  /** Nothing has asked the app yet. */
+  | "pending"
+  /** The app answered, so Cira can really call this. */
+  | "callable"
+  /**
+   * The app serves the route and would not let Cira in - almost always
+   * because it signs its own users in and Cira is not one of them.
+   */
+  | "refused";
+
 export interface CapabilityTarget {
   type: "http";
   method: CapabilityMethod;
@@ -63,14 +89,14 @@ export interface Capability {
   risk: CapabilityRisk;
   enabled: boolean;
   /**
-   * Whether the deployed app has answered for this.
+   * What the deployed app said when Cira asked about this.
    *
    * Separate from `enabled` because they say different things. `enabled` is
-   * the decision - policy, or a person's - and `verified` is whether the route
-   * is really there. Both must hold before an agent is offered anything, and
-   * the difference is what lets a page say "checking" rather than "off".
+   * the decision - policy, or a person's - and this is what the app itself
+   * reported. Both must hold before an agent is offered anything, and the
+   * difference is what lets a page say "checking" rather than "off".
    */
-  verified: boolean;
+  reach: CapabilityReach;
   createdAt: Date;
   updatedAt: Date;
 }

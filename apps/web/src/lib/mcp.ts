@@ -176,6 +176,22 @@ async function invokeTool(
  * The risk grade is included deliberately: an agent deciding whether to ask
  * its human first should be able to see that something writes.
  */
+/**
+ * Why an agent cannot run this, in the agent's own terms.
+ *
+ * `enabled: false` on its own reads as "ask an admin", and for a capability
+ * the app itself refuses that is a wild goose chase: there is no switch. The
+ * first agent to meet this spent its last turns proposing that someone enable
+ * a login capability, which would not have helped either.
+ */
+const UNAVAILABLE: Record<"pending" | "refused", string> = {
+  pending: "Cira has not confirmed this with the app yet. Try again shortly.",
+  refused:
+    "The app serves this route and will not let Cira call it, because it signs " +
+    "its own users in and Cira is not one of them. No setting in Cira changes " +
+    "that, so do not suggest enabling it.",
+};
+
 function brief(capability: CapabilityWithApp) {
   return {
     capabilityId: capability.id,
@@ -184,5 +200,8 @@ function brief(capability: CapabilityWithApp) {
     app: capability.appName,
     risk: capability.risk,
     enabled: capability.enabled,
+    ...(capability.reach === "callable"
+      ? {}
+      : { unavailable: UNAVAILABLE[capability.reach] }),
   };
 }

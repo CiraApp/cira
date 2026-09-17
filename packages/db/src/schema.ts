@@ -47,6 +47,12 @@ export const capabilityRiskEnum = pgEnum("capability_risk", [
  * apps really serve, and a great many operations are a PATCH or a DELETE.
  * Adding values to an enum is additive; nothing already stored changes.
  */
+export const capabilityReachEnum = pgEnum("capability_reach", [
+  "pending",
+  "callable",
+  "refused",
+]);
+
 export const capabilityMethodEnum = pgEnum("capability_method", [
   "GET",
   "POST",
@@ -568,10 +574,20 @@ export const capabilities = pgTable(
      */
     confidence: doublePrecision("confidence"),
     /**
-     * When the deployed app answered for this, or null when nothing has asked
-     * it yet. Nothing unverified is published or offered to an agent.
+     * When the deployed app last answered about this, or null when nothing has
+     * asked it yet. A refusal is an answer, so this is stamped for those too;
+     * `reach` is what says which answer it was.
      */
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /**
+     * What the app said. Only `callable` is published or offered to an agent.
+     *
+     * `refused` exists because the alternative was publishing it anyway: this
+     * used to be inferred from `verifiedAt`, which was stamped for anything
+     * that was not a 404, so a route the app guards behind its own login was
+     * indistinguishable from one Cira could actually call.
+     */
+    reach: capabilityReachEnum("reach").notNull().default("pending"),
     /**
      * An example input, for reads, used once to ask the app whether the route
      * is there. Never sent to an agent and never used for a write - a write is

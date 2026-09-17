@@ -52,8 +52,16 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({
-    verified: outcome.verified,
-    rejected: outcome.rejected,
+    callable: outcome.callable,
+    refused: outcome.refused,
+    absent: outcome.absent,
     inconclusive: outcome.inconclusive,
+    // The names the CLI used before there was a third answer. Copies of it are
+    // installed on people's machines and cannot be updated from here, and both
+    // still mean exactly what they said: how many the app confirmed, and how
+    // many it has no route for. An older CLI simply does not mention the
+    // refused ones, which is what it did anyway.
+    verified: outcome.callable,
+    rejected: outcome.absent,
   });
 }
