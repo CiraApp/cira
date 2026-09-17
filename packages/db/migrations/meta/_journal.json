@@ -78,6 +78,20 @@
       "when": 1789620357160,
       "tag": "0010_lush_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789623527114,
+      "tag": "0011_chubby_kulan_gath",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789623538770,
+      "tag": "0012_one_service_per_existing_app",
+      "breakpoints": true
     }
   ]
 }

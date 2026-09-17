@@ -308,6 +308,13 @@ export const deployments = pgTable(
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
     provider: text("provider").notNull(),
+    /**
+     * Which service this deploy was of. Null on rows written before an app
+     * could have more than one, which all belonged to its only service.
+     */
+    serviceId: text("service_id").references(() => services.id, {
+      onDelete: "cascade",
+    }),
     providerDeploymentId: text("provider_deployment_id").notNull(),
     status: deploymentStatusEnum("status").notNull().default("queued"),
     url: text("url"),
@@ -315,6 +322,61 @@ export const deployments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("deployments_app_idx").on(t.appId)],
+);
+
+/**
+ * One deployable thing inside an app.
+ *
+ * An app is what a company runs - Wave, the payroll tool, the ticket console -
+ * and a great deal of real software is more than one process: a frontend and
+ * the API behind it, most commonly. Those are not two entries on a shelf. They
+ * are one product, and a shelf that shows the topology instead of the product
+ * is a worse shelf.
+ *
+ * So the app stays the unit people see and this is the unit that gets built,
+ * deployed, torn down and reported on. An ordinary single-process app has
+ * exactly one of these and nothing about it looks different.
+ *
+ * `routes` is what makes several services answer on one address. The Worker
+ * sends a request to the service whose prefixes match it and to the front door
+ * otherwise, which keeps the whole app same-origin: one certificate, one
+ * session cookie, no CORS, and no app rewritten to suit the platform hosting
+ * it. An empty list means the service claims no paths of its own.
+ */
+export const services = pgTable(
+  "services",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    /** Names it to a person, and forms the first part of any address it has. */
+    slug: text("slug").notNull(),
+    /** Where in the repository it is built from. Empty string for the root. */
+    sourcePath: text("source_path").notNull().default(""),
+    /** The Dockerfile it asked to be built with, relative to the repository. */
+    dockerfile: text("dockerfile"),
+    /** The port its Dockerfile declared, when it declared one. */
+    port: text("port"),
+    /**
+     * Path prefixes this service answers, as `/api/v1` - matched against the
+     * front of a request path. Stored rather than worked out per request
+     * because the Worker has no way to ask.
+     */
+    routes: jsonb("routes").notNull().default([]),
+    /**
+     * Whether this service answers a browser, settled by asking it. The one
+     * that does is the app's front door; see `apps.has_web_ui`, which asks the
+     * same question of an app with a single service.
+     */
+    hasWebUi: boolean("has_web_ui"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("services_app_slug_idx").on(t.appId, t.slug),
+    index("services_app_idx").on(t.appId),
+  ],
 );
 
 export const invites = pgTable(

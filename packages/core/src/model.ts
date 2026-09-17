@@ -83,6 +83,69 @@ export interface App {
 }
 
 /**
+ * One deployable thing inside an app.
+ *
+ * The app is what a company runs and what a person clicks; this is what gets
+ * built and deployed. Most apps have exactly one and nobody ever thinks about
+ * it. An app with a frontend and an API behind it has two, on one address,
+ * told apart by the paths each one answers.
+ */
+export interface Service {
+  id: string;
+  appId: AppId;
+  slug: string;
+  /** Where in the repository it is built from. Empty for the root. */
+  sourcePath: string;
+  dockerfile: string | null;
+  port: string | null;
+  /**
+   * Path prefixes this service claims, matched against the front of a request
+   * path. Empty means it claims none, which for the front door is the point:
+   * it answers everything nothing else asked for.
+   */
+  routes: string[];
+  /** Whether it answers a browser. Null until it has been asked. */
+  hasWebUi: boolean | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Which service should answer this path.
+ *
+ * The longest claim wins, so a service claiming `/api/v1/admin` is reachable
+ * even when another claims `/api`. Nothing matching is not an error: it is the
+ * ordinary case, and it belongs to the front door.
+ *
+ * Written here rather than in the proxy because the proxy is the one piece of
+ * Cira that runs somewhere else, and a routing rule that lives in two places
+ * is a routing rule that will eventually disagree with itself.
+ */
+export function serviceForPath(
+  services: readonly Service[],
+  path: string,
+): Service | null {
+  let best: Service | null = null;
+  let longest = 0;
+
+  for (const service of services) {
+    for (const route of service.routes) {
+      const prefix = route.endsWith("/") ? route.slice(0, -1) : route;
+      if (prefix === "") continue;
+      // A prefix matches a whole segment or the whole path, never half a word:
+      // `/api` must not capture `/apiary`.
+      if (path !== prefix && !path.startsWith(`${prefix}/`)) continue;
+      if (prefix.length > longest) {
+        longest = prefix.length;
+        best = service;
+      }
+    }
+  }
+
+  return best;
+}
+
+/**
  * Who can see and open an app.
  *
  * `space` grants every member of the app's space, `team` grants everyone on a

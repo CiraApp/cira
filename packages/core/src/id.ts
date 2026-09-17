@@ -14,6 +14,7 @@ export const ID_PREFIXES = {
   app: "app",
   access: "acc",
   deployment: "dep",
+  service: "svc",
   invite: "inv",
   capability: "cap",
   /** An uploaded source archive. Not a row: it names an object in a bucket. */

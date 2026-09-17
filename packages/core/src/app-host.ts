@@ -33,6 +33,25 @@ const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export interface AppAddress {
   appSlug: string;
   spaceSlug: string;
+  /**
+   * One service inside the app, when the address names a part rather than the
+   * whole: `api--wave--paradym`. Absent for the app's own front door, which is
+   * what almost every address is.
+   *
+   * A third part costs nothing that the second did not already cost. It is
+   * still one DNS label, so the free wildcard certificate still covers it, and
+   * `--` still cannot occur inside a slug - so two parts and three parts are
+   * told apart by counting, with no ambiguity to resolve and no list of
+   * reserved names to maintain.
+   *
+   * Most apps will never need one. An app whose halves talk over paths on a
+   * single origin is better off that way: one address, one cookie, no CORS.
+   * This exists for the app that cannot be arranged like that - a backend
+   * serving at the root, or a frontend written to call an absolute origin -
+   * so that supporting it later never has to change an address already in
+   * somebody's browser history.
+   */
+  serviceSlug?: string;
 }
 
 /**
@@ -43,10 +62,13 @@ export interface AppAddress {
  * from the app it belongs to is an address that can drift from it.
  */
 export function appLabel(address: AppAddress): string | null {
-  const { appSlug, spaceSlug } = address;
-  if (!SLUG.test(appSlug) || !SLUG.test(spaceSlug)) return null;
+  const { appSlug, spaceSlug, serviceSlug } = address;
 
-  const label = `${appSlug}${SEPARATOR}${spaceSlug}`;
+  const parts =
+    serviceSlug === undefined ? [appSlug, spaceSlug] : [serviceSlug, appSlug, spaceSlug];
+  if (!parts.every((part) => SLUG.test(part))) return null;
+
+  const label = parts.join(SEPARATOR);
   return label.length > MAX_LABEL ? null : label;
 }
 
@@ -59,20 +81,23 @@ export function appHost(address: AppAddress, appsDomain: string): string | null 
 /**
  * Read an address back out of a hostname.
  *
- * Split on the first separator, because an app slug cannot contain one and a
- * space slug cannot either - so a second occurrence means the hostname was not
- * one of ours, and saying no is better than guessing which half is which.
+ * Counting the parts is the whole of it, because no slug can contain the
+ * separator: two means the app itself, three means one service inside it, and
+ * anything else was never one of ours. Saying no is better than guessing which
+ * piece is which.
  */
 export function parseAppLabel(label: string): AppAddress | null {
-  const lower = label.toLowerCase();
-  const parts = lower.split(SEPARATOR);
-  if (parts.length !== 2) return null;
+  const parts = label.toLowerCase().split(SEPARATOR);
+  if (parts.length < 2 || parts.length > 3) return null;
+  if (!parts.every((part) => SLUG.test(part))) return null;
 
-  const [appSlug, spaceSlug] = parts;
-  if (appSlug === undefined || spaceSlug === undefined) return null;
-  if (!SLUG.test(appSlug) || !SLUG.test(spaceSlug)) return null;
+  if (parts.length === 2) {
+    const [appSlug, spaceSlug] = parts as [string, string];
+    return { appSlug, spaceSlug };
+  }
 
-  return { appSlug, spaceSlug };
+  const [serviceSlug, appSlug, spaceSlug] = parts as [string, string, string];
+  return { serviceSlug, appSlug, spaceSlug };
 }
 
 /** The same, from a full hostname under the apps domain. */
