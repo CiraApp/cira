@@ -201,19 +201,27 @@ export async function analyzeCapabilities(
 
   let parsed;
   try {
-    const response = await client.messages.parse({
-      model: "claude-opus-5",
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM,
-      thinking: { type: "adaptive" },
-      output_config: { format: zodOutputFormat(analysis) },
-      messages: [
-        {
-          role: "user",
-          content: `App name: ${options.appName}\n\nSource:\n\n${source}`,
-        },
-      ],
-    });
+    // Streamed, and not because anything reads the stream. A whole repository
+    // of input against a large output budget is a request the SDK will not
+    // send any other way - it refuses up front for anything that could run
+    // past ten minutes, and the refusal surfaced as one line at the end of a
+    // deploy saying capabilities were not analyzed. `finalMessage` waits for
+    // the whole thing and carries the parsed output, so nothing else changes.
+    const response = await client.messages
+      .stream({
+        model: "claude-opus-5",
+        max_tokens: MAX_TOKENS,
+        system: SYSTEM,
+        thinking: { type: "adaptive" },
+        output_config: { format: zodOutputFormat(analysis) },
+        messages: [
+          {
+            role: "user",
+            content: `App name: ${options.appName}\n\nSource:\n\n${source}`,
+          },
+        ],
+      })
+      .finalMessage();
     parsed = response.parsed_output;
   } catch (error) {
     return {
