@@ -45,7 +45,7 @@ export function Wordmark({ href }: { href: Route }) {
       className="group flex shrink-0 items-center gap-[6px] rounded-[var(--radius-edge)] px-2.5 py-1.5 text-ink-subtle transition-colors duration-200 hover:text-ink"
     >
       <CiraMark className="h-[18px] w-auto transition-transform duration-300 ease-[var(--ease-spring)] group-hover:scale-110" />
-      <CiraWordmark className="h-[15px] w-auto -translate-y-[2px]" />
+      <CiraWordmark className="h-[13px] w-auto" />
     </Link>
   );
 }

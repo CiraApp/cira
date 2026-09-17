@@ -13,9 +13,11 @@ import { updateAppDetails } from "@/lib/app-settings-actions";
  * a generated description, a name that was the folder's rather than the
  * product's. Fixing those should not feel like going into settings.
  *
- * So the text becomes the field. Nothing moves when editing starts, because
- * the inputs are sized and weighted to sit exactly where the text sat; the
- * page does not reflow around a form appearing inside it.
+ * So the text becomes the field, and looks like the text the whole time. No
+ * filled boxes, no heavy borders, nothing that reads as a form dropped into
+ * the page - just a hairline saying the words can be typed in, and the app's
+ * own colour picking it out once they are. Nothing moves when editing starts,
+ * because the inputs sit exactly where the text sat.
  */
 export function AppIdentity({
   spaceSlug,
@@ -116,9 +118,10 @@ export function AppIdentity({
         }}
         aria-label="App name"
         maxLength={60}
-        // Sized and weighted like the heading it replaces, so beginning to
-        // edit moves nothing on the page.
-        className="w-full rounded-[var(--radius-edge)] border border-line bg-sunken px-2 py-0.5 text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink outline-none focus:border-[rgb(var(--glow)/0.55)]"
+        // Sized and weighted like the heading it replaces, and negatively
+        // margined so the text sits on the same pixel it did when it was a
+        // heading. The hairline is the only thing that appears.
+        className="-mx-2 w-[calc(100%+1rem)] rounded-[var(--radius-edge)] border border-line/70 bg-transparent px-2 py-0.5 text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink transition-colors duration-150 outline-none focus:border-[rgb(var(--glow)/0.5)]"
       />
 
       <textarea
@@ -131,26 +134,26 @@ export function AppIdentity({
         rows={2}
         maxLength={140}
         placeholder="What this app is for."
-        className="mt-1.5 w-full resize-none rounded-[var(--radius-edge)] border border-line bg-sunken px-2 py-1 text-[13.5px] text-ink-muted outline-none focus:border-[rgb(var(--glow)/0.55)]"
+        className="-mx-2 mt-1 w-[calc(100%+1rem)] resize-none rounded-[var(--radius-edge)] border border-line/70 bg-transparent px-2 py-1 text-[13.5px] text-ink-muted transition-colors duration-150 outline-none focus:border-[rgb(var(--glow)/0.5)]"
       />
 
-      <p className="mt-1 text-[11.5px] text-ink-subtle">
-        Renaming changes this app&rsquo;s address, so existing links to it will stop
-        working.
-      </p>
-
       {error !== null ? (
-        <p role="alert" className="enter-fade mt-1 text-[11.5px] text-failed">
+        <p role="alert" className="enter-fade mt-1.5 text-[11.5px] text-failed">
           {error}
         </p>
       ) : null}
 
-      <div className="mt-2 flex items-center gap-2">
+      {/*
+        One quiet line rather than a button bar. Enter and Escape are the way
+        out for anyone typing, which is everyone here; these are for saying so,
+        and for the pointer.
+      */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
         <button
           type="button"
           onClick={save}
           disabled={pending}
-          className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
+          className="font-medium text-ink transition-opacity duration-150 hover:opacity-70 disabled:opacity-50"
         >
           {pending ? "Saving..." : "Save"}
         </button>
@@ -158,10 +161,13 @@ export function AppIdentity({
           type="button"
           onClick={stop}
           disabled={pending}
-          className="text-[12px] text-ink-muted transition-colors duration-150 hover:text-ink"
+          className="text-ink-muted transition-colors duration-150 hover:text-ink"
         >
           Cancel
         </button>
+        <span className="text-ink-subtle">
+          Renaming changes the address, so existing links will stop working.
+        </span>
       </div>
     </div>
   );
