@@ -86,8 +86,30 @@ describe("packSource", () => {
     expect(packed.omitted).toEqual(["a-huge.py"]);
   });
 
-  it("has a budget big enough for a real repository", () => {
-    // Wave's API is ~553 KB of Python; Cira's whole source is ~737 KB.
-    expect(MAX_PACKED_BYTES).toBeGreaterThan(900_000);
+  /**
+   * This test used to assert the opposite - that the budget was *large* - and
+   * asserting that is what shipped a limit no model would accept. Wave packed
+   * to about 430,000 tokens against a 200,000 token context, and every
+   * analysis of it failed outright with `prompt is too long`, for weeks, while
+   * this test passed.
+   *
+   * The budget is not a measure of ambition. It is the largest request the
+   * model on the other end will agree to read.
+   */
+  it("keeps a packed repository inside the context it is sent to", () => {
+    const CONTEXT = 200_000;
+    // The system prompt, and room for the answer to come back.
+    const RESERVED = 35_000;
+    // Source code, averaged. Dense configuration beats it, which is why the
+    // budget sits below the ceiling rather than on it.
+    const CHARS_PER_TOKEN = 3.5;
+
+    expect(MAX_PACKED_BYTES / CHARS_PER_TOKEN).toBeLessThan(CONTEXT - RESERVED);
+  });
+
+  it("still reads enough of a repository to be worth doing", () => {
+    // The other direction: a budget small enough to always fit is also small
+    // enough to find nothing.
+    expect(MAX_PACKED_BYTES).toBeGreaterThan(250_000);
   });
 });

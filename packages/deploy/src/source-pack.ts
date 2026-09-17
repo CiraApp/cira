@@ -17,7 +17,26 @@ import type { ArchiveEntry } from "./archive.js";
  */
 
 /** Big enough for every real internal tool, small enough to stay cheap. */
-export const MAX_PACKED_BYTES = 1_500_000;
+/**
+ * How much source one analysis may carry.
+ *
+ * Sized against the model's context window rather than chosen for roundness,
+ * which the previous figure was. Source code runs about 3.5 characters to the
+ * token, so 1.5 MB is roughly 430,000 tokens - more than twice what a 200,000
+ * token context holds, and every analysis of a repository that large failed
+ * outright with `prompt is too long`. Wave's did, on every deploy, for weeks.
+ *
+ *   200,000  context
+ *    -3,000  the system prompt
+ *   -32,000  room for the answer
+ *   =165,000 tokens, times 3.5 characters, is about 570,000
+ *
+ * Set below that, because the ratio is an average and a repository full of
+ * dense configuration beats it. A repository too large to fit still analyses -
+ * it is packed nearest-first and the rest is reported as omitted - which is
+ * the behaviour that was always intended and never reached.
+ */
+export const MAX_PACKED_BYTES = 500_000;
 
 /** Beyond this a single file is generated, whatever its extension claims. */
 const MAX_FILE_BYTES = 200_000;
