@@ -33,16 +33,21 @@ export function CiraMark({ className }: { className?: string }) {
 /**
  * Cira's name, drawn rather than set.
  *
- * Capitals, in the same vocabulary as the mark beside it: one stroke weight
- * throughout, every corner either square or mitred on a 45 degree chamfer, and
- * terminals cut on that same diagonal so the arms of the C taper toward the
- * opening instead of ending as though cropped. The counters are slots rather
- * than curves, which is what keeps the letters reading as machined parts of
- * one object rather than as type that happens to be angular.
+ * The same object as the mark, spelled out. Every letter is built from
+ * horizontals and a single 45 degree diagonal, one stroke weight throughout,
+ * and where a curve would go there is a chevron instead - which is the whole
+ * idea, because the mark beside it is a chevron too.
  *
- * Drawn rather than set for two reasons that have not changed: it cannot go
- * wrong while a font is still loading, and it holds its exact weight at 13px,
- * where a typeface would be hinted into something slightly else.
+ * That is what the first attempt got wrong. Drawn as ordinary angular capitals
+ * they were merely a squared-off typeface: the R had a rectangular bowl and
+ * the A a vertical stem with a crossbar, and next to the mark they looked like
+ * lettering that happened to be nearby. Here the R's bowl closes to a point
+ * and the A has no crossbar at all - it is a chevron standing on its legs with
+ * a triangular counter cut out of the apex.
+ *
+ * Drawn rather than set for the reasons it always was: it cannot go wrong
+ * while a font is still loading, and it holds its exact weight at 13px, where
+ * a typeface would be hinted into something slightly else.
  *
  * The box is the cap height exactly - no ascenders, no descenders - so a
  * lockup aligns it against the mark by centring the two boxes.
@@ -56,15 +61,17 @@ export function CiraWordmark({ className }: { className?: string }) {
       fill="currentColor"
       fillRule="evenodd"
     >
-      {/* C - chamfered on the closed side, tapered on the open one. */}
-      <path d="M22,0 L82,0 L60,22 L44,22 L22,44 L22,56 L44,78 L60,78 L82,100 L22,100 L0,78 L0,22 Z" />
+      {/* C - mitred where it is closed, and cut on the diagonal where it opens,
+          so the arms taper toward the gap rather than ending as though cropped. */}
+      <path d="M28,0 L96,0 L68,28 L44,28 L28,44 L28,56 L44,72 L68,72 L96,100 L28,100 L0,72 L0,28 Z" />
       {/* I */}
-      <path d="M104,0 L126,0 L126,100 L104,100 Z" />
-      {/* R - the leg is cut wider than the stem across the horizontal so that
-          it measures the same weight perpendicular to its own diagonal. */}
-      <path d="M148,0 L204,0 L226,22 L226,62 L248,100 L223,100 L201,62 L170,62 L170,100 L148,100 Z M170,22 L204,22 L204,40 L170,40 Z" />
-      {/* A */}
-      <path d="M312,0 L346,0 L368,22 L368,100 L346,100 L346,76 L306.6,76 L297,100 L272,100 Z M328.2,22 L346,22 L346,58 L313.8,58 Z" />
+      <path d="M112,0 L140,0 L140,100 L112,100 Z" />
+      {/* R - the bowl closes to a point instead of a curve, and its counter is
+          the same shape inset, so the two are plainly one form. */}
+      <path d="M156,0 L218,0 L256,38 L218,76 L252,100 L214,100 L190,76 L184,76 L184,100 L156,100 Z M184,28 L206.4,28 L216.4,38 L206.4,48 L184,48 Z" />
+      {/* A - a chevron on its legs. No crossbar: the counter is cut out of the
+          apex and runs open to the baseline. */}
+      <path d="M310,0 L330,0 L368,100 L338,100 L320,52.6 L302,100 L272,100 Z" />
     </svg>
   );
 }
