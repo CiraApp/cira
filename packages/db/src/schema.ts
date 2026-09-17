@@ -337,11 +337,11 @@ export const deployments = pgTable(
  * deployed, torn down and reported on. An ordinary single-process app has
  * exactly one of these and nothing about it looks different.
  *
- * `routes` is what makes several services answer on one address. The Worker
- * sends a request to the service whose prefixes match it and to the front door
- * otherwise, which keeps the whole app same-origin: one certificate, one
- * session cookie, no CORS, and no app rewritten to suit the platform hosting
- * it. An empty list means the service claims no paths of its own.
+ * They run together, in one Cloud Run service: one container takes the port and
+ * the rest sit beside it on localhost. That is what keeps the whole app on a
+ * single address - one certificate, one session cookie, no CORS - and it means
+ * a frontend already written to proxy to its backend in development works
+ * unchanged, because in development it was already talking to localhost.
  */
 export const services = pgTable(
   "services",
@@ -358,12 +358,6 @@ export const services = pgTable(
     dockerfile: text("dockerfile"),
     /** The port its Dockerfile declared, when it declared one. */
     port: text("port"),
-    /**
-     * Path prefixes this service answers, as `/api/v1` - matched against the
-     * front of a request path. Stored rather than worked out per request
-     * because the Worker has no way to ask.
-     */
-    routes: jsonb("routes").notNull().default([]),
     /**
      * Whether this service answers a browser, settled by asking it. The one
      * that does is the app's front door; see `apps.has_web_ui`, which asks the

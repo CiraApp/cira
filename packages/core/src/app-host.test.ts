@@ -71,7 +71,7 @@ describe("parseAppLabel", () => {
 
   it("refuses a label it cannot read one way", () => {
     expect(parseAppLabel("ledger")).toBeNull();
-    expect(parseAppLabel("a--b--c--d")).toBeNull();
+    expect(parseAppLabel("a--b--c")).toBeNull();
     expect(parseAppLabel("--acme")).toBeNull();
     expect(parseAppLabel("ledger--")).toBeNull();
   });
@@ -114,64 +114,5 @@ describe("appHost", () => {
     expect(appHost({ appSlug: "ledger", spaceSlug: "acme" }, "cira.dev")).toBe(
       "ledger--acme.cira.dev",
     );
-  });
-});
-
-describe("a service inside an app", () => {
-  it("has an address of its own", () => {
-    expect(appLabel({ serviceSlug: "api", appSlug: "wave", spaceSlug: "paradym" })).toBe(
-      "api--wave--paradym",
-    );
-  });
-
-  it("reads back as the service it names", () => {
-    expect(parseAppLabel("api--wave--paradym")).toEqual({
-      serviceSlug: "api",
-      appSlug: "wave",
-      spaceSlug: "paradym",
-    });
-  });
-
-  /**
-   * Three parts used to be refused outright. It is allowed now so that an app
-   * needing a second address never forces a change to the one it already has -
-   * an address in somebody's history is not a thing to repaint later.
-   */
-  it("does not disturb the two-part address the app already answers on", () => {
-    expect(parseAppLabel("wave--paradym")).toEqual({
-      appSlug: "wave",
-      spaceSlug: "paradym",
-    });
-    expect(appLabel({ appSlug: "wave", spaceSlug: "paradym" })).toBe("wave--paradym");
-  });
-
-  it("cannot be confused with an app that is named like one", () => {
-    // `api-wave--paradym` is an app called `api-wave`, and stays one. The
-    // separator is what distinguishes them, and no slug can contain it.
-    expect(parseAppLabel("api-wave--paradym")).toEqual({
-      appSlug: "api-wave",
-      spaceSlug: "paradym",
-    });
-  });
-
-  it("still has to fit in one DNS label", () => {
-    const long = "a".repeat(30);
-    expect(appLabel({ serviceSlug: long, appSlug: long, spaceSlug: long })).toBeNull();
-  });
-
-  it("refuses a service slug that is not one", () => {
-    for (const serviceSlug of ["API", "a pi", "-api", "ap--i", ""]) {
-      expect(
-        appLabel({ serviceSlug, appSlug: "wave", spaceSlug: "paradym" }),
-        serviceSlug,
-      ).toBeNull();
-    }
-  });
-
-  it("survives a round trip through a full hostname", () => {
-    const address = { serviceSlug: "api", appSlug: "wave", spaceSlug: "paradym" };
-    const host = appHost(address, "cira.dev");
-    expect(host).toBe("api--wave--paradym.cira.dev");
-    expect(parseAppHost(host as string, "cira.dev")).toEqual(address);
   });
 });
