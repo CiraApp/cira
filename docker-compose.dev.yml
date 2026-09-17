@@ -1,0 +1,55 @@
+# A database to develop against, so that developing does not mean touching the
+# real one.
+#
+# Cira speaks to Neon over HTTP rather than the Postgres wire protocol, which
+# is why this is two containers and not one: an ordinary local Postgres is
+# simply unreachable by the driver the application uses. The proxy answers
+# Neon's HTTP protocol and speaks plain Postgres to the container behind it.
+#
+# The alternative was to let the application pick a different driver when it
+# notices a local address. That is worse than it sounds. Neon's HTTP driver
+# cannot do transactions and an ordinary Postgres driver can, so local work
+# would quietly gain a capability production does not have, and the first time
+# anyone wrote a transaction it would pass every test here and fail in
+# production. Running the real driver against a real proxy keeps development
+# honest about what the application can actually do.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# See "Developing against a local database" in README.md.
+
+name: cira-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: main
+    ports:
+      # Not 5432. This machine already runs Postgres for other things, and the
+      # test container next door is on 55439 for the same reason.
+      - "55440:5432"
+    volumes:
+      # Postgres 18 wants the whole directory, not the `data` subdirectory
+      # inside it, so that a future major version can pg_upgrade in place.
+      - dev_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      PG_CONNECTION_STRING: postgres://postgres:postgres@postgres:5432/main
+    ports:
+      - "4444:4444"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  dev_data:

@@ -70,6 +70,47 @@ pnpm build
 The build needs no secrets; every page that reads data is server-rendered on
 demand, so CI builds without a database or auth keys.
 
+Point `DATABASE_URL` at a local database rather than a real one before running
+`pnpm dev`. The next section sets one up.
+
+### Developing against a local database
+
+`pnpm dev` with a `DATABASE_URL` copied from production means developing _in_
+production: every app created while clicking around is a real app, and every
+deletion is a real deletion. This gives you somewhere disposable instead.
+
+```sh
+docker compose -f docker-compose.dev.yml up -d
+
+export DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:55440/main
+export DATABASE_URL_UNPOOLED=$DATABASE_URL
+pnpm --filter @cira/db db:migrate
+pnpm dev
+```
+
+`db.localtest.me` resolves to 127.0.0.1 from public DNS, so nothing needs
+adding to `/etc/hosts`, and no production address can ever be mistaken for it.
+
+Two containers rather than one, because Cira talks to Neon over HTTP instead of
+the Postgres wire protocol: a plain local Postgres is unreachable by the driver
+the application uses. The proxy answers Neon's HTTP protocol and speaks
+ordinary Postgres to the container behind it.
+
+It is worth knowing why this is not solved by letting the application pick a
+different driver when it sees a local address, which is smaller and obvious.
+Neon's HTTP driver cannot do transactions and an ordinary Postgres driver can,
+so local work would silently gain a capability production does not have. The
+first `db.transaction()` anyone wrote would pass every test here and throw in
+production. Running the real driver against a real proxy means a thing that
+cannot work in production does not appear to work here either.
+
+Clerk is in test mode, so signing in locally uses a `+clerk_test` address with
+the verification code `424242`. The first sign-in creates the local user, and
+`db:seed:demo` below can then fill the database with something to look at.
+
+The volume keeps the data between runs. `docker compose -f
+docker-compose.dev.yml down -v` throws it away.
+
 ### The tests that need a database
 
 `pnpm test` silently skips around forty of them. The journey and capability
