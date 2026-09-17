@@ -7,7 +7,12 @@ import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
-import { checkBundle, isRootDockerfile, readDockerfile } from "@cira/deploy/packaging";
+import {
+  checkBundle,
+  isRootDockerfile,
+  isSafeDockerfilePath,
+  readDockerfile,
+} from "@cira/deploy/packaging";
 import { bold, dim, fail, info, success } from "./ui.js";
 
 interface MeResponse {
@@ -128,12 +133,21 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // it is read here because the walk already has the file list. Without it the
   // build has to work the language out and then guess at an entrypoint, which
   // is where a great deal of real software stops.
-  const container = readContainer(root, files);
+  let container;
+  try {
+    container = readContainer(root, files, readFlag(argv, "--dockerfile"));
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "Could not read that Dockerfile.");
+    return 1;
+  }
+
   if (container !== null) {
+    const where =
+      container.dockerfile === "Dockerfile" ? "" : ` (${container.dockerfile})`;
     success(
       container.port === null
-        ? "Dockerfile"
-        : `Dockerfile, listening on ${container.port}`,
+        ? `Dockerfile${where}`
+        : `Dockerfile${where}, listening on ${container.port}`,
     );
   }
 
@@ -279,17 +293,41 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** What the folder's own Dockerfile says, or null when there is none. */
+/**
+ * What this project's Dockerfile says, or null when there is none.
+ *
+ * `--dockerfile` names one somewhere other than the root, which a monorepo
+ * needs: the file sits with the service and the build context is the
+ * workspace. Named explicitly rather than searched for, because a repository
+ * with several is not one where guessing is safe.
+ */
 function readContainer(
   root: string,
   files: readonly { path: string }[],
-): { port: number | null } | null {
-  if (!files.some((file) => isRootDockerfile(file.path))) return null;
+  named: string | null,
+): { dockerfile: string; port: number | null } | null {
+  const path =
+    named ?? (files.some((f) => isRootDockerfile(f.path)) ? "Dockerfile" : null);
+  if (path === null) return null;
+
+  if (!isSafeDockerfilePath(path)) {
+    throw new Error(`${path} is not a usable Dockerfile path.`);
+  }
+
+  // Asked for by name and not there is a mistake worth stopping for. Found by
+  // looking and unreadable is not: the build can still work the project out.
+  if (!files.some((f) => f.path === path)) {
+    if (named === null) return null;
+    throw new Error(`There is no ${path} in this folder.`);
+  }
+
   try {
-    return readDockerfile(readFileSync(join(root, "Dockerfile"), "utf8"));
+    return {
+      dockerfile: path,
+      port: readDockerfile(readFileSync(join(root, path), "utf8")).port,
+    };
   } catch {
-    // Listed but unreadable. Building from it would fail anyway, so this falls
-    // back to letting the builder work the project out.
+    if (named !== null) throw new Error(`Could not read ${path}.`);
     return null;
   }
 }

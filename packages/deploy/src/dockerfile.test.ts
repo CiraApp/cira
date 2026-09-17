@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRootDockerfile, readDockerfile } from "./dockerfile.js";
+import { isRootDockerfile, isSafeDockerfilePath, readDockerfile } from "./dockerfile.js";
 
 describe("readDockerfile", () => {
   /**
@@ -57,5 +57,36 @@ describe("isRootDockerfile", () => {
     expect(isRootDockerfile("docker/Dockerfile")).toBe(false);
     expect(isRootDockerfile("Dockerfile.dev")).toBe(false);
     expect(isRootDockerfile("dockerfile")).toBe(false);
+  });
+});
+
+describe("isSafeDockerfilePath", () => {
+  it("accepts a Dockerfile anywhere inside the project", () => {
+    for (const path of [
+      "Dockerfile",
+      "apps/api/Dockerfile",
+      "docker/api.Dockerfile",
+      "Dockerfile.prod",
+    ]) {
+      expect(isSafeDockerfilePath(path), path).toBe(true);
+    }
+  });
+
+  /**
+   * The value becomes an argument to a build. A path climbing out of the
+   * context is asking that build to read something nobody uploaded.
+   */
+  it("refuses anything that leaves the project", () => {
+    for (const path of [
+      "../Dockerfile",
+      "apps/../../Dockerfile",
+      "/etc/Dockerfile",
+      "",
+      "apps//Dockerfile",
+      "apps/api/main.py",
+      "Makefile",
+    ]) {
+      expect(isSafeDockerfilePath(path), path).toBe(false);
+    }
   });
 });

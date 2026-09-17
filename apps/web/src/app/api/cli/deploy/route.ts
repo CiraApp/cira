@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { FRAMEWORKS } from "@cira/core";
+import { isSafeDockerfilePath } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
 import { envSchema } from "@/lib/env-vars";
@@ -18,7 +19,13 @@ const body = z.object({
   // Present when the folder carries a Dockerfile. Its port, when it declares
   // one, is what Cloud Run routes to and what the container sees as PORT.
   container: z
-    .object({ port: z.number().int().positive().max(65535).nullable() })
+    .object({
+      // Checked rather than trusted: it becomes an argument to a build, and a
+      // path climbing out of the context would ask that build to read
+      // something nobody uploaded.
+      dockerfile: z.string().refine(isSafeDockerfilePath, "Not a usable Dockerfile path"),
+      port: z.number().int().positive().max(65535).nullable(),
+    })
     .nullable()
     .default(null),
   // Values pass straight through to the provider and are never stored; see

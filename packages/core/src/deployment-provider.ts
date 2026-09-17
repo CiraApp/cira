@@ -58,6 +58,13 @@ export interface SourceArchive {
  * provider would otherwise have to guess at.
  */
 export interface ContainerHints {
+  /**
+   * Where the Dockerfile is, relative to the root of the uploaded source.
+   *
+   * Not always the root. A monorepo routinely keeps the file with the service
+   * and the build context at the workspace, so the two are separate facts.
+   */
+  dockerfile: string;
   /** The port the image declares, or null when it declares none. */
   port: number | null;
 }

@@ -19,6 +19,8 @@ const USAGE = `
                --env-file <p>   read variables from this file instead
                --env K=V        set one variable (repeatable, wins over a file)
                --no-env         deploy with no variables, clearing any set
+               --dockerfile <p>  build with this Dockerfile, for a monorepo
+                                 where it sits apart from the workspace root
     remove     Take this folder's app down and delete what it left behind
                --space <slug>   which space, when the folder is not linked
                --app <slug>     which app, when the folder is not linked

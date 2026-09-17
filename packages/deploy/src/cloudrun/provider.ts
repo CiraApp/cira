@@ -390,7 +390,8 @@ export class CloudRunProvider implements DeploymentProvider {
               generation: archive.generation,
             },
           },
-          steps: container === null ? buildpackStep(image) : dockerSteps(image),
+          steps:
+            container === null ? buildpackStep(image) : dockerSteps(image, container),
           // Both paths push the image themselves - `pack --publish` directly,
           // and docker with an explicit push step. Naming it under `images` as
           // well would have Cloud Build try to push an image that is not in its
@@ -545,9 +546,16 @@ function buildpackStep(image: string): unknown[] {
  * recognise. Wave's build installed 53 packages and then failed for want of an
  * entrypoint that was written down in a file Cira was ignoring.
  */
-function dockerSteps(image: string): unknown[] {
+function dockerSteps(image: string, container: ContainerHints): unknown[] {
   return [
-    { name: "gcr.io/cloud-builders/docker", args: ["build", "-t", image, "."] },
+    {
+      name: "gcr.io/cloud-builders/docker",
+      // The context is always the whole upload and the file is named within
+      // it, because those are separate facts in any monorepo. Wave keeps its
+      // Dockerfile in `apps/api` and says plainly that the context must be the
+      // workspace.
+      args: ["build", "-f", container.dockerfile, "-t", image, "."],
+    },
     { name: "gcr.io/cloud-builders/docker", args: ["push", image] },
   ];
 }

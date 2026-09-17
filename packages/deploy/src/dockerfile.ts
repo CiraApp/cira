@@ -51,7 +51,27 @@ export function readDockerfile(text: string): ContainerSpec {
   return { port: null };
 }
 
-/** Whether a path is the Dockerfile a build would use, rather than one beside it. */
+/** Whether a path is the Dockerfile a build would use by default. */
 export function isRootDockerfile(path: string): boolean {
   return path === "Dockerfile";
+}
+
+/**
+ * Is this a Dockerfile path a build may be pointed at?
+ *
+ * A monorepo routinely keeps the Dockerfile with the service and the build
+ * context at the root - Wave's own deploy notes say "the build context must be
+ * the workspace" while the file lives in `apps/api` - so the two cannot be
+ * assumed to be the same folder. What they can be is inside it: this value
+ * becomes an argument to a build, and a path climbing out of the context would
+ * be asking that build to read something nobody uploaded.
+ */
+export function isSafeDockerfilePath(path: string): boolean {
+  if (path === "" || path.length > 300) return false;
+  if (path.startsWith("/") || path.includes("\\")) return false;
+
+  const segments = path.split("/");
+  if (segments.some((s) => s === "" || s === "." || s === "..")) return false;
+
+  return /dockerfile/i.test(segments[segments.length - 1] ?? "");
 }

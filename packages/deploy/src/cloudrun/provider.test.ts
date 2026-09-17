@@ -501,7 +501,10 @@ describe("teardown", () => {
  * question, and Wave's build failed for want of an answer it had written down.
  */
 describe("a Dockerfile wins when there is one", () => {
-  const dockerised: AppDeploymentInput = { ...input, container: { port: 8000 } };
+  const dockerised: AppDeploymentInput = {
+    ...input,
+    container: { dockerfile: "Dockerfile", port: 8000 },
+  };
 
   it("builds the image the project describes", async () => {
     serve([
@@ -589,5 +592,36 @@ describe("a Dockerfile wins when there is one", () => {
       template: { containers: Array<{ ports: Array<{ containerPort: number }> }> };
     };
     expect(body.template.containers[0]?.ports[0]?.containerPort).toBe(8000);
+  });
+});
+
+/**
+ * A monorepo keeps the Dockerfile with the service and builds from the
+ * workspace. Wave's own deploy notes say so outright, and it is why the
+ * context and the file cannot be assumed to be the same folder.
+ */
+describe("a Dockerfile that is not at the root", () => {
+  it("names the file and still builds from the whole upload", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy({
+      ...input,
+      container: { dockerfile: "apps/api/Dockerfile", port: 8000 },
+    });
+
+    const build = calls.find((c) => c.url.includes("cloudbuild"))?.body as {
+      steps: Array<{ args: string[] }>;
+    };
+    expect(build.steps[0]?.args).toEqual([
+      "build",
+      "-f",
+      "apps/api/Dockerfile",
+      "-t",
+      IMAGE,
+      ".",
+    ]);
   });
 });
