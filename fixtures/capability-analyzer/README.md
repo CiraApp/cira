@@ -61,3 +61,34 @@ tests people learn to ignore.
 
 Delete the directory. Nothing imports it, no build references it, and no test
 runs it.
+
+## Which model this scores
+
+The bar here is Opus's, because Opus is what the prompt was written against and
+what it is meant to run on: 12/12, nothing invented, every mounted prefix
+resolved.
+
+While Cira is being built the analyzer runs on Haiku instead, since the
+question being asked several times a day - does the pipeline find anything, and
+does what it finds survive being checked against the running app - is answered
+as well by a cheap model as by an expensive one. Haiku scores 9/12 on this
+corpus.
+
+So a run on the development model **fails this fixture, and is supposed to**.
+What matters is the shape of the failure rather than the number:
+
+|          | Opus    | Haiku  |
+| -------- | ------- | ------ |
+| correct  | 12 / 12 | 9 / 12 |
+| invented | none    | none   |
+
+Missing a route costs an agent a capability it could have had. Inventing one
+puts a target in the registry that nothing serves. Only the second is dangerous,
+and neither model does it - which is also why nothing is published until the
+running app has answered for the route.
+
+Set `CIRA_ANALYZER_MODEL` to score a different one:
+
+```sh
+CIRA_ANALYZER_MODEL=claude-opus-5 pnpm ...
+```

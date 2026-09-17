@@ -185,6 +185,30 @@ empty list - that is a good answer.`;
  */
 const MAX_TOKENS = 32_000;
 
+/**
+ * Which model reads the source.
+ *
+ * Haiku while this is being built, because the question being asked of it -
+ * does the pipeline find anything at all, and does what it finds survive being
+ * checked against the running app - is answered just as well by a cheap model
+ * as by an expensive one, and is asked many times a day. The judgement the
+ * prompt actually wants is Opus's, and the scores that justify the prompt were
+ * measured on Opus; this is a development setting, not a revision of that.
+ *
+ * Overridable without a deploy, so moving back is an environment variable
+ * rather than a release.
+ */
+const CHEAP_MODEL = "claude-haiku-4-5-20251001";
+const MODEL = process.env["CIRA_ANALYZER_MODEL"] ?? CHEAP_MODEL;
+
+/**
+ * Adaptive thinking arrived with the 4.6 generation and earlier models refuse
+ * the request outright rather than ignoring the field - so this is not a knob
+ * that can be left on "for safety". It also costs output tokens, which is the
+ * opposite of the reason for being on a cheap model at all.
+ */
+const THINKS = MODEL !== CHEAP_MODEL;
+
 export async function analyzeCapabilities(
   source: string,
   options: { appName: string },
@@ -209,10 +233,10 @@ export async function analyzeCapabilities(
     // the whole thing and carries the parsed output, so nothing else changes.
     const response = await client.messages
       .stream({
-        model: "claude-opus-5",
+        model: MODEL,
         max_tokens: MAX_TOKENS,
         system: SYSTEM,
-        thinking: { type: "adaptive" },
+        ...(THINKS ? { thinking: { type: "adaptive" as const } } : {}),
         output_config: { format: zodOutputFormat(analysis) },
         messages: [
           {
