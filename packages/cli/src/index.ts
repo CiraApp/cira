@@ -85,8 +85,11 @@ async function main(): Promise<number> {
   switch (command) {
     case "deploy":
       return deploy(process.argv.slice(3));
+    // Only `remove`, deliberately. `undeploy` reads as the opposite of
+    // `deploy` and would be a reasonable name for stopping a running app while
+    // keeping what Cira knows about it - a different operation, and one worth
+    // leaving the word free for.
     case "remove":
-    case "undeploy":
       return remove(process.argv.slice(3));
     case "login":
       return login();
