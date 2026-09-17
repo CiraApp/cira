@@ -16,7 +16,7 @@ import {
   isSafeDockerfilePath,
   readDockerfile,
 } from "@cira/deploy/packaging";
-import { bold, dim, fail, info, success, warn } from "./ui.js";
+import { amber, bold, dim, fail, green, info, success, warn } from "./ui.js";
 
 interface MeResponse {
   user: { name: string; email: string };
@@ -199,40 +199,59 @@ export async function deploy(argv: string[] = []): Promise<number> {
     return 1;
   }
 
-  // What the repository says it needs, against what it has been given. Said
-  // before the build rather than discovered afterwards: an app missing its
-  // database starts perfectly well and fails the first time anybody uses it,
-  // which is the most expensive shape a failure can take.
-  const missing = findEnvNeeds(packed.entries).filter(
-    (need) => collected.env[need.name] === undefined,
-  );
+  // One list rather than two. Cira used to print what it thought was missing
+  // and, separately, what it had been given, which left the reader to hold
+  // both in their head and work out the overlap. The interesting question is
+  // per-variable - do we have this one? - so it is answered per variable.
+  //
+  // Names only, here and everywhere. See docs/secrets.md.
+  const needed = findEnvNeeds(packed.entries);
+  const supplied = new Set(Object.keys(collected.env));
+  const missing = needed.filter((need) => !supplied.has(need.name));
 
-  if (missing.length > 0) {
+  const checklist = [
+    ...needed.map((need) => ({
+      name: need.name,
+      have: supplied.has(need.name),
+      note: `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
+    })),
+    // Set, and not something the scan asked for. Still going to the app, so
+    // still worth seeing - a typo in a name shows up here as a variable
+    // nobody asked for sitting next to the one still missing.
+    ...[...supplied]
+      .filter((name) => !needed.some((need) => need.name === name))
+      .map((name) => ({ name, have: true, note: "" })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+
+  if (checklist.length > 0) {
     info("");
-    warn(
-      `This app looks like it needs ${missing.length} more thing${missing.length === 1 ? "" : "s"}:`,
+    info(
+      dim(`Environment${collected.source === null ? "" : ` (from ${collected.source})`}`),
     );
-    const column = Math.max(...missing.map((need) => need.name.length));
-    for (const need of missing) {
-      const where = need.file.replace(/^\.\//, "");
-      info(`  ${need.name.padEnd(column)}  ${dim(`${need.reason}, in ${where}`)}`);
+
+    const column = Math.max(...checklist.map((row) => row.name.length));
+    for (const row of checklist) {
+      const mark = row.have ? green("✓") : amber("✗");
+      // Padded only when something follows it, so a line with nothing to say
+      // ends at its own name rather than trailing whitespace across the column.
+      const note = row.have || row.note === "" ? "" : `  ${dim(row.note)}`;
+      const name = note === "" ? row.name : row.name.padEnd(column);
+      info(`  ${mark} ${name}${note}`);
     }
     info("");
+  }
+
+  if (missing.length > 0) {
+    warn(
+      `${missing.length} missing. It will build, and the app may not work without ${missing.length === 1 ? "it" : "them"}.`,
+    );
     info(dim("  Set them in .env, or pass --env NAME=value."));
-    info(dim("  Deploying without them will build, and the app may not work."));
     info("");
 
     if (!(await confirmAnyway(argv))) {
       fail("Nothing was deployed.");
       return 1;
     }
-  }
-
-  const names = Object.keys(collected.env).sort();
-  if (names.length > 0) {
-    info(
-      `${dim(`Environment from ${collected.source ?? "flags"}:`)} ${names.join(", ")}`,
-    );
   }
 
   // Worth interrupting for: the build inlines these into the JavaScript the
