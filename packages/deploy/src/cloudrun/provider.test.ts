@@ -739,6 +739,37 @@ describe("an app that is two halves", () => {
   });
 
   /**
+   * Cloud Run refuses the dependency above without one - it has no other way
+   * to tell that a sidecar is up. A socket that accepts a connection is the
+   * most a platform can know about an arbitrary backend.
+   */
+  it("gives the backend a way to say it is listening", async () => {
+    const { service } = await deployBoth();
+    const probe = service.find((c) => c.name === "api")?.startupProbe;
+
+    expect(probe?.tcpSocket?.port).toBe(8000);
+    expect(service.find((c) => c.name === "web")?.startupProbe).toBeUndefined();
+  });
+
+  it("does not depend on a sidecar that never said where it listens", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+    await provider().deploy({ ...input, services: [web, { ...api, port: null }] });
+
+    const containers = (
+      calls.find((c) => c.method === "PATCH")?.body as {
+        template: { containers: Array<{ name?: string; dependsOn?: string[] }> };
+      }
+    ).template.containers;
+
+    // Depending on it would be refused outright, and starting alongside is
+    // what happened before any of this existed.
+    expect(containers.find((c) => c.name === "web")?.dependsOn).toBeUndefined();
+  });
+
+  /**
    * The setting that would really have bitten. `cpuIdle` throttles CPU outside
    * request handling, which is right for a lone web server and wrong the moment
    * anything runs beside it: a backend with a subscriber loop or a queue thread
@@ -779,5 +810,69 @@ describe("an app that is two halves", () => {
       limits: { cpu: "1", memory: "512Mi" },
       cpuIdle: true,
     });
+  });
+});
+
+/**
+ * The swap that happens once the build finishes, for an app of two halves.
+ *
+ * Everything the deploy wrote has to survive it. The sidecar's port is the
+ * awkward one: a sidecar has no `ports`, so the only record of where it listens
+ * is the probe written to watch it, and losing that would drop the startup
+ * ordering at the moment nobody is looking.
+ */
+describe("rolling out both halves", () => {
+  const twoContainers = {
+    uri: "https://acme-ledger-abc-uc.a.run.app",
+    latestReadyRevision: "r1",
+    latestCreatedRevision: "r1",
+    terminalCondition: { type: "Ready", state: "CONDITION_SUCCEEDED" },
+    template: {
+      labels: {},
+      containers: [
+        {
+          name: "web",
+          image: "old-web",
+          ports: [{ name: "http1", containerPort: 8080 }],
+          dependsOn: ["api"],
+        },
+        {
+          name: "api",
+          image: "old-api",
+          startupProbe: { tcpSocket: { port: 8000 } },
+        },
+      ],
+    },
+  };
+
+  it("keeps the ordering and the probe when the built images go in", async () => {
+    serve([
+      [/cloudbuild/, () => ({ id: "b-1", status: "SUCCESS" })],
+      [/run\.googleapis/, (m) => (m === "GET" ? twoContainers : {})],
+    ]);
+
+    await provider().getStatus(`b-1:${SERVICE}:${TAG}`);
+
+    const containers = (
+      calls.find((c) => c.method === "PATCH")?.body as {
+        template: {
+          containers: Array<{
+            name?: string;
+            image: string;
+            dependsOn?: string[];
+            startupProbe?: { tcpSocket?: { port: number } };
+          }>;
+        };
+      }
+    ).template.containers;
+
+    expect(containers.find((c) => c.name === "web")?.dependsOn).toEqual(["api"]);
+    expect(containers.find((c) => c.name === "api")?.startupProbe?.tcpSocket?.port).toBe(
+      8000,
+    );
+
+    // And both halves move to the images this build produced.
+    expect(containers.every((c) => c.image.includes(TAG))).toBe(true);
+    expect(new Set(containers.map((c) => c.image)).size).toBe(2);
   });
 });

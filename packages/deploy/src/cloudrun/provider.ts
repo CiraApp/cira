@@ -94,6 +94,7 @@ interface RunContainer {
   image?: string;
   env?: Array<{ name?: string; value?: string }>;
   ports?: Array<{ name?: string; containerPort?: number }>;
+  startupProbe?: { tcpSocket?: { port?: number } };
 }
 
 interface RunService {
@@ -188,7 +189,10 @@ export class CloudRunProvider implements DeploymentProvider {
       containers: planned.map((part) => ({
         name: part.slug,
         image: (several ? running.get(part.slug) : serving[0]?.image) ?? part.image,
-        port: part.ingress ? (part.port ?? CONTAINER_PORT) : null,
+        // The front door falls back to Cloud Run's own port; a sidecar keeps
+        // whatever it declared and nothing more, because an undeclared port is
+        // one nothing can knock on.
+        port: part.ingress ? (part.port ?? CONTAINER_PORT) : part.port,
         ingress: part.ingress,
       })),
       env: app.env,
@@ -240,7 +244,11 @@ export class CloudRunProvider implements DeploymentProvider {
       const containers = (current.template?.containers ?? []).map((c) => ({
         name: c.name ?? "",
         image: this.imageFor(service, tag, c.name === undefined ? undefined : c.name),
-        port: c.ports?.[0]?.containerPort ?? null,
+        // A sidecar has no `ports` - the only record of where it listens is
+        // the probe written to watch it. Losing that here would drop both the
+        // probe and the ordering that depends on it, at the moment the built
+        // image is rolled out and nobody is looking.
+        port: c.ports?.[0]?.containerPort ?? c.startupProbe?.tcpSocket?.port ?? null,
         ingress: (c.ports?.length ?? 0) > 0,
       }));
 
@@ -546,7 +554,14 @@ export class CloudRunProvider implements DeploymentProvider {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([name, value]) => ({ name, value }));
 
-    const sidecars = spec.containers.filter((c) => !c.ingress).map((c) => c.name);
+    // Only a sidecar whose port is known can be depended on: Cloud Run refuses
+    // a dependency on a container it cannot tell is up, and what it wants as
+    // proof is a startup probe, which needs a port to knock on. A sidecar that
+    // never said where it listens is started alongside rather than before,
+    // which is what happened before any of this existed.
+    const sidecars = spec.containers
+      .filter((c) => !c.ingress && c.port !== null)
+      .map((c) => c.name);
 
     await this.request(`${this.serviceUrl(service)}?allowMissing=true`, {
       method: "PATCH",
@@ -579,6 +594,21 @@ export class CloudRunProvider implements DeploymentProvider {
             // half that calls the other, so it waits; a backend that is not
             // listening yet is a proxy error on the first request otherwise.
             ...(container.ingress && sidecars.length > 0 ? { dependsOn: sidecars } : {}),
+            // How Cloud Run decides a sidecar is up, and it refuses the
+            // dependency above without one. A socket that accepts a connection
+            // is the most a platform can know about an arbitrary backend; what
+            // "ready" means beyond that is the app's own business.
+            ...(!container.ingress && container.port !== null
+              ? {
+                  startupProbe: {
+                    tcpSocket: { port: container.port },
+                    periodSeconds: 5,
+                    timeoutSeconds: 3,
+                    // Generous: this is still a cold start.
+                    failureThreshold: 20,
+                  },
+                }
+              : {}),
             resources: resourcesFor(several),
           })),
         },
