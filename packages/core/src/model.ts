@@ -72,6 +72,10 @@ export interface App {
   status: AppStatus;
   icon: string | null;
   ownerUserId: UserId;
+  /** Where the app really lives, when Cira is not what serves it. */
+  homepageUrl: string | null;
+  /** Whether the running app answers a browser. Null until it has been asked. */
+  hasWebUi: boolean | null;
   createdAt: Date;
   updatedAt: Date;
 }

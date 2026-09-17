@@ -13,11 +13,13 @@ export function AppSettings({
   appSlug,
   appName,
   appDescription,
+  appHomepageUrl,
 }: {
   spaceSlug: string;
   appSlug: string;
   appName: string;
   appDescription: string | null;
+  appHomepageUrl: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -106,7 +108,27 @@ export function AppSettings({
             className="field mt-1 resize-none"
           />
 
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <label
+            htmlFor="app-homepage"
+            className="mt-4 text-[12.5px] font-medium text-ink"
+          >
+            Homepage
+          </label>
+          <p className="text-[11.5px] leading-relaxed text-ink-subtle">
+            Where Open should send people, if the interface they use lives somewhere Cira
+            does not host. Empty means Cira opens the app it serves.
+          </p>
+          <input
+            id="app-homepage"
+            name="homepageUrl"
+            type="url"
+            inputMode="url"
+            defaultValue={appHomepageUrl ?? ""}
+            placeholder="https://wav3.space"
+            className="field mt-1"
+          />
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <button type="submit" disabled={pending} className="btn btn-secondary">
               {pending ? "Saving..." : "Save"}
             </button>

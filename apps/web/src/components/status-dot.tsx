@@ -11,6 +11,9 @@ const STATES: Record<
   draft: { dot: "bg-ink-subtle text-ink-subtle", label: "Draft" },
   "never-deployed": { dot: "bg-ink-subtle text-ink-subtle", label: "Not deployed" },
   unreachable: { dot: "bg-pending text-pending", label: "Running" },
+  // An app with no web interface is not in a lesser state than one that has
+  // a page. It is running and answering; there is simply nothing to click.
+  "no-ui": { dot: "bg-live text-live", label: "Live", motion: "pulse-dot" },
 };
 
 /**

@@ -395,6 +395,8 @@ function toApp(row: typeof apps.$inferSelect): App {
     status: row.status,
     icon: row.icon,
     ownerUserId: row.ownerUserId,
+    homepageUrl: row.homepageUrl,
+    hasWebUi: row.hasWebUi,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

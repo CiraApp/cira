@@ -61,6 +61,16 @@ export default async function AppPage({
       deployment,
       appOpenPath({ appSlug, spaceSlug }),
     );
+    // An app Cira serves is opened through `/open`, which checks access again
+    // and hands over to the door on Cira's own domain. One that carries its
+    // own address is simply linked to: Cira does not serve it, cannot vouch
+    // for it, and has no relationship with that host to hand a referrer to.
+    const openHref =
+      resolved.openUrl === null
+        ? null
+        : resolved.external
+          ? resolved.openUrl
+          : `/${spaceSlug}/${appSlug}/open`;
 
     return (
       <AppShell
@@ -120,9 +130,10 @@ export default async function AppPage({
             </div>
 
             <div className="relative mt-6">
-              {resolved.openUrl !== null ? (
+              {openHref !== null ? (
                 <a
-                  href={`/${spaceSlug}/${appSlug}/open`}
+                  href={openHref}
+                  rel={resolved.external ? "noreferrer" : undefined}
                   className="btn btn-primary btn-lg group"
                 >
                   Open {app.name}
@@ -140,7 +151,21 @@ export default async function AppPage({
                   </svg>
                 </a>
               ) : (
-                <p className="rounded-[var(--radius-edge)] border border-dashed border-line-strong bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted">
+                /*
+                  Dashed when a door is missing, solid when there was never
+                  meant to be one. A dashed outline reads as a placeholder -
+                  something belongs here and has not arrived - which is exactly
+                  right for an app mid-deploy or one that failed, and exactly
+                  wrong for a working API. Nothing is absent there; it simply
+                  is not a website.
+                */
+                <p
+                  className={`rounded-[var(--radius-edge)] border bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted ${
+                    resolved.state === "no-ui"
+                      ? "border-line"
+                      : "border-dashed border-line-strong"
+                  }`}
+                >
                   {resolved.blockedReason}
                 </p>
               )}
@@ -194,6 +219,7 @@ export default async function AppPage({
               appSlug={appSlug}
               appName={app.name}
               appDescription={app.description}
+              appHomepageUrl={app.homepageUrl}
             />
           ) : null}
         </div>

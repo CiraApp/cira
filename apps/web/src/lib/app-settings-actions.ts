@@ -3,7 +3,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { apps, db } from "@cira/db";
-import { slugify } from "@cira/core";
+import { normalizeHomepageUrl, slugify } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 import { tearDownApp } from "@/lib/app-teardown";
 
@@ -16,6 +16,7 @@ const detailsInput = z.object({
     .min(2, "Give the app a name.")
     .max(60, "That name is too long."),
   description: z.string().trim().max(140, "That description is too long.").nullable(),
+  homepageUrl: z.string().trim().nullable(),
 });
 
 /**
@@ -38,11 +39,24 @@ export async function updateAppDetails(
   const parsed = detailsInput.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
+    homepageUrl: formData.get("homepageUrl"),
   });
   if (!parsed.success) {
     return {
       ok: false,
       error: parsed.error.issues[0]?.message ?? "That name will not work.",
+    };
+  }
+
+  // Emptied on purpose is a real edit: it is how someone takes back an address
+  // that has moved, and it has to mean "Cira serves this again" rather than
+  // being ignored as a blank field.
+  const raw = parsed.data.homepageUrl ?? "";
+  const homepageUrl = raw === "" ? null : normalizeHomepageUrl(raw);
+  if (raw !== "" && homepageUrl === null) {
+    return {
+      ok: false,
+      error: "That is not a web address. Give the full one, starting with https://.",
     };
   }
 
@@ -79,6 +93,7 @@ export async function updateAppDetails(
           parsed.data.description === null || parsed.data.description === ""
             ? null
             : parsed.data.description,
+        homepageUrl,
         updatedAt: new Date(),
       })
       .where(eq(apps.id, ctx.app.id));

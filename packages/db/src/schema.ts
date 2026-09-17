@@ -179,6 +179,28 @@ export const apps = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     /**
+     * The app's real front door, when it is somewhere Cira does not host.
+     *
+     * An app entry on the shelf is a thing the company runs, and the thing a
+     * person clicks should be the thing they use. A product whose frontend
+     * already lives elsewhere and whose API is the half deployed here would
+     * otherwise open onto its API, which serves JSON and has no homepage.
+     *
+     * Null means the ordinary case: Cira serves this app and opening it goes
+     * through the proxy.
+     */
+    homepageUrl: text("homepage_url"),
+    /**
+     * Whether the running app answers a browser at all.
+     *
+     * Settled by asking it rather than by guessing from the source, for the
+     * same reason capabilities are: the app is the only thing that knows. Null
+     * until something has asked, and null is read as "assume it does" - wrongly
+     * hiding the way into a working app is worse than offering a door that
+     * turns out to be a 404.
+     */
+    hasWebUi: boolean("has_web_ui"),
+    /**
      * Both dead. Nothing reads or writes either any more.
      *
      * They belonged to a provider that needed a per-app project and a shared

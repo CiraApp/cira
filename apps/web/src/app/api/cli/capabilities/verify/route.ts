@@ -6,6 +6,7 @@ import { deploymentProvider } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
 import { verifyCapabilities } from "@/lib/capability-verify";
 import { recordVerification } from "@/lib/capabilities";
+import { probeWebUi } from "@/lib/browser-ui";
 import { latestDeployment } from "@/lib/queries";
 
 /**
@@ -59,24 +60,51 @@ export async function POST(request: Request) {
     .from(capabilities)
     .where(and(eq(capabilities.appId, app.id), isNull(capabilities.verifiedAt)));
 
-  if (pending.length === 0) {
-    return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
-  }
-
   const deployment = await latestDeployment(app.id);
-  if (deployment === null || deployment.status !== "live" || deployment.url === null) {
+  const url = deployment !== null && deployment.status === "live" ? deployment.url : null;
+
+  // Nothing to ask, and nothing running to ask: the quiet success this has
+  // always returned, so a redeploy that changed no capabilities is not an error.
+  if (url === null) {
+    if (pending.length === 0) {
+      return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
+    }
     return NextResponse.json({ error: "That app is not running" }, { status: 409 });
   }
 
   let token: string;
   try {
-    token = await deploymentProvider().invocationToken(deployment.url);
+    token = await deploymentProvider().invocationToken(url);
   } catch {
+    if (pending.length === 0) {
+      return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
+    }
     return NextResponse.json({ error: "Could not reach the app" }, { status: 502 });
   }
 
+  const origin = new URL(url).origin;
+
+  // Asked on every verify rather than only when capabilities changed, because
+  // whether an app has a front door is a fact about the deploy and not about
+  // its capabilities: a release that adds a web interface and no new routes
+  // should still stop Cira describing it as headless.
+  //
+  // Null means the app did not answer clearly enough to conclude anything, and
+  // then whatever was already known is left alone - including "not yet asked".
+  const webUi = await probeWebUi({ origin, token });
+  if (webUi !== null) {
+    await db()
+      .update(apps)
+      .set({ hasWebUi: webUi, updatedAt: new Date() })
+      .where(eq(apps.id, app.id));
+  }
+
+  if (pending.length === 0) {
+    return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
+  }
+
   const outcome = await verifyCapabilities({
-    origin: new URL(deployment.url).origin,
+    origin,
     token,
     capabilities: pending.map((row) => ({
       name: row.name,

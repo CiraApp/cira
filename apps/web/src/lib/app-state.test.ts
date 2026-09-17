@@ -5,7 +5,10 @@ import type { App, Deployment } from "@cira/core";
 /** Where a browser is sent when there is somewhere to send it. */
 const OPEN_AT = "/enter/revenue--acme";
 
-function app(status: App["status"]): App {
+function app(
+  status: App["status"],
+  extra: Partial<Pick<App, "homepageUrl" | "hasWebUi">> = {},
+): App {
   return {
     id: "app_1",
     spaceId: "spc_1",
@@ -15,8 +18,11 @@ function app(status: App["status"]): App {
     status,
     icon: null,
     ownerUserId: "usr_1",
+    homepageUrl: null,
+    hasWebUi: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
+    ...extra,
   };
 }
 
@@ -117,35 +123,176 @@ describe("openability is one answer, for every combination of inputs", () => {
     deployment("removed"),
   ];
   const addresses = [OPEN_AT, null];
+  const homepages = [null, "https://wav3.space/"];
+  const webUi = [null, true, false];
+
+  /** Every shape an app can be in, which is what these invariants sweep. */
+  function every(check: (resolved: ReturnType<typeof resolveAppState>) => void) {
+    for (const status of statuses) {
+      for (const dep of deployments) {
+        for (const at of addresses) {
+          for (const homepageUrl of homepages) {
+            for (const hasWebUi of webUi) {
+              check(resolveAppState(app(status, { homepageUrl, hasWebUi }), dep, at));
+            }
+          }
+        }
+      }
+    }
+  }
 
   it("never offers a link without a reason, or a reason without withholding the link", () => {
+    every((r) => {
+      expect(r.openUrl === null).toBe(r.blockedReason !== null);
+    });
+  });
+
+  /**
+   * This used to say that "Live" implied the app could be opened, and openness
+   * was a fine stand-in for working while every app was a website. It stopped
+   * being one: an API is doing its entire job when it answers assistants and
+   * has nothing a browser would want. So the rule is the one openability was
+   * standing in for all along - Live means the thing is actually serving.
+   */
+  it("only ever calls an app Live when it is really running", () => {
+    every((r) => {
+      if (r.label === "Live") {
+        expect(["live", "no-ui"]).toContain(r.state);
+      }
+    });
+  });
+
+  it("never offers a link when there is no address of any kind", () => {
     for (const status of statuses) {
       for (const dep of deployments) {
-        for (const at of addresses) {
-          const r = resolveAppState(app(status), dep, at);
-          expect(r.openUrl === null).toBe(r.blockedReason !== null);
+        for (const hasWebUi of webUi) {
+          const r = resolveAppState(app(status, { hasWebUi }), dep, null);
+          expect(r.openUrl).toBeNull();
         }
       }
     }
   });
 
-  it("only ever calls an app Live when it can actually be opened", () => {
+  /** Whatever else is true, an address Cira was given is one it will use. */
+  it("always has somewhere to go when the app carries its own address", () => {
     for (const status of statuses) {
       for (const dep of deployments) {
         for (const at of addresses) {
-          const r = resolveAppState(app(status), dep, at);
-          if (r.label === "Live") expect(r.openUrl).not.toBeNull();
+          const r = resolveAppState(
+            app(status, { homepageUrl: "https://wav3.space/" }),
+            dep,
+            at,
+          );
+          expect(r.openUrl).toBe("https://wav3.space/");
+          expect(r.external).toBe(true);
         }
       }
     }
   });
+});
 
-  // Without an address there is nothing to offer, whatever else is true.
-  it("never offers a link when there is no address", () => {
-    for (const status of statuses) {
-      for (const dep of deployments) {
-        expect(resolveAppState(app(status), dep, null).openUrl).toBeNull();
-      }
+describe("an app with no web interface", () => {
+  it("is live, and offers no door", () => {
+    const resolved = resolveAppState(
+      app("live", { hasWebUi: false }),
+      deployment("live"),
+      OPEN_AT,
+    );
+
+    // Running and answering assistants is the whole job for an API. It is not
+    // a degraded state, so the label must not suggest something is wrong.
+    expect(resolved.label).toBe("Live");
+    expect(resolved.state).toBe("no-ui");
+    expect(resolved.openUrl).toBeNull();
+    expect(resolved.blockedReason).toContain("no web interface");
+  });
+
+  it("says so rather than blaming the address", () => {
+    // Both are true of an unconfigured API. Telling someone it "has no web
+    // address yet" sends them off to configure one that would still 404.
+    const resolved = resolveAppState(
+      app("live", { hasWebUi: false }),
+      deployment("live"),
+      null,
+    );
+    expect(resolved.state).toBe("no-ui");
+  });
+
+  it("is still shown as deploying while it deploys", () => {
+    const resolved = resolveAppState(
+      app("deploying", { hasWebUi: false }),
+      deployment("building"),
+      OPEN_AT,
+    );
+    expect(resolved.state).toBe("deploying");
+  });
+
+  it("opens normally until something has actually asked", () => {
+    // Null is "not yet asked", and guessing headless would hide a working app.
+    const resolved = resolveAppState(
+      app("live", { hasWebUi: null }),
+      deployment("live"),
+      OPEN_AT,
+    );
+    expect(resolved.openUrl).toBe(OPEN_AT);
+  });
+});
+
+describe("an app that says where it really lives", () => {
+  const HOMEPAGE = "https://wav3.space/";
+
+  it("opens there instead of at the app Cira serves", () => {
+    const resolved = resolveAppState(
+      app("live", { homepageUrl: HOMEPAGE }),
+      deployment("live"),
+      OPEN_AT,
+    );
+    expect(resolved.openUrl).toBe(HOMEPAGE);
+    expect(resolved.external).toBe(true);
+  });
+
+  /**
+   * The two are answers to different questions. A site stays up while the API
+   * behind it is halfway through a build, and refusing to open it in that
+   * minute would be wrong about the thing a person is actually clicking.
+   */
+  it("opens even while the deployment behind it is not ready", () => {
+    for (const status of ["building", "failed", "removed"] as const) {
+      const resolved = resolveAppState(
+        app("live", { homepageUrl: HOMEPAGE }),
+        deployment(status),
+        OPEN_AT,
+      );
+      expect(resolved.openUrl, status).toBe(HOMEPAGE);
+      expect(resolved.blockedReason, status).toBeNull();
     }
+  });
+
+  it("opens an API that has no page of its own", () => {
+    // The case the field exists for: the half deployed here serves JSON, and
+    // the half people use is somewhere else.
+    const resolved = resolveAppState(
+      app("live", { homepageUrl: HOMEPAGE, hasWebUi: false }),
+      deployment("live"),
+      OPEN_AT,
+    );
+    expect(resolved.openUrl).toBe(HOMEPAGE);
+  });
+
+  it("still reports the deploy honestly", () => {
+    // Having somewhere to go does not make a failed build a success.
+    const resolved = resolveAppState(
+      app("live", { homepageUrl: HOMEPAGE }),
+      deployment("failed"),
+      OPEN_AT,
+    );
+    expect(resolved.state).toBe("failed");
+    expect(resolved.label).toBe("Failed");
+  });
+
+  it("goes through Cira's own door when it has none", () => {
+    const resolved = resolveAppState(app("live"), deployment("live"), OPEN_AT);
+    expect(resolved.external).toBe(false);
+    expect(resolved.openUrl).toBe(OPEN_AT);
   });
 });
