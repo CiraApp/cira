@@ -16,7 +16,6 @@ import { EnvPanel } from "@/components/env-panel";
 import { listEnvVars } from "@/lib/env-vars";
 import { CapabilityPanel } from "@/components/capability-panel";
 import { ServicePanel } from "@/components/service-panel";
-import { AppIcon } from "@/components/app-icon";
 import { AppIdentity } from "@/components/app-identity";
 import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
@@ -138,30 +137,23 @@ export default async function AppPage({
               className="pointer-events-none absolute -top-24 -left-16 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgb(var(--glow)/0.16),transparent_65%)] blur-xl"
             />
 
+            {/* The identity block owns the icon, because while editing the icon
+                is the control that changes the picture. */}
             <div className="relative flex flex-wrap items-start gap-4">
-              <AppIcon
+              <AppIdentity
+                spaceSlug={spaceSlug}
+                appSlug={appSlug}
                 appId={app.id}
                 name={app.name}
+                description={app.description}
                 icon={app.icon}
                 image={app.image}
-                size="lg"
-              />
-
-              <div className="min-w-0 flex-1">
-                <AppIdentity
-                  spaceSlug={spaceSlug}
-                  appSlug={appSlug}
-                  appId={app.id}
-                  name={app.name}
-                  description={app.description}
-                  icon={app.icon}
-                  image={app.image}
-                  canManage={manages}
-                />
+                canManage={manages}
+              >
                 <div className="mt-2.5">
                   <StatusDot status={resolved.state} label={resolved.label} />
                 </div>
-              </div>
+              </AppIdentity>
             </div>
 
             <div className="relative mt-6">

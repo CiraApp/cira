@@ -30,6 +30,7 @@ export function AppIdentity({
   icon,
   image,
   canManage,
+  children,
 }: {
   spaceSlug: string;
   appSlug: string;
@@ -39,6 +40,8 @@ export function AppIdentity({
   icon: string | null;
   image: string | null;
   canManage: boolean;
+  /** The status line, which sits under the name in both states. */
+  children?: React.ReactNode;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -48,6 +51,22 @@ export function AppIdentity({
   const [draftDescription, setDraftDescription] = useState(description ?? "");
   const field = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const blurb = useRef<HTMLTextAreaElement>(null);
+
+  // Grown to its content whenever that changes, and once on opening so it
+  // starts at the right height rather than settling into it.
+  useEffect(() => {
+    const element = blurb.current;
+    if (element === null) return;
+
+    element.style.height = "auto";
+    // Plus the border, which `scrollHeight` does not count and `height` does.
+    // Without it the box lands two pixels short and clips its own last line,
+    // which looks like nothing at all until a description runs to two.
+    const edges = window.getComputedStyle(element);
+    const border = parseFloat(edges.borderTopWidth) + parseFloat(edges.borderBottomWidth);
+    element.style.height = `${element.scrollHeight + border}px`;
+  }, [draftDescription, editing]);
 
   const choose = (file: File | undefined) => {
     if (file === undefined) return;
@@ -138,9 +157,12 @@ export function AppIdentity({
     });
   };
 
+  const face = <AppIcon appId={appId} name={name} icon={icon} image={image} size="lg" />;
+
   if (!editing) {
     return (
-      <div className="flex min-w-0 flex-1 items-start gap-2">
+      <div className="flex min-w-0 flex-1 items-start gap-4">
+        {face}
         <div className="min-w-0 flex-1">
           <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink">
             {name}
@@ -148,6 +170,7 @@ export function AppIdentity({
           {description !== null && description !== "" ? (
             <p className="mt-1 text-[13.5px] text-ink-muted">{description}</p>
           ) : null}
+          {children}
         </div>
 
         {canManage ? (
@@ -166,114 +189,118 @@ export function AppIdentity({
   }
 
   return (
-    <div className="min-w-0 flex-1">
+    <div className="flex min-w-0 flex-1 items-start gap-4">
       {/*
-        The picture is changed by clicking the picture, which is the only place
-        anyone would look for it. Hidden until editing starts, because an app's
-        face is not a button the rest of the time.
+        The picture is changed by clicking the picture. Not a second copy of it
+        beside the first - that only asked which of the two squares was the
+        real one. This is the app's own face with an invitation laid over it,
+        and only while editing, because a face is not a button the rest of the
+        time.
       */}
-      <div className="mb-2 flex items-center gap-2.5">
-        <button
-          type="button"
-          onClick={() => picker.current?.click()}
-          disabled={pending}
-          className="group relative rounded-[5px] outline-none"
-          aria-label="Change this app's picture"
-        >
-          <AppIcon appId={appId} name={name} icon={icon} image={image} size="md" />
-          <span className="absolute inset-0 flex items-center justify-center rounded-[4px] bg-black/55 text-[10px] font-semibold tracking-[0.04em] text-white uppercase opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            Change
-          </span>
-        </button>
-
-        {image !== null ? (
-          <button
-            type="button"
-            onClick={() => storeImage("")}
-            disabled={pending}
-            className="text-[11.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
-          >
-            Remove picture
-          </button>
-        ) : (
-          <span className="text-[11.5px] text-ink-subtle">
-            PNG or JPEG. Cropped to a square.
-          </span>
-        )}
-
-        <input
-          ref={picker}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={(event) => {
-            choose(event.target.files?.[0]);
-            // Cleared so picking the same file twice still counts as a change.
-            event.target.value = "";
-          }}
-        />
-      </div>
+      <button
+        type="button"
+        onClick={() => picker.current?.click()}
+        disabled={pending}
+        className="group relative shrink-0 rounded-[5px] outline-none"
+        aria-label={image === null ? "Add a picture" : "Change the picture"}
+        title={image === null ? "Add a picture" : "Change the picture"}
+      >
+        {face}
+        <span className="absolute inset-0 flex items-center justify-center rounded-[5px] bg-black/60 text-white/90 opacity-80 transition-opacity duration-150 group-hover:opacity-100">
+          <Photo />
+        </span>
+      </button>
 
       <input
-        ref={field}
-        value={draftName}
-        onChange={(event) => setDraftName(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") save();
-          if (event.key === "Escape") stop();
+        ref={picker}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(event) => {
+          choose(event.target.files?.[0]);
+          // Cleared so picking the same file twice still counts as a change.
+          event.target.value = "";
         }}
-        aria-label="App name"
-        maxLength={60}
-        // Sized and weighted like the heading it replaces, and negatively
-        // margined so the text sits on the same pixel it did when it was a
-        // heading. The hairline is the only thing that appears.
-        className="-mx-2 w-[calc(100%+1rem)] rounded-[var(--radius-edge)] border border-line/70 bg-transparent px-2 py-0.5 text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink transition-colors duration-150 outline-none focus:border-[rgb(var(--glow)/0.5)]"
       />
 
-      <textarea
-        value={draftDescription}
-        onChange={(event) => setDraftDescription(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") stop();
-        }}
-        aria-label="App description"
-        rows={2}
-        maxLength={140}
-        placeholder="What this app is for."
-        className="-mx-2 mt-1 w-[calc(100%+1rem)] resize-none rounded-[var(--radius-edge)] border border-line/70 bg-transparent px-2 py-1 text-[13.5px] text-ink-muted transition-colors duration-150 outline-none focus:border-[rgb(var(--glow)/0.5)]"
-      />
+      <div className="min-w-0 flex-1">
+        <input
+          ref={field}
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") save();
+            if (event.key === "Escape") stop();
+          }}
+          aria-label="App name"
+          maxLength={60}
+          // Sized and weighted like the heading it replaces, and negatively
+          // margined so the text sits on the same pixel it did when it was a
+          // heading. The hairline is the only thing that appears.
+          className="-mx-2 w-[calc(100%+1rem)] rounded-[var(--radius-edge)] border border-line/70 bg-transparent px-2 py-0.5 text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink transition-colors duration-150 outline-none focus:border-[rgb(var(--glow)/0.5)]"
+        />
 
-      {error !== null ? (
-        <p role="alert" className="enter-fade mt-1.5 text-[11.5px] text-failed">
-          {error}
-        </p>
-      ) : null}
+        <textarea
+          value={draftDescription}
+          onChange={(event) => setDraftDescription(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") stop();
+          }}
+          aria-label="App description"
+          ref={blurb}
+          rows={1}
+          maxLength={140}
+          placeholder="What this app is for."
+          // One row, grown to whatever is in it. A fixed two rows left a box
+          // standing well below its own text, which read as an empty field
+          // rather than as the sentence it already contains.
+          className="-mx-2 mt-1 w-[calc(100%+1rem)] resize-none overflow-hidden rounded-[var(--radius-edge)] border border-line/70 bg-transparent px-2 py-1 text-[13.5px] leading-snug text-ink-muted transition-colors duration-150 outline-none focus:border-[rgb(var(--glow)/0.5)]"
+        />
 
-      {/*
+        {error !== null ? (
+          <p role="alert" className="enter-fade mt-1.5 text-[11.5px] text-failed">
+            {error}
+          </p>
+        ) : null}
+
+        {/*
         One quiet line rather than a button bar. Enter and Escape are the way
         out for anyone typing, which is everyone here; these are for saying so,
         and for the pointer.
       */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
-        <button
-          type="button"
-          onClick={save}
-          disabled={pending}
-          className="font-medium text-ink transition-opacity duration-150 hover:opacity-70 disabled:opacity-50"
-        >
-          {pending ? "Saving..." : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={stop}
-          disabled={pending}
-          className="text-ink-muted transition-colors duration-150 hover:text-ink"
-        >
-          Cancel
-        </button>
-        <span className="text-ink-subtle">
-          Renaming changes the address. Old links keep working.
-        </span>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending}
+            className="font-medium text-ink transition-opacity duration-150 hover:opacity-70 disabled:opacity-50"
+          >
+            {pending ? "Saving..." : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={stop}
+            disabled={pending}
+            className="text-ink-muted transition-colors duration-150 hover:text-ink"
+          >
+            Cancel
+          </button>
+          {image !== null ? (
+            <button
+              type="button"
+              onClick={() => storeImage("")}
+              disabled={pending}
+              className="text-ink-muted transition-colors duration-150 hover:text-ink"
+            >
+              Remove picture
+            </button>
+          ) : null}
+          <span className="text-ink-subtle">
+            Renaming changes the address. Old links keep working.
+          </span>
+        </div>
+
+        {children}
       </div>
     </div>
   );
@@ -292,6 +319,26 @@ function Pencil() {
       strokeLinejoin="round"
     >
       <path d="M9.2 2.4l2.4 2.4M2.5 9.1l6.7-6.7 2.4 2.4-6.7 6.7-3 .6z" />
+    </svg>
+  );
+}
+
+/** The invitation laid over an app's face while it is being edited. */
+function Photo() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2.5" y="4" width="15" height="12" rx="1.5" />
+      <circle cx="7" cy="8.5" r="1.4" />
+      <path d="M2.5 13.2l4-3.4 4.2 3.6 2.6-2.2 4.2 3.4" />
     </svg>
   );
 }
