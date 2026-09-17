@@ -7,14 +7,16 @@ import { archiveProject, uploadSource } from "./source.js";
 import { collectEnv } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
+import { confirmAnyway } from "./confirm.js";
 import { discoverServices } from "./services.js";
 import {
   checkBundle,
+  findEnvNeeds,
   isRootDockerfile,
   isSafeDockerfilePath,
   readDockerfile,
 } from "@cira/deploy/packaging";
-import { bold, dim, fail, info, success } from "./ui.js";
+import { bold, dim, fail, info, success, warn } from "./ui.js";
 
 interface MeResponse {
   user: { name: string; email: string };
@@ -185,6 +187,8 @@ export async function deploy(argv: string[] = []): Promise<number> {
   const bytes = files.reduce((n, f) => n + f.size, 0);
   info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)})...`)}`);
 
+  const packed = archiveProject(root, files);
+
   // Names are printed, values never are - not here, not on failure, not
   // anywhere. See docs/secrets.md.
   let collected;
@@ -193,6 +197,35 @@ export async function deploy(argv: string[] = []): Promise<number> {
   } catch (error) {
     fail(error instanceof Error ? error.message : "Could not read the env file.");
     return 1;
+  }
+
+  // What the repository says it needs, against what it has been given. Said
+  // before the build rather than discovered afterwards: an app missing its
+  // database starts perfectly well and fails the first time anybody uses it,
+  // which is the most expensive shape a failure can take.
+  const missing = findEnvNeeds(packed.entries).filter(
+    (need) => collected.env[need.name] === undefined,
+  );
+
+  if (missing.length > 0) {
+    info("");
+    warn(
+      `This app looks like it needs ${missing.length} more thing${missing.length === 1 ? "" : "s"}:`,
+    );
+    const column = Math.max(...missing.map((need) => need.name.length));
+    for (const need of missing) {
+      const where = need.file.replace(/^\.\//, "");
+      info(`  ${need.name.padEnd(column)}  ${dim(`${need.reason}, in ${where}`)}`);
+    }
+    info("");
+    info(dim("  Set them in .env, or pass --env NAME=value."));
+    info(dim("  Deploying without them will build, and the app may not work."));
+    info("");
+
+    if (!(await confirmAnyway(argv))) {
+      fail("Nothing was deployed.");
+      return 1;
+    }
   }
 
   const names = Object.keys(collected.env).sort();
@@ -217,7 +250,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // which is what lets a project larger than a few megabytes deploy at all.
   let sourceId: string;
   try {
-    sourceId = await uploadSource(archiveProject(root, files));
+    sourceId = await uploadSource(packed.archive);
   } catch (error) {
     fail(error instanceof ApiError ? error.message : "Could not upload this project.");
     return 1;

@@ -22,8 +22,17 @@ interface Ticket {
   uploadUrl: string;
 }
 
-/** Read the files and compress them, in memory - a bundle is capped at 100 MB. */
-export function archiveProject(root: string, files: readonly BundleFile[]): Buffer {
+/**
+ * Read the files and compress them, in memory - a bundle is capped at 100 MB.
+ *
+ * The entries come back alongside the archive because they are the only moment
+ * the whole project is in hand as text. Reading it all a second time to look
+ * for anything would be reading it all a second time.
+ */
+export function archiveProject(
+  root: string,
+  files: readonly BundleFile[],
+): { archive: Buffer; entries: ArchiveEntry[] } {
   const entries: ArchiveEntry[] = files.map((file) => {
     const full = join(root, file.path);
     // The mode is read here rather than carried from the walk, because the
@@ -32,7 +41,7 @@ export function archiveProject(root: string, files: readonly BundleFile[]): Buff
     return { path: file.path, mode: statSync(full).mode, body: readFileSync(full) };
   });
 
-  return tarGzip(entries);
+  return { archive: tarGzip(entries), entries };
 }
 
 /** Upload it, and return the name the deploy will ask to build. */
