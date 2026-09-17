@@ -555,6 +555,12 @@ function dockerSteps(image: string, container: ContainerHints): unknown[] {
       // Dockerfile in `apps/api` and says plainly that the context must be the
       // workspace.
       args: ["build", "-f", container.dockerfile, "-t", image, "."],
+      // BuildKit, because a Dockerfile written any time recently assumes it.
+      // `RUN --mount=type=cache` is the common one and it is not an extension
+      // people opt into - it is the default everywhere the file was tested,
+      // and without it the build fails on a line its author never thought
+      // twice about.
+      env: ["DOCKER_BUILDKIT=1"],
     },
     { name: "gcr.io/cloud-builders/docker", args: ["push", image] },
   ];

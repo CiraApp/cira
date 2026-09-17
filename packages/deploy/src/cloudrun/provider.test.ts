@@ -515,7 +515,7 @@ describe("a Dockerfile wins when there is one", () => {
     await provider().deploy(dockerised);
 
     const build = calls.find((c) => c.url.includes("cloudbuild"))?.body as {
-      steps: Array<{ name: string; args: string[] }>;
+      steps: Array<{ name: string; args: string[]; env?: string[] }>;
     };
     expect(build.steps.map((s) => s.name)).toEqual([
       "gcr.io/cloud-builders/docker",
@@ -524,6 +524,11 @@ describe("a Dockerfile wins when there is one", () => {
     expect(build.steps[0]?.args).toContain("build");
     expect(build.steps[1]?.args).toContain("push");
     expect(JSON.stringify(build)).not.toContain("pack");
+
+    // A Dockerfile written any time recently assumes BuildKit.
+    // `RUN --mount=type=cache` fails without it, on a line its author never
+    // thought twice about.
+    expect(build.steps[0]?.env).toContain("DOCKER_BUILDKIT=1");
   });
 
   /**
