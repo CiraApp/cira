@@ -1,7 +1,15 @@
 import "server-only";
 
 import { and, eq } from "drizzle-orm";
-import { apps, appAccess, db, deployments, memberships, spaces } from "@cira/db";
+import {
+  apps,
+  appAccess,
+  atomically,
+  db,
+  deployments,
+  memberships,
+  spaces,
+} from "@cira/db";
 import { newId, slugify, canManageApp } from "@cira/core";
 import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
@@ -76,31 +84,49 @@ export async function deployToSpace(args: {
 
   if (app === null) {
     const slug = await freeSlug(space.id, slugify(appName));
-    const [created] = await database
-      .insert(apps)
-      .values({
-        id: newId("app"),
+    const appId = newId("app");
+
+    // A brand new app is visible to its deployer only. Widening it is a
+    // deliberate act in the app's Access panel, never a side effect of
+    // shipping - and the two halves of that sentence should not be able to
+    // come apart.
+    //
+    // An owner can open their own app whether or not this grant exists, so
+    // today the grant going missing costs nothing. That is exactly why it is
+    // written this way: the thing making it harmless is a shortcut in
+    // `canAccessApp`, in another package, which nothing here can see and
+    // nothing obliges to stay. Depending on it silently is how this becomes a
+    // real hole the day ownership is expressed as a grant like everything else.
+    await atomically(database, (on) => [
+      on.insert(apps).values({
+        id: appId,
         spaceId: space.id,
         name: appName,
         slug,
         status: "deploying",
         ownerUserId: user.id,
-      })
-      .returning();
+      }),
+      on.insert(appAccess).values({
+        id: newId("access"),
+        appId,
+        type: "user",
+        targetId: user.id,
+      }),
+    ]);
+
+    // Read back rather than returned. A batch hands back its results by
+    // position, and reaching into one by index reads far worse than a query
+    // that says what it is after.
+    const [created] = await database
+      .select()
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1);
 
     if (created === undefined) {
       return { ok: false, error: "Could not create the app." };
     }
     app = created;
-
-    // A brand new app is visible to its deployer only. Widening it is a
-    // deliberate act in the app's Access panel, never a side effect of shipping.
-    await database.insert(appAccess).values({
-      id: newId("access"),
-      appId: app.id,
-      type: "user",
-      targetId: user.id,
-    });
   } else {
     // Setting an app's environment is managing it, so it takes the same rights
     // rather than the weaker "is in this space" that redeploying takes. A first
