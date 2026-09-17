@@ -570,6 +570,12 @@ export class CloudRunProvider implements DeploymentProvider {
         ingress: "INGRESS_TRAFFIC_ALL",
         template: {
           labels: spec.labels,
+          // Extra CPU while the container is starting and nothing is being
+          // served yet. It is billed only for that window, and it is the
+          // cheapest thing available against a cold start: the alternative is
+          // keeping an instance warm around the clock for an app nobody is
+          // using at three in the morning.
+          annotations: { "run.googleapis.com/startup-cpu-boost": "true" },
           scaling: { minInstanceCount: 0, maxInstanceCount: 10 },
           containers: spec.containers.map((container) => ({
             // Named only when there is more than one, because naming the sole
@@ -602,10 +608,20 @@ export class CloudRunProvider implements DeploymentProvider {
               ? {
                   startupProbe: {
                     tcpSocket: { port: container.port },
-                    periodSeconds: 5,
-                    timeoutSeconds: 3,
-                    // Generous: this is still a cold start.
-                    failureThreshold: 20,
+                    // Asked every second, not every five. The front door waits
+                    // for this to pass before it takes traffic, so the gap
+                    // between the backend actually listening and Cloud Run
+                    // noticing is time every cold start pays for and nobody
+                    // gets back. A backend that is up in one second should not
+                    // wait four more to be asked.
+                    periodSeconds: 1,
+                    // Cloud Run requires this to be no longer than the period.
+                    // A TCP connect to a port inside the same instance is not
+                    // a thing that needs longer.
+                    timeoutSeconds: 1,
+                    // The same hundred seconds of patience as before, now
+                    // spent in smaller steps.
+                    failureThreshold: 100,
                   },
                 }
               : {}),

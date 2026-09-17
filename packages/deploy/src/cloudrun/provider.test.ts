@@ -751,6 +751,23 @@ describe("an app that is two halves", () => {
     expect(service.find((c) => c.name === "web")?.startupProbe).toBeUndefined();
   });
 
+  /**
+   * The front door will not take traffic until this passes, so the gap between
+   * the backend listening and Cloud Run noticing is time every single cold
+   * start pays for. Asking every five seconds meant a backend up in one waited
+   * four more for no reason.
+   */
+  it("notices the backend is up promptly, not eventually", async () => {
+    const { service } = await deployBoth();
+    const probe = service.find((c) => c.name === "api")?.startupProbe;
+
+    expect(probe?.periodSeconds).toBe(1);
+    // Cloud Run refuses a timeout longer than the period it is asked on.
+    expect(probe?.timeoutSeconds).toBeLessThanOrEqual(probe?.periodSeconds ?? 0);
+    // And the patience is unchanged: the same budget, in smaller steps.
+    expect((probe?.failureThreshold ?? 0) * (probe?.periodSeconds ?? 0)).toBe(100);
+  });
+
   it("does not depend on a sidecar that never said where it listens", async () => {
     serve([
       [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
@@ -860,7 +877,12 @@ describe("rolling out both halves", () => {
             name?: string;
             image: string;
             dependsOn?: string[];
-            startupProbe?: { tcpSocket?: { port: number } };
+            startupProbe?: {
+              tcpSocket?: { port: number };
+              periodSeconds?: number;
+              timeoutSeconds?: number;
+              failureThreshold?: number;
+            };
           }>;
         };
       }
