@@ -31,47 +31,36 @@ export function CiraMark({ className }: { className?: string }) {
 }
 
 /**
- * Cira's name, drawn rather than set.
+ * Cira's name.
  *
- * The same object as the mark, spelled out. Every letter is built from
- * horizontals and a single 45 degree diagonal, one stroke weight throughout,
- * and where a curve would go there is a chevron instead - which is the whole
- * idea, because the mark beside it is a chevron too.
+ * The wordmark as drawn, dropped in exactly as it was given. Three attempts
+ * went into reconstructing these letterforms from a picture of them and all
+ * three were wrong in the same way - close enough to read as CIRA, not close
+ * enough to be the logo. A brand mark is not a thing to approximate, and the
+ * file existed.
  *
- * That is what the first attempt got wrong. Drawn as ordinary angular capitals
- * they were merely a squared-off typeface: the R had a rectangular bowl and
- * the A a vertical stem with a crossbar, and next to the mark they looked like
- * lettering that happened to be nearby. Here the R's bowl closes to a point
- * and the A has no crossbar at all - it is a chevron standing on its legs with
- * a triangular counter cut out of the apex.
+ * Left alone deliberately: no re-spacing, no re-weighting, no tidying of the
+ * coordinates. The only thing added is `aria-hidden`, because every place this
+ * is used sits inside a link that already names itself.
  *
- * Drawn rather than set for the reasons it always was: it cannot go wrong
- * while a font is still loading, and it holds its exact weight at 13px, where
- * a typeface would be hinted into something slightly else.
- *
- * The box is the cap height exactly - no ascenders, no descenders - so a
- * lockup aligns it against the mark by centring the two boxes.
+ * Source: cira-wordmark.svg. Its box carries a little air above and below the
+ * caps, so a lockup sizes it against the mark by eye rather than by assuming
+ * the height is the cap height.
  */
 export function CiraWordmark({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 368 100"
+      viewBox="0 0 650 128"
       aria-hidden="true"
       className={className}
+      preserveAspectRatio="xMidYMid meet"
       fill="currentColor"
-      fillRule="evenodd"
     >
-      {/* C - mitred where it is closed, and cut on the diagonal where it opens,
-          so the arms taper toward the gap rather than ending as though cropped. */}
-      <path d="M28,0 L96,0 L68,28 L44,28 L28,44 L28,56 L44,72 L68,72 L96,100 L28,100 L0,72 L0,28 Z" />
-      {/* I */}
-      <path d="M112,0 L140,0 L140,100 L112,100 Z" />
-      {/* R - the bowl closes to a point instead of a curve, and its counter is
-          the same shape inset, so the two are plainly one form. */}
-      <path d="M156,0 L218,0 L256,38 L218,76 L252,100 L214,100 L190,76 L184,76 L184,100 L156,100 Z M184,28 L206.4,28 L216.4,38 L206.4,48 L184,48 Z" />
-      {/* A - a chevron on its legs. No crossbar: the counter is cut out of the
-          apex and runs open to the baseline. */}
-      <path d="M310,0 L330,0 L368,100 L338,100 L320,52.6 L302,100 L272,100 Z" />
+      <path d="M491 124 L584 125 L562 98 L513 98 Z" />
+      <path d="M433 125 L471 125 L539 32 L608 125 L647 125 L559 3 L524 3 Z" />
+      <path d="M249 3 L249 125 L279 125 L281 29 L378 29 L389 40 L364 64 L300 64 L363 124 L412 125 L371 89 L381 88 L426 44 L425 37 L392 3 Z" />
+      <path d="M192 3 L192 125 L223 125 L223 3 Z" />
+      <path d="M2 36 L2 91 L38 124 L167 125 L141 98 L53 98 L32 78 L32 49 L54 29 L143 29 L170 3 L39 3 Z" />
     </svg>
   );
 }
