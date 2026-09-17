@@ -3,6 +3,7 @@
 import { deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 import { analyzeAppSource } from "@/lib/capability-analysis";
+import { verifyAppCapabilities } from "@/lib/capability-verification";
 import { latestDeployment } from "@/lib/queries";
 
 /**
@@ -60,6 +61,14 @@ export async function retryCapabilityAnalysis(
     });
 
     if (!outcome.ok) return { ok: false, error: outcome.error };
+
+    // And then ask the app about them, which is the half this used to skip.
+    // Finding a capability does not publish it; the app confirming it does.
+    // Without this the whole set sat unverified for ever, which the panel
+    // reported honestly as "Checking" and which looked exactly like a page
+    // that had not finished loading.
+    await verifyAppCapabilities(ctx.app.id);
+
     return { ok: true, detected: outcome.detected.length };
   } catch (error) {
     if (error instanceof ForbiddenError) {

@@ -1,13 +1,9 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apps, capabilities, db, memberships } from "@cira/db";
-import { deploymentProvider } from "@cira/deploy";
+import { apps, db, memberships } from "@cira/db";
 import { userFromRequest } from "@/lib/cli-session";
-import { verifyCapabilities } from "@/lib/capability-verify";
-import { recordVerification } from "@/lib/capabilities";
-import { probeWebUi } from "@/lib/browser-ui";
-import { latestDeployment } from "@/lib/queries";
+import { verifyAppCapabilities } from "@/lib/capability-verification";
 
 /**
  * Ask the app whether the capabilities credited to it are real.
@@ -47,87 +43,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });
   }
 
-  // Only what has not been asked about. A redeploy clears the stamp, so this
-  // is everything new plus anything the last deploy changed.
-  const pending = await db()
-    .select({
-      name: capabilities.name,
-      method: capabilities.method,
-      path: capabilities.path,
-      risk: capabilities.risk,
-      probe: capabilities.probe,
-    })
-    .from(capabilities)
-    .where(and(eq(capabilities.appId, app.id), isNull(capabilities.verifiedAt)));
+  const outcome = await verifyAppCapabilities(app.id);
 
-  const deployment = await latestDeployment(app.id);
-  const url = deployment !== null && deployment.status === "live" ? deployment.url : null;
-
-  // Nothing to ask, and nothing running to ask: the quiet success this has
-  // always returned, so a redeploy that changed no capabilities is not an error.
-  if (url === null) {
-    if (pending.length === 0) {
-      return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
-    }
-    return NextResponse.json({ error: "That app is not running" }, { status: 409 });
-  }
-
-  let token: string;
-  try {
-    token = await deploymentProvider().invocationToken(url);
-  } catch {
-    if (pending.length === 0) {
-      return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
-    }
-    return NextResponse.json({ error: "Could not reach the app" }, { status: 502 });
-  }
-
-  const origin = new URL(url).origin;
-
-  // Asked on every verify rather than only when capabilities changed, because
-  // whether an app has a front door is a fact about the deploy and not about
-  // its capabilities: a release that adds a web interface and no new routes
-  // should still stop Cira describing it as headless.
-  //
-  // Null means the app did not answer clearly enough to conclude anything, and
-  // then whatever was already known is left alone - including "not yet asked".
-  const webUi = await probeWebUi({ origin, token });
-  if (webUi !== null) {
-    await db()
-      .update(apps)
-      .set({ hasWebUi: webUi, updatedAt: new Date() })
-      .where(eq(apps.id, app.id));
-  }
-
-  if (pending.length === 0) {
-    return NextResponse.json({ verified: 0, rejected: 0, inconclusive: false });
-  }
-
-  const outcome = await verifyCapabilities({
-    origin,
-    token,
-    capabilities: pending.map((row) => ({
-      name: row.name,
-      method: row.method,
-      path: row.path,
-      risk: row.risk === "read" ? "read" : "write",
-      probe: (row.probe as Record<string, unknown> | null) ?? undefined,
-    })),
-  });
-
-  // Nothing is recorded when the app answers everything. Stamping capabilities
-  // an app confirmed indiscriminately would be worse than leaving them off.
-  if (!outcome.inconclusive) {
-    await recordVerification({
-      appId: app.id,
-      verified: outcome.verified,
-      rejected: outcome.rejected,
-    });
+  if (!outcome.ok) {
+    return outcome.reason === "not-running"
+      ? NextResponse.json({ error: "That app is not running" }, { status: 409 })
+      : NextResponse.json({ error: "Could not reach the app" }, { status: 502 });
   }
 
   return NextResponse.json({
-    verified: outcome.verified.length,
-    rejected: outcome.rejected.length,
+    verified: outcome.verified,
+    rejected: outcome.rejected,
     inconclusive: outcome.inconclusive,
   });
 }
