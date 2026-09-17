@@ -37,6 +37,32 @@ running app has confirmed it serves the route, because reading code can be
 wrong and the app cannot. Authorised colleagues can then reach those operations
 from their own AI assistants, through Cira's permission checks.
 
+## What your app needs to run
+
+Cira reads the repository before it builds and says what the app expects to be
+told - a database, a cache, anywhere it reads the environment with nothing to
+fall back on, and any setting whose default points at your own machine. The
+last of those is the one that catches people out: the app starts, because
+there is a default, and the default names something that does not exist inside
+a container.
+
+```text
+Environment (from .env)
+  ✓ DATABASE_URL
+  ✗ REDIS_URL    defaults to localhost, in apps/api/app/config.py
+
+! 1 missing. It will build, and the app may not work without it.
+```
+
+Anything missing can be typed in at the prompt. It is not echoed, it is used
+for that deploy, and it is kept in your `.env` so the next deploy does not ask
+again. Going ahead without it takes the word `skip`, typed out - Enter alone
+does not count, because a prompt that continues on Enter is a prompt nobody
+reads.
+
+It is a warning, never a refusal. Cira is reading your source and can be wrong.
+`--yes` skips the whole exchange, and CI is never asked at all.
+
 ## An app that is a frontend and an API
 
 Plenty of internal software is two things: a frontend, and the API behind it.
