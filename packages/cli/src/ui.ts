@@ -30,5 +30,5 @@ export function fail(message: string): void {
  * lines, which is exactly what would happen to it otherwise.
  */
 export function warn(message: string): void {
-  console.log(`${amber("!")} ${message}`);
+  process.stdout.write(`${amber("!")} ${message}\n`);
 }
