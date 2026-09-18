@@ -1,64 +1,419 @@
 # Cira
 
-**Cira lets developers deploy software directly to their company, and lets employees use that software from one simple place.**
-
-Developers run `cira deploy`. Employees open Cira and see the apps they have access to. Nobody configures cloud infrastructure.
-
-The full product spec lives in [`docs/spec.md`](docs/spec.md); the build order and current progress live in [`CHECKLIST.md`](CHECKLIST.md).
-
-## Shape
+**Cira is where a company's internal software lives.** A developer runs
+`cira deploy` in a repository, and the app is built, hosted and put in front of
+the right colleagues: no cloud console, no manifest, no infrastructure to own.
+Employees open Cira and see the apps they are allowed to use. AI agents connect
+to Cira over MCP and can find and call what those apps do.
 
 ```text
-User → Space → Apps
+Developer   cira deploy   ──▶   running app, access-controlled, on its own address
+Employee    cira.dev      ──▶   the company's apps, one place, one sign-in
+Agent       MCP           ──▶   search, describe and invoke what those apps can do
 ```
 
-A **Space** is usually a company. Apps belong to a space, and each app is visible
-to whoever its access rules name. That is the whole mental model.
+The product specification is [`docs/spec.md`](docs/spec.md). How secrets are
+handled is [`docs/secrets.md`](docs/secrets.md). The reasoning behind past
+decisions is recorded in [`CHECKLIST.md`](CHECKLIST.md).
 
-## Layout
+**Contents**
+
+- [Concepts](#concepts)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [How it works](#how-it-works)
+  1. [Joining a company](#1-joining-a-company)
+  2. [Connecting a machine](#2-connecting-a-machine)
+  3. [Deploying an app](#3-deploying-an-app)
+  4. [Opening an app](#4-opening-an-app)
+  5. [Capabilities](#5-capabilities)
+  6. [Agents over MCP](#6-agents-over-mcp)
+  7. [Access control](#7-access-control)
+  8. [Reaching Google without keys](#8-reaching-google-without-keys)
+- [Design principles](#design-principles)
+- [Known limits](#known-limits)
+- [Development](#development)
+- [Shipping](#shipping)
+- [The CLI](#the-cli)
+
+## Concepts
+
+```text
+User ──▶ Space ──▶ App ──▶ Services
+                    │
+                    ├──▶ Deployments
+                    └──▶ Capabilities
+```
+
+| Concept        | What it is                                                                                                                                                                   |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Space**      | Usually a company. Everything belongs to one. People join by invite, or automatically if their verified email is on the company's domain.                                    |
+| **Membership** | A person's place in a space, with a role: `member`, `admin` or `owner`. Members can also belong to **teams**.                                                                |
+| **App**        | One piece of internal software, with a name, a picture, an address and access rules. Any member can deploy one.                                                              |
+| **Service**    | A deployable part of an app. Most apps have one; a frontend with its API behind it has two, deployed together as one app.                                                    |
+| **Deployment** | One attempt to put a version of an app into service: `queued`, `building`, `deploying`, `live`, `failed` or `removed`.                                                       |
+| **Access**     | Who may open an app: named people, whole teams, or the whole space.                                                                                                          |
+| **Capability** | One business operation an app already performs - "get revenue between two dates" - described well enough that an agent can find it and call it. Cira works these out itself. |
+
+## Architecture
+
+```text
+                        ┌────────────────────────────────────────────┐
+  cira CLI ──── API ───▶│                                            │───▶ Neon Postgres
+                        │  Cira web app                              │     metadata only
+  Browser ── cira.dev ─▶│  Next.js on Vercel                         │
+                        │                                            │───▶ Clerk
+  AI agent ──── MCP ───▶│  gallery · app pages · CLI API · MCP       │     who someone is
+                        │                                            │
+                        └──────┬──────────────────────────┬──────────┘───▶ Claude
+                               │ Google APIs              │ identity         capability
+                               │ (no stored keys)         │ tokens           analysis
+                               ▼                          ▼
+  CLI ── source ──▶  Cloud Storage ──▶ Cloud Build ──▶ Artifact Registry ──▶ Cloud Run
+                                                                              ▲
+  Browser ── {app}--{space}.cira.dev ──▶ Cloudflare Worker (app proxy) ──────┘
+```
+
+| Component         | Runs on            | Job                                                                                          |
+| ----------------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| **Cira web app**  | Vercel             | The product: gallery, app pages, settings, the API the CLI calls, and the MCP endpoint.      |
+| **Neon Postgres** | Neon               | Cira's own records: spaces, people, apps, deployments, capabilities. Never an app's data.    |
+| **Clerk**         | Clerk              | Answers "who is this person" and nothing else. Only `lib/identity.ts` imports it.            |
+| **`cira` CLI**    | The developer      | Works out what a repository is, gathers its environment, uploads it, and follows the deploy. |
+| **Google Cloud**  | Google             | Cloud Build turns source into images; Cloud Run runs them, privately.                        |
+| **App proxy**     | Cloudflare Workers | Stands between a browser and a private Cloud Run service, on a hostname per app.             |
+| **Claude**        | Anthropic          | Reads an app's source once per deploy and proposes its capabilities.                         |
+
+Cira does not own compute. Everything that touches the cloud goes through the
+`DeploymentProvider` interface in `packages/core`, and Cloud Run is the one
+implementation of it. Nothing above that interface knows which provider is in
+use.
+
+## Repository layout
 
 ```text
 apps/
-  web/        Next.js app - employee gallery, app management, MCP endpoint
+  web/            Next.js app: product UI, CLI API, MCP endpoint, capability engine
 packages/
-  core/       Domain model, permission logic, deployment provider interface
-  db/         PostgreSQL schema and migrations
-  deploy/     Deployment provider implementations
-  extract/    Reads a repository's shape, for capability analysis
-  cira-skill/ The Cira Skill, as one canonical SKILL.md
-  cli/        The `cira` command
+  core/           Domain model, permission rules, capability rules. No framework, no I/O.
+  db/             Drizzle schema, SQL migrations, the `atomically` helper, demo seed
+  deploy/         Cloud Run provider, source bundling, the environment scanner, source packing
+  cli/            The `cira` command, published as @cira-app/cli
+  cira-skill/     SKILL.md - what coding agents are taught about Cira
+workers/
+  app-proxy/      The Cloudflare Worker in front of every deployed app
+fixtures/
+  capability-analyzer/   A reference app with known capabilities, for measuring the analyzer
+docs/
+  spec.md         Product specification
+  secrets.md      How environment variables are handled
 ```
 
-`packages/core` holds no framework and no provider code. Permission checks take
-explicit records and are always run server-side - client-supplied space and user
-ids are never trusted.
+`packages/core` holds rules as pure functions that take explicit records. Every
+check runs on the server; ids a client sends are never trusted.
 
-## Stack
+## How it works
 
-| Concern  | Choice                                       |
-| -------- | -------------------------------------------- |
-| Web      | Next.js 16, React 19, Tailwind v4            |
-| Database | Neon Postgres                                |
-| ORM      | Drizzle                                      |
-| Identity | Clerk, behind `apps/web/src/lib/identity.ts` |
-| Hosting  | Vercel for Cira, Cloud Run for deployed apps |
-| Analysis | Claude, behind `lib/capability-analyzer.ts`  |
+### 1. Joining a company
 
-Two seams keep the replaceable parts replaceable. `lib/identity.ts` is the only
-module that imports the auth provider, and `DeploymentProvider` is the only way
-Cira reaches compute. Everything else talks to Cira's own model.
+A person signs in through Clerk. On first sign-in, onboarding either creates a
+space for their company or joins one. A space founded with a company email
+records that domain, and anyone who later signs in with a verified address on
+it joins automatically as a member. Everyone else arrives through an invite
+link. Admins and owners manage members, teams and roles from the space's
+members page.
 
-Reasoning for each choice is recorded in [`CHECKLIST.md`](CHECKLIST.md).
+### 2. Connecting a machine
+
+`cira login` uses a device flow, so no password or secret is ever typed into a
+terminal:
+
+```text
+cira login ──▶ POST /api/cli/auth/start      gets a device code and a short user code
+           ──▶ opens cira.dev/cli            the person, already signed in, approves the code
+           ──▶ POST /api/cli/auth/poll       returns a token once approved
+```
+
+The token is stored in `~/.cira/config.json`. It is the one credential the CLI
+uses for everything, and the same one an agent uses over MCP - so revoking it
+cuts off both.
+
+### 3. Deploying an app
+
+`cira deploy` is the whole developer experience. Nothing needs writing first.
+
+```text
+ CLI                                      Cira                          Google
+ ───                                      ────                          ──────
+ who am I, which space      ──────────▶   /api/cli/me
+ walk files, find services
+ check the environment
+ ask for an upload URL      ──────────▶   /api/cli/source
+ upload source archive      ─────────────────────────────────────────▶  Cloud Storage
+ start the deploy           ──────────▶   /api/cli/deploy  ──────────▶  Cloud Build + Cloud Run
+ start capability analysis  ──────────▶   /api/cli/capabilities ────▶   Claude
+ poll every 3 seconds       ──────────▶   /api/cli/deploy/status ───▶   build done? swap image
+ once live: verify          ──────────▶   /api/cli/capabilities/verify ─▶ the running app
+ print the address and what the app can do
+```
+
+**What the CLI works out.** Which space to deploy into: an explicit
+`--space`, then the folder's existing link, then the only space the person is
+in. Which **services** the repository contains: a frontend and its API are
+recognised from each half's own toolchain files, with no configuration, and
+the browser-facing half (Next.js before a bare Node server) is chosen to take
+the public port. Whether each service has a **Dockerfile**: if so it is built
+with it, otherwise Cloud Build's buildpacks detect the language.
+
+**The environment.** The CLI reads the first of `.env.production.local`,
+`.env.local`, `.env.production` or `.env` that exists, and scans the source
+for variables the code reads with no default, or with a default pointing at
+`localhost`. It prints one checklist, marking each variable ✓ or ✗:
+
+```text
+Environment (from .env.local)
+  ✓ DATABASE_URL
+  ✓ S3_ACCESS_KEY
+  ✗ REDIS_URL      defaults to localhost, in apps/api/app/config.py
+```
+
+For anything missing, it asks for the value in the terminal (masked), and
+going without one means typing `skip` - pressing Enter does not. It also
+lists every `NEXT_PUBLIC_` variable separately, because those are compiled into
+the JavaScript a browser downloads and are readable by anyone who opens the app.
+
+Values are never stored by Cira. They travel with the deploy request, are
+written straight onto the Cloud Run service, and are forgotten. Cira keeps
+each variable's name, an 8-character fingerprint and who set it, so the app
+page can show what is configured and when it changed. The full design is in
+[`docs/secrets.md`](docs/secrets.md).
+
+**The upload.** The source is packed into one archive, without local `.env`
+files (`.env.example` is kept), `node_modules` or `.git`, and sent straight from the CLI to Cloud Storage with
+a signed URL that allows writing one object once. It never passes through Cira,
+which is what lets a real project deploy at all: Vercel caps request bodies far
+below the size of one.
+
+**The build and the rollout.** `POST /api/cli/deploy` checks membership,
+creates or finds the app, records its services and starts one Cloud Build with
+a step per service. Each service becomes a container in a single Cloud Run
+service:
+
+```text
+  one Cloud Run service
+    web   ingress    takes the public port        e.g. Next.js
+    api   sidecar    listens on localhost:8000    e.g. FastAPI
+```
+
+The containers share a network, so a frontend that already proxies to
+`localhost:8000` in development finds its API in the same place in production,
+unchanged. Each sidecar gets a TCP startup probe, and the ingress container
+waits for them to be ready. A single-container app runs with 512 MiB and CPU
+that idles between requests; a multi-container app gets 1 CPU and 1 GiB that
+stays allocated, because a sidecar's background work would otherwise be starved.
+
+A redeploy never takes an app down for the length of its build. The
+environment is written to the service immediately, but it keeps serving the
+image it already has. Only when the build succeeds does a status poll swap in
+the new images, which starts a new revision. The deployment is `live` once
+that revision is ready.
+
+**Addresses.** An app is served at `{app}--{space}.cira.dev`. Renaming an app
+moves its address, and the old one keeps forwarding to it. An address another
+app used to answer on stays reserved, so no saved link ever lands in a
+different app.
+
+**After it is live.** Cira asks the running app whether its root serves a page.
+If it does, the app gets an **Open** button; if it is an API, it does not, and
+an app whose frontend lives elsewhere can be given a homepage address instead.
+
+### 4. Opening an app
+
+Cloud Run services are private: every request needs a Google identity token
+addressed to that service, and a browser cannot add a header to a navigation.
+So each app gets its own hostname, and a Cloudflare Worker in front of all of
+them adds the token.
+
+```text
+ 1. Open   ──▶  cira.dev/enter/{app}--{space}      Cira checks this person may open the app
+ 2.        ◀──  redirect with a signed session     HMAC, 15 minutes, for this app only
+ 3.        ──▶  {app}--{space}.cira.dev            Worker checks the signature and sets a
+                                                   host-only __Host- cookie
+ 4.             Worker ──▶ cira.dev/api/proxy/token   gets a Google identity token for the
+                                                   app (cached per isolate for an hour)
+ 5.             Worker ──▶ {service}.run.app       forwards the request with the token
+```
+
+The worker decides nothing. Cira decides who may open what and signs that
+decision; the worker only verifies a signature and forwards. Signing rather
+than asking saves a round trip to Cira for every image on a page. The cost is
+that revoking someone's access takes effect when their session expires, at
+most 15 minutes later (`SESSION_SECONDS` in `packages/core/src/proxy-session.ts`).
+
+A hostname per app rather than a path per app matters for two reasons: apps
+request their assets at absolute paths like `/_next/static/x.js`, which would
+collide under a shared host; and separate origins stop one app's scripts
+reading another's storage. The `--` separator can never appear inside a slug,
+so `acme-corp` + `ledger` and `acme` + `corp-ledger` cannot collide, and one
+DNS label is exactly what a free wildcard certificate covers.
+
+### 5. Capabilities
+
+Deploying an app also publishes what it can do. Nobody writes a manifest.
+
+```text
+ source ──▶ analysis ──▶ checks ──▶ registry ──▶ verification ──▶ published
+            (Claude)     (rules)    (Postgres)    (the running app)   to agents
+```
+
+**Analysis.** While the build runs, Cira reads the uploaded archive, packs its
+source into one document (lockfiles, generated code and binaries are left out,
+tests go last, and the whole is capped at 500 KB so it fits the model's
+context), and makes one streamed model call. The model proposes operations an
+employee would recognise, each with a name, a description, an HTTP method, a
+root-relative path, an input schema and an example input. It is language-
+agnostic: nothing about it knows what framework an app uses. The default model
+is Claude Haiku 4.5; `CIRA_ANALYZER_MODEL` overrides it.
+
+**Checks.** `capability-grounding.ts` decides what Cira is willing to store.
+It needs no model: names must be well-formed, paths must be root-relative and
+unable to leave the app's own host, and schemas must be valid. Anything else
+is dropped.
+
+**Registry.** Capabilities are stored against their app. A redeploy replaces
+the set, but a decision a person made survives it: re-detecting a write
+someone turned off does not turn it back on.
+
+**Verification.** Reading code can be wrong, so nothing is offered to an agent
+until the running app confirms it. First a control request to a random path
+must return 404, otherwise the app answers everything and nothing can be
+confirmed. Then:
+
+- a **read** is actually called, with its example input;
+- a **write** is never called. Its path is asked which methods it allows.
+
+What the app says is recorded as the capability's `reach`:
+
+| App's answer                  | `reach`    | What happens                                                             |
+| ----------------------------- | ---------- | ------------------------------------------------------------------------ |
+| 404                           | -          | Deleted. Nothing serves it; the analysis was wrong.                      |
+| 401 or 403                    | `refused`  | Kept and explained. The route is real, but the app will not let Cira in. |
+| anything else, even 4xx / 5xx | `callable` | The app's own code ran, so Cira can reach it.                            |
+| no answer                     | `pending`  | Left alone and asked again later.                                        |
+
+A refusal belongs to the build that gave it. Once a different deployment is
+live, it reads as `pending` again, so a developer who lets Cira in and
+redeploys is heard. For a write, a method probe cannot tell an open route from
+a guarded one, because frameworks reject a wrong method before they check who
+is asking. So a write only counts as `refused` when a real call is turned
+away (see below).
+
+Verification runs after `cira deploy`, and again whenever someone opens an
+app's page while anything is still unconfirmed.
+
+**Publication.** A capability is offered to agents when it is both
+**enabled** and **callable**. Reads enable themselves; writes are registered
+off and wait for someone who can manage the app to turn them on.
+
+### 6. Agents over MCP
+
+`cira mcp connect` points Claude Code and Cursor on the machine at
+`https://cira.dev/api/mcp`, using the `cira login` token. The endpoint is
+stateless Streamable HTTP and exposes three fixed tools, whatever the company
+has deployed:
+
+| Tool                  | Does                                                                             |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `search_capabilities` | Finds capabilities across every app this person can open. Empty query lists all. |
+| `describe_capability` | Returns one capability's full description and input schema.                      |
+| `invoke_capability`   | Runs it and returns the app's JSON.                                              |
+
+Three stable tools rather than one per capability, so a company's shelf can
+change with every deploy without an agent re-reading a tool list.
+
+An invocation passes, in order: the person's access to the app, the capability
+being enabled and callable, and its input against the schema. Only then is a
+URL built, from the app's own deployment plus the capability's path, so a
+capability can never address anything but the app it came from. The call
+carries an identity token for that one app and nothing that identifies a
+person. A capability that cannot be run says why - "not enabled" means ask an
+admin, "the app signs its own users in" means no setting in Cira will help.
+
+A write that answers 401 to a real call is recorded as `refused`, so the next
+agent is told before it tries. That only happens while calls identify nobody:
+the headers are checked against an allow-list, so any future change that
+passes a person's identity turns the recording off by itself.
+
+### 7. Access control
+
+One rule decides who may open an app, and everything else follows from it:
+
+1. You must be a member of the app's space. Membership alone grants nothing.
+2. The app's owner can always open it.
+3. Admins and owners of the space can open every app in it.
+4. Otherwise, an access rule must name you, one of your teams, or the space.
+
+Capabilities have no permissions of their own: you may discover and call a
+capability exactly when you may open its app. Managing an app - settings,
+access, environment, deletion, turning capabilities on - is for its owner and
+the space's admins. The rules live in `packages/core/src/permissions.ts` as
+pure functions and are tested there.
+
+### 8. Reaching Google without keys
+
+Cira holds no Google service account key. Vercel issues each deployment a
+short-lived OIDC token; Google's workload identity federation is configured to
+trust that issuer and exchanges it for credentials of a deployer service
+account. Two kinds of token come out of that:
+
+- an **access token**, which lets Cira use Cloud Build, Cloud Run and Storage;
+- an **identity token** per app, which Cloud Run checks before a request reaches
+  the app. This is what makes every app unreachable except through Cira.
+
+Nothing long-lived exists, so there is nothing to leak or rotate.
+
+## Design principles
+
+- **The app was not written for Cira.** A repository deploys as it is. Services,
+  build method, environment needs and capabilities are all worked out from what
+  the code already says.
+- **The running app is the source of truth.** Reading source proposes; the
+  deployed app confirms. Whether a route exists, whether an app has a front
+  door, whether Cira may call something: all are asked of the app.
+- **A conduit, not a vault.** Secret values pass through Cira and are never
+  stored. See [`docs/secrets.md`](docs/secrets.md).
+- **One rule, every reader.** Access, publication and verification are each
+  decided in one place, so the gallery, the CLI and an agent always get the
+  same answer.
+- **Replaceable at the seams.** Identity is behind `lib/identity.ts`; compute is
+  behind `DeploymentProvider`. The rest of Cira talks to its own model.
+- **Checks on the server.** Nothing a client sends about who it is or which
+  space it is in is trusted.
+
+## Known limits
+
+These are real gaps, not planned features in disguise.
+
+- **Apps with their own sign-in cannot be called by agents.** Cira reaches an
+  app as a service, not as one of its users. Their capabilities are discovered
+  and shown as `refused`, with the reason.
+- **No scheduled jobs or background workers.** Cira runs things that answer
+  requests. A worker that is meant to run on a timer never runs.
+- **No backing services.** Cira does not provision databases or caches; an app
+  needs connection strings to services that already exist.
+- **No runtime logs in Cira yet.** Build logs are shown on the app page;
+  runtime logs are only in Google Cloud Logging.
+- **Cold starts.** Apps scale to zero, so the first request after a quiet
+  period waits for an instance to start.
 
 ## Development
 
-Requires Node 22+ and pnpm.
+Requires Node 22 or later and pnpm.
 
 ```sh
 pnpm install
-cp .env.example .env.local     # then fill in the values
-pnpm --filter @cira/db db:migrate
-pnpm dev                        # run the web app
+cp .env.example .env.local      # then fill in the values
+pnpm dev                         # the web app
 
 pnpm typecheck
 pnpm lint
@@ -67,17 +422,14 @@ pnpm test
 pnpm build
 ```
 
-The build needs no secrets; every page that reads data is server-rendered on
-demand, so CI builds without a database or auth keys.
+The build needs no secrets: every page that reads data renders on demand, so
+CI builds without a database or auth keys.
 
-Point `DATABASE_URL` at a local database rather than a real one before running
-`pnpm dev`. The next section sets one up.
+### A local database
 
-### Developing against a local database
-
-`pnpm dev` with a `DATABASE_URL` copied from production means developing _in_
-production: every app created while clicking around is a real app, and every
-deletion is a real deletion. This gives you somewhere disposable instead.
+Never point `pnpm dev` at production's `DATABASE_URL`: every app you create
+while clicking around would be real, and so would every deletion. Use a
+disposable one:
 
 ```sh
 docker compose -f docker-compose.dev.yml up -d
@@ -88,46 +440,28 @@ pnpm --filter @cira/db db:migrate
 pnpm dev
 ```
 
-`db.localtest.me` resolves to 127.0.0.1 from public DNS, so nothing needs
-adding to `/etc/hosts`, and no production address can ever be mistaken for it.
+It is two containers, Postgres and a Neon HTTP proxy, because Cira talks to
+Neon over HTTP rather than the Postgres wire protocol. Using a different driver
+locally would be simpler and wrong: an ordinary driver holds transactions open
+across statements and Neon's HTTP driver cannot, so code that could never work
+in production would appear to work here. Writes that must land together use
+`atomically` from `packages/db`, which sends them as one batch that Neon runs
+in a transaction.
 
-Two containers rather than one, because Cira talks to Neon over HTTP instead of
-the Postgres wire protocol: a plain local Postgres is unreachable by the driver
-the application uses. The proxy answers Neon's HTTP protocol and speaks
-ordinary Postgres to the container behind it.
+`db.localtest.me` resolves to 127.0.0.1 from public DNS, so nothing goes in
+`/etc/hosts`. Clerk runs in test mode: sign in with a `+clerk_test` address and
+the code `424242`. `docker compose -f docker-compose.dev.yml down -v` throws
+the data away.
 
-It is worth knowing why this is not solved by letting the application pick a
-different driver when it sees a local address, which is smaller and obvious.
-The two drivers do not agree about what a transaction is: an ordinary Postgres
-driver holds one open across statements, and Neon's HTTP driver cannot. Local
-work would silently gain a capability production does not have, and the first
-`db.transaction()` anyone wrote would pass every test here and throw once it
-shipped. Running the real driver against a real proxy means a thing that cannot
-work in production does not appear to work here either.
+When sourcing `.env.local` in a shell, keep its values quoted. A Neon URL ends
+in `&channel_binding=require`, and an unquoted `&` makes bash print the whole
+line, password included.
 
-What Cira uses instead is `atomically` in `packages/db`, which sends a set of
-writes as one statement batch that Neon runs inside a transaction. Every
-statement has to be known before the first one runs, so it cannot read a result
-and decide what to write next - but the writes that need to land together
-already know their whole plan before they start. It falls back to a real
-transaction on the ordinary driver, so the integration tests exercise the same
-code rather than walking around it.
+### Tests that need a database
 
-Clerk is in test mode, so signing in locally uses a `+clerk_test` address with
-the verification code `424242`. The first sign-in creates the local user, and
-`db:seed:demo` below can then fill the database with something to look at.
-
-The volume keeps the data between runs. `docker compose -f
-docker-compose.dev.yml down -v` throws it away.
-
-### The tests that need a database
-
-`pnpm test` silently skips around forty of them. The journey and capability
-tests run against a real Postgres, because the constraints _are_ the safety -
-a fake would pass while the real schema rejected the same writes, which is
-precisely what those tests exist to catch. Without `TEST_DATABASE_URL` they are
-reported as skipped, which is easy to read past on a green run and is how a
-breakage reaches CI instead of stopping locally:
+About forty tests run against a real Postgres, because the schema's
+constraints are part of what they check. Without `TEST_DATABASE_URL` they are
+**skipped**, which is easy to miss on a green run:
 
 ```sh
 docker run -d --name cira-test-pg -e POSTGRES_PASSWORD=test \
@@ -136,14 +470,12 @@ docker run -d --name cira-test-pg -e POSTGRES_PASSWORD=test \
 TEST_DATABASE_URL=postgresql://postgres:test@localhost:55439/cira_test pnpm test
 ```
 
-Each run builds its own schema in a fresh database and drops it afterwards, so
-the container can stay up between runs.
+Each run creates and drops its own schema, so the container can stay up.
 
 ### A company to look at
 
-An empty account says very little about the product. This builds a whole
-synthetic one - twenty-two invented people across ten teams, ten internal apps,
-forty-one capabilities, and grants that disagree with the org chart the way real
+A synthetic company - twenty-two people, ten teams, ten apps, forty-one
+capabilities, and access grants that disagree with the org chart the way real
 ones do:
 
 ```sh
@@ -152,74 +484,26 @@ pnpm --filter @cira/db db:seed:demo -- --owner you@example.com
 pnpm --filter @cira/db db:seed:demo -- --remove
 ```
 
-`--owner` has to be an account that has signed in at least once, so Cira knows
-who it is; it becomes the owner of the space. `--also a@b,c@d` drops further
-real accounts in as admins, for a machine with more than one login. Everything
-the seed writes is marked in its ids, so `--remove` is exact rather than a
-guess. Source: [`packages/db/src/seed`](packages/db/src/seed).
+`--owner` must be an account that has signed in once. `--also a@b,c@d` adds
+more real accounts as admins. Everything the seed writes is marked in its ids,
+so `--remove` removes exactly that.
 
 ## Shipping
 
-`prod` is the production branch. Push to `prod` and CI runs typecheck, lint,
-format, build and tests; a green run deploys. There are no pull requests and no
-preview environments by design - see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+`prod` is the production branch. There are no pull requests or preview
+environments. A push to `prod` runs typecheck, lint, format, build and the
+full test suite, including the database tests; a green run migrates the
+database and deploys to Vercel.
 
-## Deployment providers
+Migrations run **before** the new code is live, so the previous deployment
+briefly serves against the new schema. Every migration therefore has to be
+additive: expand first, and contract in a later deploy once nothing reads the
+old shape.
 
-Cira does not own compute. Everything routes through the `DeploymentProvider`
-interface in `packages/core`, so the provider can be replaced without touching
-anything above it.
+### The app proxy
 
-Google Cloud Run runs the deployed apps. Cloud Build turns uploaded source into
-an image with buildpacks, which detect the language themselves - so Cira deploys
-whatever an internal tool happens to be written in, rather than only the half of
-it that is a frontend.
-
-It was chosen for its access model as much as its runtime. A Cloud Run service
-is unreachable until something is granted the invoker role, and Cira grants
-nothing: it calls each app with an OIDC token addressed to that app's own URL,
-which Cloud Run checks before the request arrives. That is the access gateway
-from spec section 7, without building one, and without a shared secret in a
-column anywhere.
-
-Cira itself still runs on Vercel, and that is load-bearing rather than
-incidental: Vercel issues every deployment a short-lived OIDC token, which is
-what Cira exchanges for Google credentials. There is no service account key.
-
-## Opening a deployed app
-
-Apps run on Cloud Run, which is private: it wants a Google identity token on
-every request, and a browser cannot put a header on a navigation. So each app
-gets its own hostname and a Cloudflare Worker in front of it holds the token.
-
-```
-browser  ->  ledger--acme.cira.dev        Cloudflare, free wildcard certificate
-         ->  workers/app-proxy            verifies Cira's signed session
-         ->  {service}.run.app            Cloud Run, still IAM-private
-```
-
-The double hyphen is load-bearing. Slugs collapse runs of non-alphanumerics to
-a single hyphen, so no slug can contain `--`, which makes it a separator
-nothing else can produce - that is what keeps `acme-corp` + `ledger` distinct
-from `acme` + `corp-ledger`. One label rather than two, because a wildcard
-certificate matches exactly one: `*.cira.dev` covers `ledger--acme.cira.dev`
-and not `ledger.acme.cira.dev`, and the first is free. It also means Cira's own
-names can never be claimed by naming an app badly, since every app address
-contains `--` and no ordinary hostname does.
-
-The proxy decides nothing. Cira checks who someone is and whether they may open
-the app, then signs a token saying so; the proxy verifies the signature and
-forwards. Signing rather than asking avoids a round trip for every image on a
-page, and the cost is that revoking access takes effect when the token expires
-
-- `SESSION_SECONDS` in `packages/core/src/proxy-session.ts`, fifteen minutes.
-
-### Deploying the proxy
-
-Nothing deploys it automatically. Cira itself ships through CI on every push,
-so a change to the web app is live minutes later; the worker in the same
-repository does not work that way, and editing it and pushing does nothing at
-all - the old code keeps running with no error anywhere to say so.
+The worker is **not** deployed by CI. Pushing a change to it does nothing, and
+the old code keeps running with no error to say so:
 
 ```sh
 pnpm --filter @cira/app-proxy build
@@ -227,148 +511,78 @@ CLOUDFLARE_ACCOUNT_ID=... CIRA_ORIGIN=https://cira.dev CIRA_APPS_DOMAIN=cira.dev
   CIRA_PROXY_SECRET=... pnpm --filter @cira/app-proxy ship
 ```
 
-`ship`, not `deploy`: pnpm has a built-in command by that name which shadows a
-script and fails with an error about deploy targets.
+The script is `ship` because pnpm has a built-in `deploy` that shadows it. The
+Cloudflare token is read from `~/.cloudflare-token` or `CLOUDFLARE_API_TOKEN`,
+and needs Workers Scripts:Edit on the account plus DNS:Edit and Workers
+Routes:Edit on the zone.
 
-The Cloudflare API token is read from `~/.cloudflare-token`, or
-`CLOUDFLARE_API_TOKEN` if set. It needs Workers Scripts:Edit on the account,
-and DNS:Edit plus Workers Routes:Edit on the zone.
+### Configured outside the repository
 
-### What is configured outside the repository
+None of this is recreated by a deploy.
 
-Four things, none of which a deploy recreates:
+| Where          | What                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------ |
+| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                    |
+| Cloudflare DNS | apex and `www`, **unproxied**. If they turn orange, the wildcard route sends Cira itself to the worker       |
+| Cloudflare     | route `*.cira.dev/*` to `cira-app-proxy`                                                                     |
+| Vercel         | environment variables, including `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`                                  |
+| GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                          |
+| Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
+| Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |
 
-| Where          | What                                                                                                                                |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                                           |
-| Cloudflare DNS | apex and `www`, **unproxied** - they must stay grey, or the wildcard route sends them to the worker, which has no app to serve them |
-| Cloudflare     | a route `*.cira.dev/*` to `cira-app-proxy`                                                                                          |
-| Vercel         | `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`, on all three environments                                                               |
+`CIRA_PROXY_SECRET` must be identical in Vercel and the worker: Cira signs with
+it and the worker verifies with it, so a mismatch locks everyone out of every
+app. Without the token-creator binding, minting identity tokens fails and every
+app becomes unreachable, to browsers and agents alike.
 
-`CIRA_PROXY_SECRET` is the same value in both places. Cira signs with it and
-the worker verifies with it, so changing it in one place and not the other
-locks everyone out of every app until they agree again.
+## The CLI
 
-Google needs one binding that is easy to miss: the deployer service account
-must hold `roles/iam.serviceAccountTokenCreator` **on itself**, or minting an
-identity token fails and every app becomes unreachable - to assistants as well
-as to browsers, since capability calls use the same token.
+Install with `npm install -g @cira-app/cli`.
 
-## Capabilities
+| Command                  | Does                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `cira login`             | Connects this machine to your Cira account, and offers to install the Cira Skill      |
+| `cira deploy`            | Deploys this folder. `--space`, `--env-file`, `--env K=V`, `--no-env`, `--dockerfile` |
+| `cira status`            | Shows what this folder is linked to                                                   |
+| `cira remove`            | Takes this folder's app down and deletes what it left behind                          |
+| `cira mcp connect`       | Points this machine's AI assistants at Cira. `disconnect` undoes it                   |
+| `cira skill install`     | Installs the Cira Skill into your coding agents                                       |
+| `cira update`            | Updates the CLI and the Skill copies you approved                                     |
+| `cira whoami` / `logout` | Shows or forgets the stored credential                                                |
 
-Deploying an app also publishes what it can _do_. Nobody writes a manifest:
-`cira deploy` reads the repository, and Cira works out which routes are
-business operations worth exposing.
+### The Cira Skill
 
-```text
-normal Next.js app → cira deploy → routes extracted → analyzed → registered
-                                                                     ↓
-                      agent ── MCP ──→ search → describe → invoke ───┘
-```
+Coding agents learn Cira from one file, `packages/cira-skill/SKILL.md`. There is
+no per-agent version: agents differ in where a skill lives, not in what Cira
+wants them to know.
 
-Five pieces, each small:
+| Agent       | Where it goes                         |
+| ----------- | ------------------------------------- |
+| Claude Code | `~/.claude/skills/cira/`              |
+| Codex       | `~/.agents/skills/cira/`              |
+| Pi          | `~/.agents/skills/cira/`              |
+| Gemini CLI  | `~/.agents/skills/cira/`              |
+| Cursor      | `.cursor/rules/cira.mdc`, per project |
 
-| Piece              | Where                                   | Job                                             |
-| ------------------ | --------------------------------------- | ----------------------------------------------- |
-| Repo extractor     | `packages/extract`                      | Recovers routes, functions and schemas          |
-| Analyzer           | `apps/web/src/lib/capability-analyzer`  | One model call: which of these are operations   |
-| Grounding          | `apps/web/src/lib/capability-grounding` | Refuses anything without a real route behind it |
-| Registry           | `apps/web/src/lib/capabilities`         | Stores them, inherits the app's access rules    |
-| Invocation gateway | `apps/web/src/lib/invoke-capability`    | Checks, validates, and calls the deployed app   |
+Nothing is installed by a postinstall script. `cira login` asks once, and
+declining writes nothing. `cira update` re-syncs only the agents you approved.
+Other commands check for a new release at most once every 8 hours, never block
+on it, and mention it once.
 
-Publication is deliberately cautious. A confident read-only capability enables
-itself; anything that writes is registered and left off until someone turns it
-on from the app's page, and anything destructive stays off. A redeploy replaces
-the set but never overrides a decision a person already made.
-
-Agents connect over MCP at `/api/mcp` with a `cira login` token, and get three
-tools - `search_capabilities`, `describe_capability`, `invoke_capability` -
-whatever the company has deployed. A capability can only ever address the app
-it came from: it carries a method and a root-relative path, and the host is
-resolved from that app's own deployment.
-
-## Publishing the CLI
-
-Tag a release and GitHub Actions publishes it:
+### Publishing a release
 
 ```sh
-npm version patch --workspace @cira-app/cli   # or minor / major
+npm version patch --workspace @cira-app/cli     # or minor / major
 git push --follow-tags
 ```
 
-There is no npm token in this repository. `.github/workflows/publish.yml`
-authenticates over OIDC using npm's trusted publishing, which mints a
-short-lived credential for that one run - nothing to leak, nothing to rotate,
-and npm is removing direct publishing by granular token in January 2027 anyway.
-It also attaches provenance, so anyone can verify a release came from this
-repository.
-
-The workflow **stages** the release rather than publishing it; you promote it
+The tag triggers `.github/workflows/publish.yml`, which authenticates to npm
+over OIDC (trusted publishing, so there is no npm token anywhere) and attaches
+provenance. It **stages** the release rather than publishing it: promote it
 from the package's page on npmjs.com. A compromised workflow can therefore
-upload an artifact but cannot put it in front of anyone - which matters here,
-because this CLI writes instructions into the coding agents on a developer's
-machine.
+upload a release but cannot put it in front of anyone, which matters for a CLI
+that writes instructions into coding agents.
 
-`@cira-app/cli` ships as a single self-contained file with **no runtime
-dependencies**. `@cira/core`, `@cira/deploy`, `@cira/extract` and `@cira/skill`
-are bundled into it rather than published: they are Cira's own internals with
-no consumers outside this repository, and publishing them would mean committing
-to their names and APIs in public, for nobody.
-
-The canonical `SKILL.md` is copied in beside the bundle, which is where the CLI
-reads it from at runtime.
-
-## The Cira Skill
-
-Coding agents learn Cira from one file: `packages/cira-skill/SKILL.md`. There is
-no per-agent version - agents differ in where a skill lives and what wrapper it
-needs, not in what Cira wants them to know.
-
-`cira login` offers to install it into whatever it finds, defaulting to yes:
-
-```text
-  Coding agents detected:
-
-    Claude Code
-    Codex
-    Cursor
-
-  Install the Cira Skill? [Y/n]
-```
-
-Declining writes nothing, and `cira skill install` does it later. Nothing is
-installed by a postinstall script: onboarding asks, once, where you can see it.
-
-| Agent       | Where it goes            | Note                                    |
-| ----------- | ------------------------ | --------------------------------------- |
-| Claude Code | `~/.claude/skills/cira/` | Reads only its own directory            |
-| Codex       | `~/.agents/skills/cira/` | Shared                                  |
-| Pi          | `~/.agents/skills/cira/` | Shared                                  |
-| Gemini CLI  | `~/.agents/skills/cira/` | Shared, and takes precedence for it     |
-| Cursor      | `.cursor/rules/cira.mdc` | Per project - Cursor has no global path |
-
-Five agents, three files. Codex, Pi and Gemini CLI all read `~/.agents/skills`,
-so Cira writes there once rather than into three private directories - and an
-agent that adopts the same convention later needs no code here at all.
-
-## Staying current
-
-```sh
-cira update
-```
-
-Checks the registry directly, updates the CLI through npm - the mechanism the
-install instruction already uses - and then re-syncs the skill into the agents
-you approved, and only those. An agent installed since is left alone; so is one
-whose auto-update you declined.
-
-Normal commands check quietly at most once every 8 hours, never block on the
-answer, and mention a release only once:
-
-```text
-  Cira 0.2.0 is available.
-  Run `cira update`.
-```
-
-A check that is slow, offline, or hits a registry that has never heard of Cira
-is abandoned without a word.
+The package is one self-contained file with no runtime dependencies. Cira's
+internal packages are bundled into it rather than published, and `SKILL.md` is
+copied in beside it.
