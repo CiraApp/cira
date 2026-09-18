@@ -6,7 +6,9 @@ import {
   NotFoundError,
   requireAppAccess,
   requireAppManage,
+  requireSpaceMember,
 } from "@/lib/authz";
+import { listCapabilitiesForUser } from "@/lib/capabilities";
 import { analyzeAppSource } from "@/lib/capability-analysis";
 import { verifyAppCapabilities } from "@/lib/capability-verification";
 import { latestDeployment } from "@/lib/queries";
@@ -114,6 +116,39 @@ export async function verifyPendingCapabilities(
   } catch {
     // Nothing here is worth interrupting a page for. The panel goes on saying
     // it is checking, which remains true.
+    return { settled: false };
+  }
+}
+
+/**
+ * Settle everything still unconfirmed in a space, for Ask Cira.
+ *
+ * The page for one app already asks it about anything waiting, because
+ * somebody is looking. Ask Cira is where people are least likely to have
+ * looked: a question arrives before anyone has opened the app it is about, and
+ * a capability nobody has confirmed is one it cannot use. So opening a space
+ * does for every app in it what opening an app does for one - once per visit,
+ * and only for apps this person can already open.
+ */
+export async function verifyPendingInSpace(
+  spaceSlug: string,
+): Promise<{ settled: boolean }> {
+  try {
+    // Membership, then the capabilities this person can see - which is already
+    // filtered to the apps they can open. Nothing here widens that.
+    const ctx = await requireSpaceMember(spaceSlug);
+    const waiting = new Set(
+      (await listCapabilitiesForUser(ctx.user))
+        .filter((c) => c.spaceSlug === spaceSlug && c.reach === "pending")
+        .map((c) => c.appId),
+    );
+
+    const outcomes = await Promise.all(
+      [...waiting].map((appId) => verifyAppCapabilities(appId)),
+    );
+    return { settled: outcomes.some((outcome) => outcome.ok) };
+  } catch {
+    // As with one app: nothing here is worth interrupting a page for.
     return { settled: false };
   }
 }

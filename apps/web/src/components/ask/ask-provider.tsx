@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
+import { verifyPendingInSpace } from "@/lib/capability-retry";
 import type { AskApp, AskEvent, AskMessage, StepState } from "@/lib/ask/protocol";
 
 /**
@@ -152,13 +154,32 @@ function forgetOthers(key: string) {
 
 export function AskProvider({
   userId,
+  spaceSlug,
   suggestions,
+  unsettled = false,
   children,
 }: {
   userId: string;
+  spaceSlug: string;
   suggestions: Suggestion[];
+  /** Whether anything in this space is still waiting to be confirmed. */
+  unsettled?: boolean;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const settling = useRef(false);
+
+  // Confirmed once per visit rather than left for someone to open each app,
+  // because a question usually arrives before anyone has. The refresh is what
+  // brings the new suggestions, and what Ask Cira can now reach, onto the page.
+  useEffect(() => {
+    if (!unsettled || settling.current) return;
+    settling.current = true;
+    void verifyPendingInSpace(spaceSlug).then((result) => {
+      if (result.settled) router.refresh();
+    });
+  }, [unsettled, spaceSlug, router]);
+
   const key = `${PREFIX}${userId}`;
 
   const [open, setOpen] = useState(false);

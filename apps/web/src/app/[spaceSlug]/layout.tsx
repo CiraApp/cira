@@ -23,10 +23,18 @@ export default async function SpaceLayout({
 
   // Nothing to suggest is a fine answer; failing to work it out should never
   // cost someone the page.
-  const suggestions = await askSuggestions(user, spaceSlug).catch(() => []);
+  const { suggestions, unsettled } = await askSuggestions(user, spaceSlug).catch(() => ({
+    suggestions: [],
+    unsettled: false,
+  }));
 
   return (
-    <AskProvider userId={user.id} suggestions={suggestions}>
+    <AskProvider
+      userId={user.id}
+      spaceSlug={spaceSlug}
+      suggestions={suggestions}
+      unsettled={unsettled}
+    >
       {children}
       <AskPanel />
     </AskProvider>
