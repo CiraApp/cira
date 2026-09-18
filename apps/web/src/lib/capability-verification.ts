@@ -1,7 +1,8 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { apps, capabilities, db } from "@cira/db";
+import { currentReach } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
 import { probeWebUi } from "@/lib/browser-ui";
 import { recordVerification } from "@/lib/capabilities";
@@ -41,24 +42,40 @@ const SETTLED = {
 export async function verifyAppCapabilities(appId: string): Promise<VerificationOutcome> {
   const database = db();
 
-  // Only what has not been asked about. A redeploy sets a moved capability
-  // back to pending, so this is everything new plus anything that shifted -
-  // and, once, everything that was stamped under the rule 0016 replaced.
-  const pending = await database
-    .select({
-      name: capabilities.name,
-      method: capabilities.method,
-      path: capabilities.path,
-      risk: capabilities.risk,
-      probe: capabilities.probe,
-    })
-    .from(capabilities)
-    .where(and(eq(capabilities.appId, appId), eq(capabilities.reach, "pending")));
+  const newest = await latestDeployment(appId);
+  // The deployment answering requests, if there is one. Held as the row rather
+  // than as a flag so that everything below that needs its id or address has
+  // it without being told twice.
+  const serving =
+    newest !== null && newest.status === "live" && newest.url !== null
+      ? { id: newest.id, url: newest.url }
+      : null;
 
-  const deployment = await latestDeployment(appId);
-  const url = deployment !== null && deployment.status === "live" ? deployment.url : null;
+  // Everything waiting on an answer: what has never been asked about, and any
+  // refusal that came from a build no longer serving. The second is how a
+  // developer who let Cira in gets heard - their routes kept their paths, so
+  // nothing else would have put them back in front of the app.
+  const pending = (
+    await database
+      .select({
+        name: capabilities.name,
+        method: capabilities.method,
+        path: capabilities.path,
+        risk: capabilities.risk,
+        probe: capabilities.probe,
+        reach: capabilities.reach,
+        answeredBy: capabilities.answeredBy,
+      })
+      .from(capabilities)
+      .where(
+        and(
+          eq(capabilities.appId, appId),
+          inArray(capabilities.reach, ["pending", "refused"]),
+        ),
+      )
+  ).filter((row) => currentReach(row, serving?.id ?? null) === "pending");
 
-  if (url === null) {
+  if (serving === null) {
     if (pending.length === 0) {
       return SETTLED;
     }
@@ -67,7 +84,7 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
 
   let token: string;
   try {
-    token = await deploymentProvider().invocationToken(url);
+    token = await deploymentProvider().invocationToken(serving.url);
   } catch {
     if (pending.length === 0) {
       return SETTLED;
@@ -75,7 +92,7 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
     return { ok: false, reason: "unreachable" };
   }
 
-  const origin = new URL(url).origin;
+  const origin = new URL(serving.url).origin;
 
   // Asked on every run rather than only when capabilities changed, because
   // whether an app has a front door is a fact about the deploy and not about
@@ -108,6 +125,7 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
   if (!outcome.inconclusive) {
     await recordVerification({
       appId,
+      deploymentId: serving.id,
       callable: outcome.callable,
       refused: outcome.refused,
       absent: outcome.absent,

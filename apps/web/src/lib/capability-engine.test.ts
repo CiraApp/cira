@@ -107,6 +107,7 @@ const spaceId = newId("space");
 const appId = newId("app");
 const revenueId = newId("capability");
 const refundId = newId("capability");
+const deploymentId = newId("deployment");
 
 describe.skipIf(!hasDatabase)("capability engine", () => {
   beforeAll(async () => {
@@ -139,7 +140,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       .insert(appAccess)
       .values({ id: newId("access"), appId, type: "user", targetId: employee.id });
     await database.insert(deployments).values({
-      id: newId("deployment"),
+      id: deploymentId,
       appId,
       provider: "vercel",
       providerDeploymentId: "dpl_demo",
@@ -216,6 +217,19 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
             endDate: url.searchParams.get("endDate"),
           }),
         );
+        return;
+      }
+
+      // Behind the app's own sign-in: Cira's token opens the door to the
+      // service, and the app then asks who is calling. Answers a method
+      // probe first, the way real frameworks do, which is why nothing short
+      // of the real call can tell this apart from a route that works.
+      if (url.pathname === "/api/locked") {
+        if (request.method === "OPTIONS") {
+          response.writeHead(405, { allow: "GET, POST" }).end();
+          return;
+        }
+        response.writeHead(401).end(JSON.stringify({ error: "sign in" }));
         return;
       }
 
@@ -379,6 +393,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
 
     await recordVerification({
       appId,
+      deploymentId,
       callable: [],
       refused: ["getRevenue"],
       absent: [],
@@ -412,6 +427,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     } finally {
       await recordVerification({
         appId,
+        deploymentId,
         callable: ["getRevenue"],
         refused: [],
         absent: [],
@@ -571,6 +587,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     const { recordVerification } = await import("./capabilities");
     await recordVerification({
       appId,
+      deploymentId,
       callable: ["getMonthlyGrowth"],
       refused: [],
       absent: [],
@@ -584,6 +601,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     // away a true account of the app and leave the page nothing to explain.
     await recordVerification({
       appId,
+      deploymentId,
       callable: [],
       refused: ["getMonthlyGrowth"],
       absent: [],
@@ -596,6 +614,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     // And one the app has no route for stops existing at all.
     await recordVerification({
       appId,
+      deploymentId,
       callable: [],
       refused: [],
       absent: ["getMonthlyGrowth"],
@@ -625,5 +644,150 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       "getRevenue",
     ]);
     expect(shrunk.review).toBe(0);
+  });
+
+  /**
+   * The one-way door. A developer sees "Refused", lets Cira in, and deploys
+   * again; every route keeps its path, so nothing used to put these back in
+   * front of the app, and the page went on saying they were shut.
+   */
+  it("asks again about a refusal once a newer build is serving", async () => {
+    const { capabilities, deployments } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { listCapabilitiesForApp } = await import("./capabilities");
+    const { verifyAppCapabilities } = await import("./capability-verification");
+
+    const ledgerId = newId("capability");
+    const nextBuild = newId("deployment");
+
+    await database.insert(capabilities).values({
+      id: ledgerId,
+      appId,
+      spaceId,
+      name: "readLedger",
+      description: "The ledger.",
+      inputSchema: { type: "object", properties: {}, required: [] },
+      method: "GET",
+      path: "/api/revenue",
+      risk: "read",
+      enabled: true,
+      reach: "refused",
+      answeredBy: deploymentId,
+      verifiedAt: new Date(),
+    });
+
+    try {
+      const shut = await listCapabilitiesForApp(appId);
+      expect(shut.find((c) => c.id === ledgerId)?.reach).toBe("refused");
+
+      // The same app, redeployed. Nothing about the capability changed.
+      await database.insert(deployments).values({
+        id: nextBuild,
+        appId,
+        provider: "vercel",
+        providerDeploymentId: "dpl_next",
+        status: "live",
+        url: APP_ORIGIN,
+        createdAt: new Date(Date.now() + 60_000),
+      });
+
+      // Every reader now sees it as unanswered, which is what makes the
+      // page's own self-heal ask - no reset had to be remembered anywhere.
+      const aged = (await listCapabilitiesForApp(appId)).find((c) => c.id === ledgerId);
+      expect(aged?.reach).toBe("pending");
+      expect(aged?.enabled).toBe(false);
+
+      // And asking settles it against the build that is serving now.
+      const outcome = await verifyAppCapabilities(appId);
+      expect(outcome.ok).toBe(true);
+
+      const [row] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, ledgerId));
+      expect(row?.reach).toBe("callable");
+      expect(row?.answeredBy).toBe(nextBuild);
+    } finally {
+      await database.delete(capabilities).where(eq(capabilities.id, ledgerId));
+      await database.delete(deployments).where(eq(deployments.id, nextBuild));
+    }
+  });
+
+  /**
+   * A write cannot be verified by calling it, and a framework answers the
+   * method probe before it checks who is asking - so the real call is the
+   * first thing that can know. What it learns has to be kept.
+   */
+  it("records a write the app turns away when it is really called", async () => {
+    const { capabilities } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { runTool } = await import("./mcp");
+
+    const lockId = newId("capability");
+    const peekId = newId("capability");
+    const shared = {
+      appId,
+      spaceId,
+      inputSchema: { type: "object", properties: {}, required: [] },
+      path: "/api/locked",
+      enabled: true,
+      reach: "callable" as const,
+      answeredBy: deploymentId,
+      verifiedAt: new Date(),
+    };
+
+    await database.insert(capabilities).values([
+      {
+        ...shared,
+        id: lockId,
+        name: "lockOrder",
+        description: "Lock an order.",
+        method: "POST",
+        risk: "write",
+      },
+      {
+        ...shared,
+        id: peekId,
+        name: "peekLock",
+        description: "Look at a lock.",
+        method: "GET",
+        risk: "read",
+      },
+    ]);
+
+    try {
+      const wrote = await runTool(founder, "invoke_capability", {
+        capabilityId: lockId,
+        input: {},
+      });
+      expect(wrote.isError).toBe(true);
+      expect(wrote.content).toContain("will not let Cira call it");
+
+      const [lock] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, lockId));
+      expect(lock?.reach).toBe("refused");
+      expect(lock?.answeredBy).toBe(deploymentId);
+
+      // A read that got through when it was verified keeps that answer. One
+      // 401 on a real call is weaker evidence than the probe that succeeded,
+      // and may be about what was asked for rather than who asked.
+      const read = await runTool(founder, "invoke_capability", {
+        capabilityId: peekId,
+        input: {},
+      });
+      expect(read.isError).toBe(true);
+      expect(read.content).toContain("failed (401)");
+
+      const [peek] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, peekId));
+      expect(peek?.reach).toBe("callable");
+    } finally {
+      await database.delete(capabilities).where(eq(capabilities.id, lockId));
+      await database.delete(capabilities).where(eq(capabilities.id, peekId));
+    }
   });
 });

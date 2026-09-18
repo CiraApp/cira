@@ -69,6 +69,33 @@ export type CapabilityReach =
    */
   | "refused";
 
+/**
+ * What an app's recorded answer about a capability means now.
+ *
+ * A refusal is about the build that gave it. When a different deployment is
+ * serving, the refusal is history rather than a fact, and it reads as pending
+ * so the app is asked again. Without this there was no way out of `refused`:
+ * a developer who let Cira in and redeployed would go on being told every
+ * one of those routes was shut, because nothing ever asked again unless a
+ * route happened to move.
+ *
+ * Only refusals age this way. A `callable` answer from the previous build is
+ * kept, because resetting it would switch off every working capability for
+ * the seconds between a deploy going live and the app being asked - and a
+ * route that did move is already reset when the new build is analysed.
+ *
+ * `serving` is the deployment answering requests now, or null when none is
+ * (a build in progress, a failed one). With nothing serving there is nobody
+ * to ask, so the last answer stands.
+ */
+export function currentReach(
+  answer: { reach: CapabilityReach; answeredBy: string | null },
+  serving: string | null,
+): CapabilityReach {
+  if (answer.reach !== "refused" || serving === null) return answer.reach;
+  return answer.answeredBy === serving ? "refused" : "pending";
+}
+
 export interface CapabilityTarget {
   type: "http";
   method: CapabilityMethod;

@@ -1,12 +1,13 @@
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
   atomically,
   capabilities,
   db,
+  deployments,
   memberships,
   spaces,
   teamMembers,
@@ -14,6 +15,7 @@ import {
 import {
   canAccessApp,
   canManageApp,
+  currentReach,
   newId,
   reconcileCapabilities,
   type App,
@@ -230,7 +232,9 @@ export async function replaceCapabilities(args: {
         .update(capabilities)
         .set({
           ...columns(entry.detected, entry.enabled),
-          ...(moved ? { verifiedAt: null, reach: "pending" as const } : {}),
+          ...(moved
+            ? { verifiedAt: null, reach: "pending" as const, answeredBy: null }
+            : {}),
         })
         .where(eq(capabilities.id, entry.id));
     }),
@@ -255,6 +259,8 @@ export async function replaceCapabilities(args: {
  */
 export async function recordVerification(args: {
   appId: string;
+  /** The deployment that answered, so a refusal can age with its build. */
+  deploymentId: string;
   callable: readonly string[];
   refused: readonly string[];
   absent: readonly string[];
@@ -275,7 +281,12 @@ export async function recordVerification(args: {
       ? [
           on
             .update(capabilities)
-            .set({ reach: "callable", verifiedAt: stamped, updatedAt: stamped })
+            .set({
+              reach: "callable",
+              answeredBy: args.deploymentId,
+              verifiedAt: stamped,
+              updatedAt: stamped,
+            })
             .where(mine(args.callable)),
         ]
       : []),
@@ -284,20 +295,83 @@ export async function recordVerification(args: {
       ? [
           on
             .update(capabilities)
-            .set({ reach: "refused", verifiedAt: stamped, updatedAt: stamped })
+            .set({
+              reach: "refused",
+              answeredBy: args.deploymentId,
+              verifiedAt: stamped,
+              updatedAt: stamped,
+            })
             .where(mine(args.refused)),
         ]
       : []),
   ]);
 }
 
-export async function listCapabilitiesForApp(appId: string): Promise<Capability[]> {
-  const rows = await db()
-    .select()
-    .from(capabilities)
-    .where(eq(capabilities.appId, appId));
+/**
+ * Record that the app turned Cira away from a capability it was really called
+ * through, rather than probed.
+ *
+ * Only ever demotes a `callable` one. Anything else already says as much or
+ * more, and this is written from the middle of an agent's request, where
+ * overwriting an answer a verification run just gave would be a race nobody
+ * could see.
+ */
+export async function recordRefusal(args: {
+  capabilityId: string;
+  deploymentId: string;
+}): Promise<void> {
+  const stamped = new Date();
+  await db()
+    .update(capabilities)
+    .set({
+      reach: "refused",
+      answeredBy: args.deploymentId,
+      verifiedAt: stamped,
+      updatedAt: stamped,
+    })
+    .where(
+      and(eq(capabilities.id, args.capabilityId), eq(capabilities.reach, "callable")),
+    );
+}
 
-  return rows.map(toCapability).sort((a, b) => a.name.localeCompare(b.name));
+export async function listCapabilitiesForApp(appId: string): Promise<Capability[]> {
+  const database = db();
+  const [rows, serving] = await Promise.all([
+    database.select().from(capabilities).where(eq(capabilities.appId, appId)),
+    servingDeployments([appId]),
+  ]);
+
+  return rows
+    .map((row) => toCapability(row, serving.get(appId) ?? null))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Which deployment each app is serving from, for the apps that are serving.
+ *
+ * The newest deployment, and only if it is live - the same rule as
+ * `latestDeployment`, for many apps in one query. An app mid-build or after a
+ * failed deploy is absent from the map, which `currentReach` reads as nobody
+ * to ask.
+ */
+async function servingDeployments(
+  appIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (appIds.length === 0) return new Map();
+
+  const newest = await db()
+    .selectDistinctOn([deployments.appId], {
+      appId: deployments.appId,
+      id: deployments.id,
+      status: deployments.status,
+    })
+    .from(deployments)
+    .where(inArray(deployments.appId, [...appIds]))
+    .orderBy(deployments.appId, desc(deployments.createdAt));
+
+  return new Map(
+    newest.filter((row) => row.status === "live").map((row) => [row.appId, row.id]),
+  );
 }
 
 /**
@@ -348,7 +422,10 @@ async function visibleCapabilities(user: User): Promise<{ rows: CapabilityWithAp
       ),
     )) as AppAccess[];
 
-  const slugs = await spaceSlugs(spaceIds);
+  const [slugs, serving] = await Promise.all([
+    spaceSlugs(spaceIds),
+    servingDeployments([...new Set(rows.map((r) => r.app.id))]),
+  ]);
 
   const visible = rows
     .filter((row) =>
@@ -359,7 +436,7 @@ async function visibleCapabilities(user: User): Promise<{ rows: CapabilityWithAp
       }),
     )
     .map((row) => ({
-      ...toCapability(row.capability),
+      ...toCapability(row.capability, serving.get(row.app.id) ?? null),
       appName: row.app.name,
       appSlug: row.app.slug,
       spaceSlug: slugs.get(row.app.spaceId) ?? "",
@@ -379,7 +456,11 @@ async function spaceSlugs(spaceIds: string[]): Promise<Map<string, string>> {
 
 type CapabilityRow = typeof capabilities.$inferSelect;
 
-function toCapability(row: CapabilityRow): Capability {
+function toCapability(row: CapabilityRow, serving: string | null): Capability {
+  // Read through the build that is serving now, so a refusal from an older
+  // one comes back as pending - here, once, rather than in each reader.
+  const reach = currentReach(row, serving);
+
   return {
     id: row.id,
     spaceId: row.spaceId,
@@ -400,8 +481,8 @@ function toCapability(row: CapabilityRow): Capability {
     // invocation - gets the same answer from one rule rather than each
     // remembering to check. That is also why widening it from a boolean fixed
     // the agent surface without the agent surface being touched.
-    enabled: row.enabled && row.reach === "callable",
-    reach: row.reach,
+    enabled: row.enabled && reach === "callable",
+    reach,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

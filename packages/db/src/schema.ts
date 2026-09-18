@@ -589,6 +589,19 @@ export const capabilities = pgTable(
      */
     reach: capabilityReachEnum("reach").notNull().default("pending"),
     /**
+     * The deployment that gave `reach`.
+     *
+     * A refusal is about the build that said it. Once a different deployment
+     * is serving, it reads as pending again and the app is asked afresh -
+     * otherwise the one developer who fixed this, by letting Cira in and
+     * redeploying, would go on being told the routes were shut. Null for
+     * answers recorded before this existed, which are treated as coming from
+     * an older build for the same reason.
+     */
+    answeredBy: text("answered_by").references(() => deployments.id, {
+      onDelete: "set null",
+    }),
+    /**
      * An example input, for reads, used once to ask the app whether the route
      * is there. Never sent to an agent and never used for a write - a write is
      * confirmed by asking which methods a path allows, not by performing it.

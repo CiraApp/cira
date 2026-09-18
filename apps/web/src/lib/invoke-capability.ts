@@ -4,6 +4,7 @@ import { deploymentProvider } from "@cira/deploy";
 import { isSafeTargetPath, type Capability, type User } from "@cira/core";
 import {
   getCapabilityForUser,
+  recordRefusal,
   NO_SUCH_CAPABILITY,
   type CapabilityWithApp,
 } from "@/lib/capabilities";
@@ -49,15 +50,7 @@ export async function invokeCapability(args: {
   // the sentence it offers - go and ask an admin - is only true for one of
   // them. Telling an agent to get a refused capability switched on sends it
   // after something nobody can do.
-  if (capability.reach === "refused") {
-    return {
-      ok: false,
-      error:
-        `${capability.appName} serves ${capability.name} but will not let Cira ` +
-        `call it: the app signs its own users in. Nothing in Cira can turn ` +
-        `this on.`,
-    };
-  }
+  if (capability.reach === "refused") return { ok: false, error: refusal(capability) };
 
   if (capability.reach === "pending") {
     return {
@@ -88,6 +81,8 @@ export async function invokeCapability(args: {
 
 interface ResolvedTarget {
   url: URL;
+  /** The build being called, so what it answers is recorded against it. */
+  deploymentId: string;
 }
 
 /**
@@ -119,7 +114,7 @@ async function resolveTarget(capability: Capability): Promise<ResolvedTarget | n
   url.search = "";
   url.hash = "";
 
-  return { url };
+  return { url, deploymentId: deployment.id };
 }
 
 /**
@@ -160,6 +155,17 @@ async function call(
     return { ok: false, error: `Could not reach ${capability.appName}.` };
   }
 
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "content-type": "application/json",
+    // Not `authorization`: Cloud Run consumes this one and passes the
+    // app's own `authorization` header through untouched, which matters
+    // because the app was not written for Cira and may well use it.
+    "x-serverless-authorization": `Bearer ${token}`,
+    "x-cira-capability": capability.name,
+    ...(body === undefined ? {} : { "content-length": String(body.length) }),
+  };
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -167,16 +173,7 @@ async function call(
   try {
     response = await fetch(url, {
       method: capability.target.method,
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-        // Not `authorization`: Cloud Run consumes this one and passes the
-        // app's own `authorization` header through untouched, which matters
-        // because the app was not written for Cira and may well use it.
-        "x-serverless-authorization": `Bearer ${token}`,
-        "x-cira-capability": capability.name,
-        ...(body === undefined ? {} : { "content-length": String(body.length) }),
-      },
+      headers,
       ...(body === undefined ? {} : { body }),
       signal: controller.signal,
       redirect: "manual",
@@ -206,6 +203,29 @@ async function call(
     return { ok: false, error: `${capability.name} returned too much data.` };
   }
 
+  // A write can only be verified by asking which methods its path allows,
+  // and frameworks answer that before they check who is asking - so the app
+  // saying no to the real call is the first time anyone could know. It is
+  // recorded, so the panel stops offering a switch that leads here and every
+  // agent after this one is told why before it tries.
+  //
+  // Narrow on purpose. A write only: a read was actually called when it was
+  // verified and got through, so one 401 now is weaker evidence than what is
+  // already known. 401 only: it is about who is calling, where 403 can be
+  // about the particular thing asked for. And only while the request spoke for
+  // nobody - see `speaksForNobody`.
+  if (
+    response.status === 401 &&
+    capability.risk === "write" &&
+    speaksForNobody(headers)
+  ) {
+    await recordRefusal({
+      capabilityId: capability.id,
+      deploymentId: target.deploymentId,
+    });
+    return { ok: false, status: 401, error: refusal(capability) };
+  }
+
   if (!response.ok) {
     return {
       ok: false,
@@ -224,6 +244,48 @@ async function call(
     // were a result is worse than saying it did not work.
     return { ok: false, error: `${capability.name} did not return JSON.` };
   }
+}
+
+/** Why an agent cannot run this, for a capability the app turned away. */
+function refusal(capability: CapabilityWithApp): string {
+  return (
+    `${capability.appName} serves ${capability.name} but will not let Cira ` +
+    `call it: the app signs its own users in. Nothing in Cira can turn ` +
+    `this on.`
+  );
+}
+
+/**
+ * The headers a request may carry and still say nothing about who is asking.
+ *
+ * Everything Cira sends today, and nothing else. `x-serverless-authorization`
+ * is Cira's own service identity, which Cloud Run checks and consumes before
+ * the app sees anything; none of the rest identifies anyone.
+ */
+const ANONYMOUS = new Set([
+  "accept",
+  "content-type",
+  "content-length",
+  "x-serverless-authorization",
+  "x-cira-capability",
+]);
+
+/**
+ * Whether a request to an app carried nothing that identifies a person.
+ *
+ * A refusal is only a fact about the app while that is true. Today Cira calls
+ * every app as nobody, so a 401 means Cira itself is shut out. The moment it
+ * starts passing someone's identity along - the obvious way to reach an app
+ * that signs its own users in - a 401 means that one person was turned away,
+ * and recording it would hide the capability from everybody because of them.
+ *
+ * An allow-list rather than a list of credential headers to look out for,
+ * because the change that breaks this will add a header nobody here can
+ * predict the name of. Any header not listed switches recording off, and it
+ * stays off until somebody decides, here, what the new one means.
+ */
+export function speaksForNobody(headers: Record<string, string>): boolean {
+  return Object.keys(headers).every((name) => ANONYMOUS.has(name.toLowerCase()));
 }
 
 /** Read the body, giving up rather than buffering something unbounded. */

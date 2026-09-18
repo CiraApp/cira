@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  currentReach,
   isCapabilityName,
   isSafeTargetPath,
   publicationFor,
@@ -120,5 +121,43 @@ describe("reconcileCapabilities", () => {
     expect(plan.update.map((u) => u.id)).toEqual(["cap_keep"]);
     expect(plan.create.map((c) => c.detected.name)).toEqual(["getSpendByVendor"]);
     expect(plan.enabledCount + plan.reviewCount).toBe(2);
+  });
+});
+
+describe("currentReach", () => {
+  const refused = (answeredBy: string | null) => ({
+    reach: "refused" as const,
+    answeredBy,
+  });
+
+  it("keeps a refusal from the build that is serving", () => {
+    expect(currentReach(refused("dep_now"), "dep_now")).toBe("refused");
+  });
+
+  /**
+   * The case this exists for. Somebody saw "Refused", let Cira in, and
+   * redeployed; every route kept its path, so nothing else would have
+   * reset them, and the page would have gone on saying they were shut.
+   */
+  it("asks again once a newer build is serving", () => {
+    expect(currentReach(refused("dep_before"), "dep_now")).toBe("pending");
+  });
+
+  it("treats a refusal from an unknown build as history", () => {
+    expect(currentReach(refused(null), "dep_now")).toBe("pending");
+  });
+
+  // Nothing is serving mid-build or after a failed one, so there is nobody to
+  // ask, and "Checking" would sit there for ever.
+  it("lets the last answer stand while nothing is serving", () => {
+    expect(currentReach(refused("dep_before"), null)).toBe("refused");
+  });
+
+  // A working capability must not blink off between a deploy going live and
+  // the app being asked about it.
+  it("never ages a yes", () => {
+    expect(currentReach({ reach: "callable", answeredBy: "dep_before" }, "dep_now")).toBe(
+      "callable",
+    );
   });
 });
