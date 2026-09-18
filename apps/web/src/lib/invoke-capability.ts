@@ -10,6 +10,7 @@ import {
 } from "@/lib/capabilities";
 import { latestDeployment } from "@/lib/queries";
 import { validateInput } from "@/lib/json-schema";
+import { demoAnswer } from "@/lib/demo/answers";
 
 /**
  * Run one capability against the app that owns it.
@@ -76,6 +77,16 @@ export async function invokeCapability(args: {
     return { ok: false, error: `${capability.appName} is not reachable right now.` };
   }
 
+  // The demo company's apps have nothing running behind them, so they answer
+  // here instead - after every check above, exactly as a real app would be
+  // reached. Only a deployment the seed created can take this path.
+  if (target.provider === "demo") {
+    const data = demoAnswer(capability.appSlug, capability.name, validation.value);
+    return data === undefined
+      ? { ok: false, error: `${capability.name} failed (404).`, status: 404 }
+      : { ok: true, status: 200, data };
+  }
+
   return call(target, capability, validation.value);
 }
 
@@ -83,6 +94,7 @@ interface ResolvedTarget {
   url: URL;
   /** The build being called, so what it answers is recorded against it. */
   deploymentId: string;
+  provider: string;
 }
 
 /**
@@ -114,7 +126,7 @@ async function resolveTarget(capability: Capability): Promise<ResolvedTarget | n
   url.search = "";
   url.hash = "";
 
-  return { url, deploymentId: deployment.id };
+  return { url, deploymentId: deployment.id, provider: deployment.provider };
 }
 
 /**

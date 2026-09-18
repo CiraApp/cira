@@ -261,7 +261,7 @@ const str = (description: string) => ({ type: "string", description });
 const num = (description: string) => ({ type: "number", description });
 const bool = (description: string) => ({ type: "boolean", description });
 
-const DEMO_APPS: DemoApp[] = [
+export const DEMO_APPS: DemoApp[] = [
   {
     slug: "runbook",
     name: "Runbook",

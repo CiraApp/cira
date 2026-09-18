@@ -8,6 +8,7 @@ import { probeWebUi } from "@/lib/browser-ui";
 import { recordVerification } from "@/lib/capabilities";
 import { verifyCapabilities } from "@/lib/capability-verify";
 import { latestDeployment } from "@/lib/queries";
+import { demoAnswers } from "@/lib/demo/answers";
 
 /**
  * Ask the app whether the capabilities credited to it are real.
@@ -74,6 +75,29 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
         ),
       )
   ).filter((row) => currentReach(row, serving?.id ?? null) === "pending");
+
+  // The demo company's apps answer from a table rather than over a network,
+  // so asking them is a lookup: whatever the table can answer is callable, and
+  // nothing is minted, probed or sent anywhere.
+  if (serving !== null && newest?.provider === "demo" && pending.length > 0) {
+    const app = await database
+      .select({ slug: apps.slug })
+      .from(apps)
+      .where(eq(apps.id, appId))
+      .limit(1);
+    const slug = app[0]?.slug ?? "";
+    const callable = pending
+      .filter((row) => demoAnswers(slug, row.name))
+      .map((row) => row.name);
+    await recordVerification({
+      appId,
+      deploymentId: serving.id,
+      callable,
+      refused: [],
+      absent: [],
+    });
+    return { ...SETTLED, callable: callable.length };
+  }
 
   if (serving === null) {
     if (pending.length === 0) {
