@@ -62,7 +62,14 @@ export default async function SpacePage({
           <AppGallery
             apps={apps}
             spaceSlug={spaceSlug}
-            firstName={ctx.user.name.trim().split(/\s+/)[0]}
+            // A person with no name set is named by their email address, and
+            // greeting someone as akirtania17@gmail.com reads like a form
+            // letter. No name at all is warmer than that one.
+            firstName={
+              ctx.user.name.includes("@")
+                ? undefined
+                : ctx.user.name.trim().split(/\s+/)[0]
+            }
             between={<RecentStrip apps={recent} spaceSlug={spaceSlug} />}
           />
         )}
