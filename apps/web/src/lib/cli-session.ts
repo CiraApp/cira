@@ -41,6 +41,8 @@ export async function userFromRequest(request: Request): Promise<User | null> {
   return {
     id: row.user.id,
     name: row.user.name,
+    firstName: row.user.firstName,
+    lastName: row.user.lastName,
     email: row.user.email,
     createdAt: row.user.createdAt,
   };

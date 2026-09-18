@@ -61,6 +61,14 @@ export async function AppShell({
     icon: "settings",
   };
 
+  // Not in the sidebar - it is about you rather than the space - but in the
+  // palette, which is where a place is looked for by name.
+  const profile: NavItem = {
+    label: "Your profile",
+    href: `/${spaceSlug}/~/profile` as Route,
+    icon: "profile",
+  };
+
   // The card shows the most recent token rather than a count: "connected, and
   // this is the one that has been working" is the useful fact.
   const [assistant] = await listAssistantTokens();
@@ -106,9 +114,9 @@ export async function AppShell({
           <div className="flex shrink-0 items-center gap-2">
             <ThemePicker />
             {actions}
-            <CommandPalette spaceSlug={spaceSlug} items={[...items, settings]} />
+            <CommandPalette spaceSlug={spaceSlug} items={[...items, settings, profile]} />
             <AskButton />
-            <HeaderControls />
+            <HeaderControls spaceSlug={spaceSlug} />
           </div>
         </header>
 

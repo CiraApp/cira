@@ -12,19 +12,10 @@ export default async function OnboardingPage() {
 
   return (
     <Onboarding
-      firstName={firstName(user.name)}
+      firstName={user.firstName ?? null}
+      lastName={user.lastName ?? null}
       domain={domain}
       joinable={joinable.map((s) => ({ id: s.id, name: s.name, slug: s.slug }))}
     />
   );
-}
-
-/**
- * Accounts created from an email alone carry the address as their name, and
- * "Welcome to Cira, sam@acme.com" is worse than no greeting at all.
- */
-function firstName(name: string): string | null {
-  const first = name.trim().split(/\s+/)[0] ?? "";
-  if (first === "" || first.includes("@")) return null;
-  return first;
 }

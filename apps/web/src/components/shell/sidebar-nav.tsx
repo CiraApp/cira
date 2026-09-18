@@ -9,7 +9,7 @@ export interface NavItem {
   label: string;
   /** Typed so a nav entry cannot point at a route that does not exist. */
   href: Route;
-  icon: "apps" | "recent" | "deploy" | "members" | "settings";
+  icon: "apps" | "recent" | "deploy" | "members" | "settings" | "profile";
 }
 
 /**
@@ -148,6 +148,12 @@ export function NavIcon({
       <>
         <path d="M9 12.6V3.4M9 3.4 5.6 6.8M9 3.4l3.4 3.4" />
         <path d="M3.4 12v1.9a1.3 1.3 0 0 0 1.3 1.3h8.6a1.3 1.3 0 0 0 1.3-1.3V12" />
+      </>
+    ),
+    profile: (
+      <>
+        <circle cx="9" cy="6.2" r="2.9" />
+        <path d="M3.6 15.2c0-2.9 2.4-4.8 5.4-4.8s5.4 1.9 5.4 4.8" />
       </>
     ),
     members: (

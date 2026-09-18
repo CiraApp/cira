@@ -67,7 +67,22 @@ export const users = pgTable(
   {
     id: text("id").primaryKey(),
     externalId: text("external_id").notNull(),
+    /**
+     * How the person is shown everywhere. Kept equal to first and last name
+     * once they have given one; before that, whatever the sign-in provider
+     * knew - which for an account with no name on it is the email address.
+     */
     name: text("name").notNull(),
+    /**
+     * The name the person gave Cira, in onboarding or on their profile.
+     *
+     * Cira's rather than the sign-in provider's: once it is set, signing in
+     * never overwrites it, because a name someone chose here being replaced by
+     * whatever another system happens to hold is a name they cannot keep. Null
+     * until they give one.
+     */
+    firstName: text("first_name"),
+    lastName: text("last_name"),
     email: text("email").notNull(),
     imageUrl: text("image_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -7,6 +7,7 @@ import { slugify } from "@cira/core";
 import { createSpace, type ActionResult } from "@/lib/actions";
 import { joinSpaceByDomain } from "@/lib/join-actions";
 import { EntryFrame } from "./entry-frame";
+import { NameForm } from "./name-form";
 
 export interface JoinableSpace {
   id: string;
@@ -17,10 +18,17 @@ export interface JoinableSpace {
 /**
  * The whole of onboarding, on one screen.
  *
- * The spec asks for this to stay extremely light, so it is three states of a
- * single card rather than a wizard with steps: join the company that is
- * already here, or name a new one, and then a moment that says it worked.
- * Nothing routes anywhere until the person is actually going somewhere.
+ * The spec asks for this to stay extremely light, so it is a few states of a
+ * single card rather than a wizard with steps: your name, then join the
+ * company that is already here or name a new one, and then a moment that says
+ * it worked. Nothing routes anywhere until the person is actually going
+ * somewhere.
+ *
+ * The name comes first because everything after it uses it - the greeting
+ * here, the home page, how teammates see you - and because the sign-in
+ * provider often has none, which left Cira greeting people by their email
+ * address. What it does know is filled in, so for most people this is one
+ * press of Enter.
  *
  * Which state opens is decided by their email domain, not by a question. Being
  * asked "do you want to join or create?" when the answer is already known is
@@ -28,19 +36,38 @@ export interface JoinableSpace {
  */
 export function Onboarding({
   firstName,
+  lastName,
   domain,
   joinable,
 }: {
-  /** Null when the account has no human name to greet, only an address. */
+  /** What is known already, to fill the name step with. */
   firstName: string | null;
+  lastName: string | null;
   domain: string | null;
   joinable: JoinableSpace[];
 }) {
   const [created, setCreated] = useState<{ name: string; slug: string } | null>(null);
   const [founding, setFounding] = useState(joinable.length === 0);
+  const [named, setNamed] = useState<string | null>(null);
 
-  const welcome =
-    firstName === null ? "Welcome to Cira" : `Welcome to Cira, ${firstName}`;
+  if (named === null) {
+    return (
+      <EntryFrame
+        eyebrow="Welcome to Cira"
+        title="What should we call you?"
+        subtitle="This is how Cira greets you, and how your team sees you."
+      >
+        <NameForm
+          firstName={firstName}
+          lastName={lastName}
+          submitLabel="Continue"
+          onSaved={setNamed}
+        />
+      </EntryFrame>
+    );
+  }
+
+  const welcome = `Welcome to Cira, ${named}`;
 
   if (created !== null) {
     return (

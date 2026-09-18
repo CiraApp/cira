@@ -154,8 +154,9 @@ export function AppGallery({
       ) : (
         <div className="mx-auto w-full max-w-[760px] pt-2 sm:pt-4">
           <h2 className="text-center text-[22px] font-semibold tracking-[-0.03em] text-ink sm:text-[26px]">
-            What do you need
-            {firstName !== undefined && firstName !== "" ? `, ${firstName}` : ""}?
+            {firstName !== undefined && firstName !== ""
+              ? `Hey ${firstName}, what do you need today?`
+              : "What do you need today?"}
           </h2>
           <p className="mt-1.5 text-center text-[13.5px] text-ink-muted sm:text-[14px]">
             Ask for anything your company&rsquo;s apps can tell you, or find an app.

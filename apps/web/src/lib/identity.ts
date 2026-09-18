@@ -19,6 +19,9 @@ import type { User } from "@cira/core";
 interface ProviderIdentity {
   externalId: string;
   name: string;
+  /** What the provider knows of their name, used only to prefill Cira's. */
+  firstName: string | null;
+  lastName: string | null;
   email: string;
   imageUrl: string | null;
 }
@@ -54,6 +57,8 @@ async function readProviderIdentity(): Promise<ProviderIdentity | null> {
   return {
     externalId: userId,
     name,
+    firstName: account.firstName?.trim() || null,
+    lastName: account.lastName?.trim() || null,
     email: email.toLowerCase(),
     imageUrl: account.imageUrl || null,
   };
@@ -78,8 +83,13 @@ export async function getCurrentUser(): Promise<User | null> {
   if (existing !== undefined) {
     // Keep the profile fresh, but never move the Cira id: access grants and app
     // ownership point at it.
+    //
+    // The name only follows the provider until the person gives Cira one. A
+    // name they chose here, overwritten on their next page load by whatever
+    // the sign-in provider holds, is a name they could never keep.
+    const name = existing.firstName === null ? identity.name : existing.name;
     const changed =
-      existing.name !== identity.name ||
+      existing.name !== name ||
       existing.email !== identity.email ||
       existing.imageUrl !== identity.imageUrl;
 
@@ -87,7 +97,7 @@ export async function getCurrentUser(): Promise<User | null> {
       const [updated] = await database
         .update(users)
         .set({
-          name: identity.name,
+          name,
           email: identity.email,
           imageUrl: identity.imageUrl,
         })
@@ -106,6 +116,8 @@ export async function getCurrentUser(): Promise<User | null> {
       id: newId("user"),
       externalId: identity.externalId,
       name: identity.name,
+      firstName: identity.firstName,
+      lastName: identity.lastName,
       email: identity.email,
       imageUrl: identity.imageUrl,
     })
@@ -143,6 +155,8 @@ function toUser(row: UserRow): User {
   return {
     id: row.id,
     name: row.name,
+    firstName: row.firstName,
+    lastName: row.lastName,
     email: row.email,
     createdAt: row.createdAt,
   };

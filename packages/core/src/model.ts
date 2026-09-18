@@ -13,7 +13,11 @@ export type TeamId = string;
 
 export interface User {
   id: UserId;
+  /** How they are shown. See `users.name`. */
   name: string;
+  /** The name they gave Cira, or null until they give one. */
+  firstName?: string | null;
+  lastName?: string | null;
   email: string;
   createdAt: Date;
 }
