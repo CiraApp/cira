@@ -59,10 +59,12 @@ export default async function SpacePage({
         {apps.length === 0 ? (
           <EmptyGallery />
         ) : (
-          <div className="flex flex-col gap-7">
-            <RecentStrip apps={recent} spaceSlug={spaceSlug} />
-            <AppGallery apps={apps} spaceSlug={spaceSlug} />
-          </div>
+          <AppGallery
+            apps={apps}
+            spaceSlug={spaceSlug}
+            firstName={ctx.user.name.trim().split(/\s+/)[0]}
+            between={<RecentStrip apps={recent} spaceSlug={spaceSlug} />}
+          />
         )}
       </AppShell>
     );

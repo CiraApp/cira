@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import type { Role, Space } from "@cira/core";
 import { AmbientField } from "@/components/ambient-field";
+import { AskButton } from "@/components/ask/ask-button";
 import { CommandPalette } from "@/components/command-palette";
 import { SidebarNav, type NavItem } from "./sidebar-nav";
 import { SpaceMenu } from "./space-menu";
@@ -106,6 +107,7 @@ export async function AppShell({
             <ThemePicker />
             {actions}
             <CommandPalette spaceSlug={spaceSlug} items={[...items, settings]} />
+            <AskButton />
             <HeaderControls />
           </div>
         </header>

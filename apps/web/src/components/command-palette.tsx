@@ -7,13 +7,15 @@ import { useTheme } from "./theme/theme-provider";
 import { spaceIndex, type PaletteApp } from "@/lib/palette-actions";
 import { Portal } from "./ui/portal";
 import { AppIcon } from "./app-icon";
+import { useAsk } from "./ask/ask-provider";
+import { CiraMark } from "./shell/mark";
 import type { NavItem } from "./shell/sidebar-nav";
 
 interface Command {
   id: string;
   label: string;
   hint: string | null;
-  group: "Apps" | "Go to" | "Interface";
+  group: "Ask" | "Apps" | "Go to" | "Interface";
   /** Everything the query is matched against, lowercased once up front. */
   haystack: string;
   run: () => void;
@@ -42,6 +44,7 @@ export function CommandPalette({
   items: NavItem[];
 }) {
   const router = useRouter();
+  const ask = useAsk();
   const { theme, setTheme } = useTheme();
   const chosen = theme ?? DEFAULT_THEME;
 
@@ -143,8 +146,30 @@ export function CommandPalette({
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (needle === "") return commands;
-    return commands.filter((command) => subsequence(needle, command.haystack));
-  }, [commands, query]);
+    const found = commands.filter((command) => subsequence(needle, command.haystack));
+
+    // Anything typed can also be asked, the same as in the home box: one row
+    // on top, so Enter asks and the arrows walk down to an app. It never
+    // filters itself out, because a question is not something to match.
+    if (ask === null) return found;
+    const question = query.trim();
+    return [
+      {
+        id: "ask",
+        label: `Ask Cira \u201c${question}\u201d`,
+        hint: "Get an answer from your company's apps",
+        group: "Ask" as const,
+        haystack: "",
+        run: () => ask.ask(question),
+        face: (
+          <span className="flex h-7 w-7 items-center justify-center rounded-[3px] bg-accent text-accent-ink">
+            <CiraMark className="h-[9px] w-auto" />
+          </span>
+        ),
+      },
+      ...found,
+    ];
+  }, [commands, query, ask]);
 
   useEffect(() => setCursor(0), [query]);
 
@@ -207,7 +232,11 @@ export function CommandPalette({
                 autoFocus
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search apps and actions..."
+                placeholder={
+                  ask === null
+                    ? "Search apps and actions..."
+                    : "Search apps, or ask Cira..."
+                }
                 aria-label="Search apps and actions"
                 className="min-w-0 flex-1 bg-transparent py-3.5 text-[14px] text-ink outline-none placeholder:text-ink-subtle"
               />

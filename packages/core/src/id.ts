@@ -18,6 +18,8 @@ export const ID_PREFIXES = {
   service: "svc",
   invite: "inv",
   capability: "cap",
+  /** One question put to Ask Cira: what it cost, never what was said. */
+  askUsage: "ask",
   /** An uploaded source archive. Not a row: it names an object in a bucket. */
   source: "src",
 } as const;

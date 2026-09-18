@@ -2,6 +2,7 @@ import {
   boolean,
   doublePrecision,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -616,4 +617,40 @@ export const capabilities = pgTable(
     index("capabilities_app_idx").on(t.appId),
     index("capabilities_space_idx").on(t.spaceId),
   ],
+);
+
+/**
+ * One turn of Ask Cira: what it cost, and nothing of what was said.
+ *
+ * Answers are built from the company's own data - revenue, customers, people -
+ * and Cira has only ever kept metadata about the software it runs, never the
+ * data inside it. So the conversation lives in the browser tab that holds it,
+ * and this is the whole server-side record: enough to enforce a daily limit
+ * and to see what the feature costs, and nothing a leak could embarrass anyone
+ * with.
+ */
+export const askUsage = pgTable(
+  "ask_usage",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * `question` when someone asked something, `decision` when they answered a
+     * confirmation. Only questions count towards the daily limit - running
+     * something Cira just asked you to approve should never be what locks you
+     * out.
+     */
+    kind: text("kind").notNull(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    toolCalls: integer("tool_calls").notNull().default(0),
+    /** Which capabilities were invoked, by id. Which, never with what. */
+    capabilityIds: jsonb("capability_ids").$type<string[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ask_usage_user_time_idx").on(t.userId, t.createdAt)],
 );

@@ -19,11 +19,13 @@ export function AppIcon({
   icon?: string | null;
   /** A picture chosen for the app. Wins over the letter when there is one. */
   image?: string | null;
-  size?: "sm" | "md" | "lg";
+  /** `xs` sits inside a line of text: a step, a chip, a source. */
+  size?: "xs" | "sm" | "md" | "lg";
 }) {
   const color = appColor(appId);
 
   const dimensions = {
+    xs: "h-[18px] w-[18px] text-[9px] rounded-[3px]",
     sm: "h-7 w-7 text-[11px] rounded-[3px]",
     md: "h-10 w-10 text-[15px] rounded-[4px]",
     lg: "h-14 w-14 text-[21px] rounded-[5px]",

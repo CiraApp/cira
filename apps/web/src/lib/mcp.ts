@@ -171,12 +171,6 @@ async function invokeTool(
 }
 
 /**
- * What an agent needs to choose between capabilities.
- *
- * The risk grade is included deliberately: an agent deciding whether to ask
- * its human first should be able to see that something writes.
- */
-/**
  * Why an agent cannot run this, in the agent's own terms.
  *
  * `enabled: false` on its own reads as "ask an admin", and for a capability
@@ -192,6 +186,12 @@ const UNAVAILABLE: Record<"pending" | "refused", string> = {
     "that, so do not suggest enabling it.",
 };
 
+/**
+ * What an agent needs to choose between capabilities.
+ *
+ * The risk grade is included deliberately: an agent deciding whether to ask
+ * its human first should be able to see that something writes.
+ */
 function brief(capability: CapabilityWithApp) {
   return {
     capabilityId: capability.id,

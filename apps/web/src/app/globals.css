@@ -807,3 +807,157 @@ select:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Ask Cira.
+ *
+ * Answers are read by people who do not write software, so the type is the
+ * body's own at a comfortable measure, with a table that looks like the rest
+ * of the product rather than like something pasted in.
+ */
+.ask-answer {
+  font-size: 14.5px;
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.ask-answer > * + * {
+  margin-top: 0.6em;
+}
+.ask-answer strong {
+  font-weight: 600;
+}
+.ask-answer ul,
+.ask-answer ol {
+  padding-left: 1.25em;
+}
+.ask-answer ul {
+  list-style: disc;
+}
+.ask-answer ol {
+  list-style: decimal;
+}
+.ask-answer li + li {
+  margin-top: 0.2em;
+}
+.ask-answer li::marker {
+  color: var(--color-ink-subtle);
+}
+.ask-answer code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.05em 0.35em;
+  border-radius: 2px;
+  border: 1px solid var(--color-line);
+  background: var(--color-sunken);
+}
+.ask-answer a {
+  text-decoration: underline;
+  text-decoration-color: var(--color-line-strong);
+  text-underline-offset: 3px;
+}
+.ask-answer a:hover {
+  text-decoration-color: currentColor;
+}
+.ask-table {
+  overflow-x: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 5px;
+}
+.ask-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.ask-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--color-ink-subtle);
+  background: var(--color-sunken);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+.ask-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-line);
+  vertical-align: top;
+}
+.ask-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/*
+ * The panel's shadow falls to its left, over the page it sits on. Deep on
+ * near-black, where a shadow has to work to be seen at all; a breath on paper,
+ * where the same value reads as a grey smear.
+ */
+:root {
+  --ask-sheet-shadow: -40px 0 80px -40px rgb(0 0 0 / 0.6);
+}
+[data-theme="light"] {
+  --ask-sheet-shadow: -24px 0 48px -32px rgb(12 14 18 / 0.16);
+}
+
+/* The block cursor an answer grows from while it is still being written. */
+.ask-answer.is-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--color-ink);
+  animation: ask-blink 1s steps(1) infinite;
+}
+@keyframes ask-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/*
+ * A light that travels slowly round the home box: the one moving thing on the
+ * page, and the one thing the page is asking you to do. It stops once the box
+ * has focus, because by then it has done its job.
+ */
+@property --ask-spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.ask-edge {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ask-spin),
+    transparent 0 70%,
+    color-mix(in oklab, var(--color-accent) 70%, transparent) 82%,
+    transparent 94%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.55;
+  animation: ask-spin 7s linear infinite;
+  transition: opacity 0.3s var(--ease-settle);
+}
+.group:focus-within > .ask-edge {
+  opacity: 0;
+}
+@keyframes ask-spin {
+  to {
+    --ask-spin: 360deg;
+  }
+}

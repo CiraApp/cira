@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // The same JSX runtime Next compiles with. The classic one expects `React`
+  // in scope, which no component here imports, so without this nothing that
+  // renders could be tested.
+  esbuild: { jsx: "automatic" },
   test: {
     include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
     environment: "node",
