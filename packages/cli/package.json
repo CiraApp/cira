@@ -1,6 +1,6 @@
 {
   "name": "@cira-app/cli",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Deploy internal software to your company with Cira.",
   "keywords": [
     "cira",
