@@ -34,25 +34,32 @@ Exit when a company Cira has never met can sign up, invite its team, deploy,
 use its apps, and Cira would know if anything broke for them.
 
 - [ ] **1.1 Production sign-in.** Move off Clerk's development instance
-      (`pk_test`) to a production one on cira.dev. - _You:_ create the production instance, add its DNS records, create
-      Google OAuth credentials for it. - _Claude:_ switch the keys in Vercel, and re-link existing users by
-      verified email on their first production sign-in, since a new
-      instance gives everyone a new Clerk id and `users.external_id` is
-      keyed on it. - Done when you can sign in on production keys and land in Paradym
-      with every app and grant intact.
+      (`pk_test`) to a production one on cira.dev.
+  - _You:_ create the production instance, add its DNS records, create Google
+    OAuth credentials for it.
+  - _Claude:_ switch the keys in Vercel, and re-link existing users by
+    verified email on their first production sign-in, since a new instance
+    gives everyone a new Clerk id and `users.external_id` is keyed on it.
+  - Done when you can sign in on production keys and land in Paradym with
+    every app and grant intact.
 - [ ] **1.2 Resource limits and quotas.** Today one runaway app can exhaust
-      the shared Google project and the bill has no ceiling. - Per app: maximum instances, CPU, memory and request timeout on the
-      Cloud Run service. - Per space: a cap on apps and on deploys per hour. - Rate limits on the MCP endpoint and the console, as Ask Cira has. - Done when each limit is enforced, tested, and shown on the page it
-      affects.
+      the shared Google project and the bill has no ceiling.
+  - Per app: maximum instances, CPU, memory and request timeout on the Cloud
+    Run service.
+  - Per space: a cap on apps and on deploys per hour.
+  - Rate limits on the MCP endpoint and the console, as Ask Cira has.
+  - Done when each limit is enforced, tested, and shown on the page it
+    affects.
 - [ ] **1.3 Watch Cira itself.** Error tracking (Sentry) for the web app,
       server and browser; an uptime check on cira.dev and the app proxy;
       alerts to you. Confirm Neon's point-in-time restore is on and has been
       tried once. Done when a thrown error and a downtime each reach you.
       _You create the accounts, Claude wires them._
 - [ ] **1.4 A record of who ran what.** Every invocation, from MCP, Ask Cira
-      or the console: who, which capability, which app, when, and the status - never the input or the reply, which keeps Cira a conduit. Shown to
-      whoever manages the app. Additive migration. Done when a refund run
-      from the console appears on the app page with the person's name.
+      or the console: who, which capability, which app, when, and the status,
+      but never the input or the reply, which keeps Cira a conduit. Shown to
+      whoever manages the app. Additive migration. Done when a refund run from
+      the console appears on the app page with the person's name.
 - [ ] **1.5 Email.** A transactional provider (Resend) for invites, which
       today are links the inviter sends by hand. Done when an invite arrives
       by email and can be accepted from it. _You create the account and verify
