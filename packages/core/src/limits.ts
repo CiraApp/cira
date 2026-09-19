@@ -34,6 +34,18 @@ export interface Limits {
     defaultTimeoutMinutes: number;
     /** The longest anyone may let one run. */
     maxTimeoutMinutes: number;
+    /**
+     * The memory a worker or scheduled run may be given, smallest first. What
+     * a repository asks for is rounded up to one of these; the last is the
+     * most anyone gets. All of them fit one CPU on Cloud Run.
+     */
+    memoryChoicesMiB: readonly number[];
+    /**
+     * What one is given when its repository does not say. More than a web
+     * instance: a worker is where the heavy work goes, running out of memory
+     * is how it most often fails, and memory is the cheap part of the bill.
+     */
+    defaultMemoryMiB: number;
   };
   /** What each app's service is given on Cloud Run. */
   app: {
@@ -58,6 +70,8 @@ export const DEFAULT_LIMITS: Limits = {
     minIntervalMinutes: 5,
     defaultTimeoutMinutes: 10,
     maxTimeoutMinutes: 60,
+    memoryChoicesMiB: [512, 1024, 2048, 4096],
+    defaultMemoryMiB: 1024,
   },
   app: {
     maxInstances: 10,

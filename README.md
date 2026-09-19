@@ -451,9 +451,22 @@ logs and the controls are for whoever manages it; for them `app_status` also
 carries a worker's latest log lines and those of a failed run
 (`apps/web/src/lib/app-status.ts`).
 
+Each is given one CPU and its own memory, read from the repository like
+everything else: a `fly.toml`'s `[[vm]]` (`memory`, `memory_mb` or `size`, for
+the groups it lists or all of them), or an `app.json`'s dyno `size` for a
+Procfile's processes. What is asked for is rounded up to 512 MB, 1, 2 or 4 GB;
+anything larger gets 4 GB and the CLI says so. A repository that says nothing
+gets 1 GB, since running out of memory is how a worker most often fails and
+memory is the cheap part of the bill. Cloud Run kills a process that goes over
+and, for a worker, restarts it while still calling it ready, so Cira looks for
+the out-of-memory line in a worker's logs and the reason on a failed run, says
+so on the page and through `app_status`, and offers the next size up in one
+click. Memory someone chose on the page outlasts redeploys.
+
 A space may have 10 scheduled runs and 2 workers on, at most every 5 minutes,
 10 minutes a run by default and 60 at most (`limits.ts`). A worker costs money
-every hour it is on, about $50 a month, which the page says beside its switch.
+every hour it is on, about $50 to $65 a month depending on its memory, which
+the page says beside it.
 
 ## Design principles
 

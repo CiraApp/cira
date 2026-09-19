@@ -27,6 +27,7 @@ import { processResourceName } from "./names.js";
 
 const RUN_API = "https://run.googleapis.com/v2";
 const SCHEDULER_API = "https://cloudscheduler.googleapis.com/v1";
+const LOGGING_API = "https://logging.googleapis.com/v2";
 
 /** Google's own public images, run only until the app's build is ready. */
 const PLACEHOLDER = {
@@ -34,13 +35,40 @@ const PLACEHOLDER = {
   worker: "us-docker.pkg.dev/cloudrun/container/worker-pool:latest",
 } as const;
 
-/** What each worker and each scheduled run is given: the same as a web instance. */
-const RESOURCES = {
-  limits: {
-    cpu: String(DEFAULT_LIMITS.app.cpu),
-    memory: `${DEFAULT_LIMITS.app.memoryMiB}Mi`,
-  },
-};
+/**
+ * What a worker or scheduled run is given: a web instance's CPU, and the
+ * memory its repository or a person chose.
+ */
+function resources(memoryMiB: number): { limits: Record<string, string> } {
+  return {
+    limits: { cpu: String(DEFAULT_LIMITS.app.cpu), memory: `${memoryMiB}Mi` },
+  };
+}
+
+/** A container's memory as Cloud Run writes it back: "512Mi", "1Gi", "2G". */
+function memoryOf(container: Container | undefined): number | null {
+  const text = container?.resources?.limits?.["memory"];
+  if (text === undefined) return null;
+  const match = /^(\d+(?:\.\d+)?)(Mi|Gi|M|G)?$/.exec(text);
+  if (match === null) return null;
+  const amount = Number(match[1]);
+  const unit = match[2] ?? "";
+  if (unit === "Gi") return Math.round(amount * 1024);
+  if (unit === "G") return Math.round((amount * 1000 ** 3) / 1024 ** 2);
+  if (unit === "M") return Math.round((amount * 1000 ** 2) / 1024 ** 2);
+  if (unit === "Mi") return Math.round(amount);
+  return Math.round(amount / 1024 ** 2);
+}
+
+/**
+ * The line Cloud Run's own logging writes when a container is killed for
+ * using more memory than it was given. For a worker it is the only sign: the
+ * instance is restarted and the pool keeps saying it is ready.
+ */
+const OUT_OF_MEMORY_LOG = "Out-of-memory event detected in container";
+
+/** How a failed run's condition says the same thing. */
+const OUT_OF_MEMORY_RUN = /memory limit was reached/i;
 
 /** Which app a resource belongs to, so a deploy can find all of them. */
 const APP_LABEL = "cira-app";
@@ -90,6 +118,7 @@ interface JobResource {
 
 interface PoolResource {
   name?: string;
+  updateTime?: string;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   scaling?: { manualInstanceCount?: number };
@@ -106,6 +135,7 @@ interface Execution {
   failedCount?: number;
   cancelledCount?: number;
   runningCount?: number;
+  conditions?: Array<{ type?: string; state?: string; message?: string }>;
 }
 
 /** How an image is started with a command of the repository's choosing. */
@@ -124,6 +154,24 @@ export function startCommand(
   return builder === "buildpacks"
     ? { command: ["/cnb/lifecycle/launcher"], args: [command] }
     : { command: ["/bin/sh", "-c"], args: [command] };
+}
+
+/** A process's containers with its memory changed and nothing else. */
+function withMemory(
+  containers: Container[] | undefined,
+  memoryMiB: number,
+): Container[] | undefined {
+  return containers?.map((container, i) =>
+    i === 0
+      ? {
+          ...container,
+          resources: {
+            ...container.resources,
+            limits: { ...container.resources?.limits, memory: `${memoryMiB}Mi` },
+          },
+        }
+      : container,
+  );
 }
 
 export class CloudRunProcesses {
@@ -183,7 +231,7 @@ export class CloudRunProcesses {
                     ? { command: current.command, args: current.args ?? [] }
                     : {}),
                   env,
-                  resources: RESOURCES,
+                  resources: resources(process.memoryMiB),
                 },
               ],
               timeout: `${process.timeoutSeconds}s`,
@@ -214,7 +262,7 @@ export class CloudRunProcesses {
                   ? { command: current.command, args: current.args ?? [] }
                   : {}),
                 env,
-                resources: RESOURCES,
+                resources: resources(process.memoryMiB),
               },
             ],
           },
@@ -298,7 +346,7 @@ export class CloudRunProcesses {
         annotations: pool.annotations,
         template: {
           labels: pool.template?.labels,
-          containers: pool.template?.containers,
+          containers: withMemory(pool.template?.containers, process.memoryMiB),
         },
         scaling: { manualInstanceCount: process.enabled ? 1 : 0 },
       });
@@ -320,7 +368,7 @@ export class CloudRunProcesses {
         labels: job.template?.labels,
         taskCount: job.template?.taskCount ?? 1,
         template: {
-          containers: job.template?.template?.containers,
+          containers: withMemory(job.template?.template?.containers, process.memoryMiB),
           maxRetries: job.template?.template?.maxRetries ?? 0,
           timeout: `${process.timeoutSeconds}s`,
         },
@@ -376,6 +424,12 @@ export class CloudRunProcesses {
                   : state === "CONDITION_SUCCEEDED"
                     ? "ready"
                     : "starting",
+            memoryMiB: memoryOf(pool?.template?.containers?.[0]),
+            // Only a worker that is on can be running out of memory now.
+            outOfMemoryAt:
+              pool === null || instances === 0
+                ? null
+                : await this.lastOutOfMemory(name, pool.updateTime),
           };
         }
         const job = await this.read<JobResource>(this.jobUrl(name));
@@ -383,6 +437,7 @@ export class CloudRunProcesses {
           kind: "scheduled",
           name: process.name,
           exists: job !== null,
+          memoryMiB: memoryOf(job?.template?.template?.containers?.[0]),
           runs: job === null ? [] : await this.executions(name, 5),
         };
       }),
@@ -480,7 +535,47 @@ export class CloudRunProcesses {
             : (e.cancelledCount ?? 0) > 0
               ? "cancelled"
               : "succeeded",
+      outOfMemory: (e.conditions ?? []).some((c) =>
+        OUT_OF_MEMORY_RUN.test(c.message ?? ""),
+      ),
     }));
+  }
+
+  /**
+   * When a worker last ran out of memory: since it was last changed, so
+   * giving it more clears the warning, and within a day, so an old incident
+   * does not hang over a worker that has been fine since. One small read of
+   * its logs. A worker whose logs cannot be read is not called healthy or
+   * unhealthy on their account - it just has no warning.
+   */
+  private async lastOutOfMemory(
+    pool: string,
+    updateTime: string | undefined,
+  ): Promise<Date | null> {
+    const dayAgo = Date.now() - 24 * 3600_000;
+    const changed = updateTime === undefined ? 0 : Date.parse(updateTime);
+    const since = new Date(Math.max(dayAgo, Number.isNaN(changed) ? 0 : changed));
+    const filter = [
+      'resource.type="cloud_run_worker_pool"',
+      `resource.labels.worker_pool_name="${pool}"`,
+      `resource.labels.location="${this.config.region}"`,
+      `textPayload:"${OUT_OF_MEMORY_LOG}"`,
+      `timestamp>="${since.toISOString()}"`,
+    ].join(" AND ");
+    try {
+      const response = await this.fetch(`${LOGGING_API}/entries:list`, "POST", {
+        resourceNames: [`projects/${this.config.projectId}`],
+        filter,
+        orderBy: "timestamp desc",
+        pageSize: 1,
+      });
+      if (!response.ok) return null;
+      const body = (await response.json()) as { entries?: Array<{ timestamp?: string }> };
+      const at = body.entries?.[0]?.timestamp;
+      return at === undefined ? null : new Date(at);
+    } catch {
+      return null;
+    }
   }
 
   private async jobsOf(service: string): Promise<JobResource[]> {

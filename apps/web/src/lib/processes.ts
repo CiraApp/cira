@@ -37,6 +37,8 @@ export async function listProcesses(appId: string): Promise<StoredProcess[]> {
       schedule: row.schedule,
       scheduleSetAt: row.scheduleSetAt,
       timeoutMinutes: row.timeoutMinutes,
+      memoryMiB: row.memoryMiB,
+      memorySetAt: row.memorySetAt,
       enabled: row.enabled,
       source: row.source,
     }))
@@ -71,6 +73,7 @@ export async function recordProcesses(args: {
         command: p.command,
         serviceSlug: p.service,
         schedule: p.schedule,
+        memoryMiB: p.memoryMiB,
         source: p.source,
         enabled: false,
       }),
@@ -84,6 +87,7 @@ export async function recordProcesses(args: {
           serviceSlug: u.process.service,
           source: u.process.source,
           schedule: u.schedule,
+          memoryMiB: u.memoryMiB,
           enabled: u.enabled,
           updatedAt: now,
         })
@@ -106,6 +110,7 @@ export function specsFor(
     service: p.serviceSlug,
     schedule: p.kind === "scheduled" ? p.schedule : null,
     timeoutSeconds: runTimeoutSeconds(p, DEFAULT_LIMITS, now),
+    memoryMiB: p.memoryMiB ?? DEFAULT_LIMITS.processes.defaultMemoryMiB,
     // A scheduled run with no timetable has nothing to be on for.
     enabled: p.enabled && (p.kind === "worker" || p.schedule !== null),
   }));
@@ -127,6 +132,14 @@ export interface ProcessView {
   timeoutMinutes: number;
   /** What someone asked for, to fill the editor; null for the default. */
   requestedTimeoutMinutes: number | null;
+  /** MiB it is given: what Google reports when it could be asked, else the record's. */
+  memoryMiB: number;
+  /**
+   * When it last ran out of memory, if that is its latest trouble: a worker
+   * restarted for it lately, or a scheduled run whose last run was killed
+   * for it. Null otherwise.
+   */
+  outOfMemoryAt: Date | null;
   /** What Google reports, or null when it could not be asked. */
   state: ProcessState | null;
 }
@@ -168,6 +181,8 @@ export async function processesForPage(
   return stored.map((p) => {
     const parsed = p.schedule === null ? null : parseSchedule(p.schedule);
     const schedule = parsed !== null && parsed.ok ? parsed.schedule : null;
+    const state = states?.find((s) => s.name === p.name) ?? null;
+    const last = state?.kind === "scheduled" ? state.runs[0] : undefined;
     return {
       name: p.name,
       kind: p.kind,
@@ -179,7 +194,15 @@ export async function processesForPage(
       nextRunAt: schedule === null ? null : (nextRuns(schedule, now, 1)[0] ?? null),
       timeoutMinutes: Math.round(runTimeoutSeconds(p, DEFAULT_LIMITS, now) / 60),
       requestedTimeoutMinutes: p.timeoutMinutes,
-      state: states?.find((s) => s.name === p.name) ?? null,
+      memoryMiB:
+        state?.memoryMiB ?? p.memoryMiB ?? DEFAULT_LIMITS.processes.defaultMemoryMiB,
+      outOfMemoryAt:
+        state?.kind === "worker"
+          ? state.outOfMemoryAt
+          : last?.outOfMemory === true
+            ? last.startedAt
+            : null,
+      state,
     };
   });
 }

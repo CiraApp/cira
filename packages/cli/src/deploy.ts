@@ -11,6 +11,8 @@ import { resolveMissing } from "./confirm.js";
 import { discoverServices } from "./services.js";
 import { discoverProcesses } from "./processes.js";
 import { describeSchedule, parseSchedule } from "@cira/core/schedule";
+import { DEFAULT_LIMITS } from "@cira/core/limits";
+import { describeMemory, settleMemory } from "@cira/core/processes";
 import {
   checkBundle,
   findEnvNeeds,
@@ -202,9 +204,15 @@ export async function deploy(argv: string[] = []): Promise<number> {
           : process.schedule === null
             ? "scheduled, no timetable yet"
             : `scheduled, ${describeTimetable(process.schedule)}`;
+      const memory = settleMemory(process.memoryMiB, DEFAULT_LIMITS);
       success(
-        `  ${process.name}  ${dim(process.command)}  ${dim(`${when}, from ${process.source}`)}`,
+        `  ${process.name}  ${dim(process.command)}  ${dim(`${when}, ${describeMemory(memory.memoryMiB)}, from ${process.source}`)}`,
       );
+      if (memory.capped) {
+        warn(
+          `${process.name} asks for ${describeMemory(process.memoryMiB!)}; Cira gives it ${describeMemory(memory.memoryMiB)}, the most it offers.`,
+        );
+      }
     }
   }
 

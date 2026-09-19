@@ -33,6 +33,12 @@ export interface DeclaredProcess {
   /** A timetable found beside it, as written, or null for a person to set. */
   schedule: string | null;
   source: ProcessSource;
+  /**
+   * The memory the repository gives it, in MiB, as written - before Cira
+   * rounds it to a size it offers (see `settleMemory`). Null when it does not
+   * say, which most repositories do not.
+   */
+  memoryMiB: number | null;
 }
 
 /** What a repository says about how it runs. */
@@ -72,6 +78,7 @@ export function readProcfile(text: string): ProcessDeclarations {
       command: command.trim(),
       schedule: null,
       source: "Procfile",
+      memoryMiB: null,
     });
   }
   return { web, processes };
@@ -80,7 +87,9 @@ export function readProcfile(text: string): ProcessDeclarations {
 /**
  * A `fly.toml`: `[processes]` names each process group and its command, and
  * `[http_service]` (or `[[services]]`) says which of them take web traffic.
- * Those are the web process; the rest run all the time.
+ * Those are the web process; the rest run all the time. `[[vm]]` says how
+ * much memory each is given - Wave gives its ffmpeg worker twice the API's -
+ * either for the groups it lists or, listing none, for all of them.
  *
  * Only the handful of keys this needs are read, with a reader that
  * understands exactly as much TOML as they are written in, rather than a
@@ -90,12 +99,16 @@ export function readFlyToml(text: string): ProcessDeclarations & {
   /** The Dockerfile `[build]` names, relative to the fly.toml. */
   dockerfile: string | null;
 } {
-  const tables = readTomlTables(text);
+  const entries = readToml(text);
+  const tables = new Map<string, Map<string, TomlValue>>();
+  for (const [table, values] of entries) {
+    tables.set(table, new Map([...(tables.get(table) ?? []), ...values]));
+  }
   const commands = tables.get("processes") ?? new Map<string, TomlValue>();
   const dockerfile = asString(tables.get("build")?.get("dockerfile"));
 
   const serving = new Set<string>();
-  for (const [table, values] of tables) {
+  for (const [table, values] of entries) {
     if (table !== "http_service" && table !== "services") continue;
     const listed = values.get("processes");
     if (Array.isArray(listed)) for (const p of listed) serving.add(p);
@@ -105,6 +118,17 @@ export function readFlyToml(text: string): ProcessDeclarations & {
   if (commands.size === 0) {
     return { web: serving.size > 0 ? true : null, processes: [], dockerfile };
   }
+
+  // `[[compute]]` is the newer name for the same table.
+  const vms = entries.filter(([table]) => table === "vm" || table === "compute");
+  const memoryOf = (group: string): number | null => {
+    const listed = vms.find(([, v]) => {
+      const groups = v.get("processes");
+      return Array.isArray(groups) && groups.includes(group);
+    });
+    const general = vms.find(([, v]) => !Array.isArray(v.get("processes")));
+    return flyMemory((listed ?? general)?.[1]);
+  };
 
   const processes: DeclaredProcess[] = [];
   for (const [name, value] of commands) {
@@ -116,9 +140,138 @@ export function readFlyToml(text: string): ProcessDeclarations & {
       command,
       schedule: null,
       source: "fly.toml",
+      memoryMiB: memoryOf(name),
     });
   }
   return { web: serving.size > 0, processes, dockerfile };
+}
+
+/**
+ * Fly's machine sizes, by the memory each comes with when `memory` is not
+ * also given.
+ */
+const FLY_SIZES: Record<string, number> = {
+  "shared-cpu-1x": 256,
+  "shared-cpu-2x": 512,
+  "shared-cpu-4x": 1024,
+  "shared-cpu-8x": 2048,
+  "performance-1x": 2048,
+  "performance-2x": 4096,
+  "performance-4x": 8192,
+  "performance-8x": 16384,
+  "performance-16x": 32768,
+};
+
+/** A `[[vm]]` table's memory: `memory`, `memory_mb`, or its `size`'s. */
+function flyMemory(vm: Map<string, TomlValue> | undefined): number | null {
+  if (vm === undefined) return null;
+  const memory = vm.get("memory");
+  if (typeof memory === "number") return memory;
+  if (typeof memory === "string") {
+    const read = readMemory(memory);
+    if (read !== null) return read;
+  }
+  const mb = vm.get("memory_mb");
+  if (typeof mb === "number") return mb;
+  const size = vm.get("size");
+  return typeof size === "string" ? (FLY_SIZES[size.toLowerCase()] ?? null) : null;
+}
+
+/** "1gb", "1024mb", "2 GB", "512": MiB, or null for anything else. */
+export function readMemory(text: string): number | null {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*(gb|gib|g|mb|mib|m)?\s*$/i.exec(text);
+  if (match === null) return null;
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? "mb").toLowerCase();
+  return Math.round(unit.startsWith("g") ? amount * 1024 : amount);
+}
+
+/**
+ * Heroku's dyno sizes, by memory. A repository with a Procfile often has an
+ * `app.json` whose `formation` says which size each process runs at.
+ */
+const HEROKU_SIZES: Record<string, number> = {
+  eco: 512,
+  basic: 512,
+  "1x": 512,
+  "standard-1x": 512,
+  "2x": 1024,
+  "standard-2x": 1024,
+  "private-s": 1024,
+  "shield-s": 1024,
+  pm: 2560,
+  "performance-m": 2560,
+  "private-m": 2560,
+  "shield-m": 2560,
+  pl: 14336,
+  "performance-l": 14336,
+  "private-l": 14336,
+  "shield-l": 14336,
+};
+
+/**
+ * An `app.json`'s `formation`: each process's memory by name, from its dyno
+ * size. It names the processes a Procfile runs, so it only adds a size to
+ * processes found elsewhere.
+ */
+export function readAppJsonSizes(text: string): Map<string, number> {
+  const sizes = new Map<string, number>();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return sizes;
+  }
+  const formation =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as { formation?: unknown }).formation
+      : undefined;
+  if (typeof formation !== "object" || formation === null) return sizes;
+  for (const [name, value] of Object.entries(formation)) {
+    const size =
+      typeof value === "object" && value !== null
+        ? (value as { size?: unknown }).size
+        : undefined;
+    const memory =
+      typeof size === "string" ? HEROKU_SIZES[size.toLowerCase()] : undefined;
+    if (memory !== undefined) sizes.set(processName(name), memory);
+  }
+  return sizes;
+}
+
+/**
+ * The memory Cira gives a process: what its repository asked for, rounded up
+ * to a size Cira offers, or the default when it did not say. `capped` is set
+ * when it asked for more than the largest, so whoever deployed it is told.
+ */
+export function settleMemory(
+  askedMiB: number | null,
+  limits: Limits,
+): { memoryMiB: number; capped: boolean } {
+  const { memoryChoicesMiB: choices, defaultMemoryMiB } = limits.processes;
+  if (askedMiB === null || !Number.isFinite(askedMiB) || askedMiB <= 0) {
+    return { memoryMiB: defaultMemoryMiB, capped: false };
+  }
+  const largest = choices[choices.length - 1]!;
+  const fits = choices.find((c) => c >= askedMiB);
+  return { memoryMiB: fits ?? largest, capped: fits === undefined };
+}
+
+/** Memory in the words a page uses: "512 MB", "1 GB". */
+export function describeMemory(mib: number): string {
+  return mib >= 1024 && mib % 1024 === 0 ? `${mib / 1024} GB` : `${mib} MB`;
+}
+
+/**
+ * What a worker costs a month while it is on, in whole dollars rounded to the
+ * nearest five: one always-running instance with one CPU and this much
+ * memory, at Cloud Run's instance-based rates (about $0.000018 a vCPU-second
+ * and $0.000002 a GiB-second). An estimate to put beside a switch, not a bill.
+ */
+export function workerMonthlyDollars(memoryMiB: number): number {
+  const seconds = 30 * 24 * 3600;
+  const dollars = seconds * (0.000018 + (memoryMiB / 1024) * 0.000002);
+  return Math.max(5, Math.round(dollars / 5) * 5);
 }
 
 /**
@@ -157,6 +310,8 @@ export function readScheduledWorkflow(
     // More than one timetable is one run on the first; a person can widen it.
     schedule: crons[0]!,
     source: "GitHub Actions",
+    // A GitHub runner's memory says nothing about what the script needs.
+    memoryMiB: null,
   };
 }
 
@@ -203,28 +358,26 @@ type TomlValue = string | string[] | number | boolean;
 /**
  * Just enough TOML: `[table]` and `[[table]]` headers, and `key = value` where
  * the value is a string, a list of strings, a number or a boolean. Anything
- * else is skipped rather than guessed at.
+ * else is skipped rather than guessed at. Each header starts an entry of its
+ * own, in order, so the several `[[vm]]` tables a file can have stay apart.
  */
-function readTomlTables(text: string): Map<string, Map<string, TomlValue>> {
-  const tables = new Map<string, Map<string, TomlValue>>();
-  let current = "";
-  tables.set(current, new Map());
+function readToml(text: string): Array<[string, Map<string, TomlValue>]> {
+  const entries: Array<[string, Map<string, TomlValue>]> = [["", new Map()]];
   for (const raw of text.split("\n")) {
     const line = stripComment(raw).trim();
     if (line === "") continue;
     const header = /^\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?$/.exec(line);
     if (header !== null) {
-      current = header[1]!;
-      if (!tables.has(current)) tables.set(current, new Map());
+      entries.push([header[1]!, new Map()]);
       continue;
     }
     const pair = /^([A-Za-z0-9_-]+|"[^"]+")\s*=\s*(.+)$/.exec(line);
     if (pair === null) continue;
     const key = pair[1]!.replace(/^"|"$/g, "");
     const value = tomlValue(pair[2]!.trim());
-    if (value !== null) tables.get(current)!.set(key, value);
+    if (value !== null) entries.at(-1)![1].set(key, value);
   }
-  return tables;
+  return entries;
 }
 
 function tomlValue(text: string): TomlValue | null {
@@ -326,6 +479,10 @@ export interface StoredProcess {
   /** When a person chose the timetable; null when it came from the repository. */
   scheduleSetAt: Date | null;
   timeoutMinutes: number | null;
+  /** One of the offered sizes, or null for the default. */
+  memoryMiB: number | null;
+  /** When a person chose the memory; null when it came from the repository. */
+  memorySetAt: Date | null;
   enabled: boolean;
   source: string;
 }
@@ -338,8 +495,8 @@ export type DeployedProcess = DeclaredProcess & { service: string };
  *
  * The repository is the truth about what exists and how it runs; people are
  * the truth about whether it runs and when. So a redeploy takes the command,
- * kind and source from the repository, keeps a timetable a person chose over
- * the one the repository suggests, and keeps whether it was switched on -
+ * kind and source from the repository, keeps a timetable or memory a person
+ * chose over what the repository suggests, and keeps whether it was switched on -
  * unless it changed kind, because a scheduled run turning into a worker costs
  * money every hour and nobody agreed to that. What the repository no longer
  * mentions is removed.
@@ -353,6 +510,7 @@ export function planProcesses(
     id: string;
     process: DeployedProcess;
     schedule: string | null;
+    memoryMiB: number | null;
     enabled: boolean;
   }>;
   remove: string[];
@@ -363,6 +521,7 @@ export function planProcesses(
     id: string;
     process: DeployedProcess;
     schedule: string | null;
+    memoryMiB: number | null;
     enabled: boolean;
   }> = [];
 
@@ -382,6 +541,7 @@ export function planProcesses(
           : stored.scheduleSetAt !== null && sameKind
             ? stored.schedule
             : process.schedule,
+      memoryMiB: stored.memorySetAt !== null ? stored.memoryMiB : process.memoryMiB,
       enabled: sameKind && stored.enabled,
     });
   }

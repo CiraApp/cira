@@ -176,6 +176,13 @@
       "when": 1789811240020,
       "tag": "0024_run_what_is_not_a_website",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789819266698,
+      "tag": "0025_give_each_process_its_memory",
+      "breakpoints": true
     }
   ]
 }

@@ -49,6 +49,9 @@ describe("discoverProcesses", () => {
         '  worker = "arq app.workers.settings.WorkerSettings"',
         "[http_service]",
         '  processes = ["api"]',
+        "[[vm]]",
+        '  memory = "1024mb"',
+        '  processes = ["worker"]',
       ].join("\n"),
     });
 
@@ -60,8 +63,21 @@ describe("discoverProcesses", () => {
         command: "arq app.workers.settings.WorkerSettings",
         schedule: null,
         source: "fly.toml",
+        memoryMiB: 1024,
         service: "api",
       },
+    ]);
+  });
+
+  it("sizes a Procfile's processes from the app.json beside it", () => {
+    const found = find({
+      "requirements.txt": "requests\n",
+      Procfile: "web: gunicorn app:app\nworker: python worker.py\nsync: python sync.py\n",
+      "app.json": JSON.stringify({ formation: { worker: { size: "performance-m" } } }),
+    });
+    expect(found.processes.map((p) => [p.name, p.memoryMiB])).toEqual([
+      ["worker", 2560],
+      ["sync", null],
     ]);
   });
 
@@ -100,6 +116,7 @@ describe("discoverProcesses", () => {
         command: "python scripts/weekly_report.py",
         schedule: "0 9 * * 1",
         source: "GitHub Actions",
+        memoryMiB: null,
         service: "api",
       },
     ]);

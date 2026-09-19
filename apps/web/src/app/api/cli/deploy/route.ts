@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { FRAMEWORKS, parseSchedule } from "@cira/core";
+import { DEFAULT_LIMITS, FRAMEWORKS, parseSchedule, settleMemory } from "@cira/core";
 import { isSafeDockerfilePath } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
@@ -71,6 +71,8 @@ const body = z.object({
         command: z.string().trim().min(1).max(1000),
         schedule: z.string().max(100).nullable(),
         source: z.enum(["Procfile", "fly.toml", "GitHub Actions"]),
+        /** MiB the repository asks for. Absent from an older CLI: the default. */
+        memoryMiB: z.number().int().positive().max(1_048_576).nullable().default(null),
         service: z
           .string()
           .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
@@ -108,9 +110,13 @@ export async function POST(request: Request) {
     web: parsed.data.web,
     // A timetable is taken only if Cira can run it; one it cannot is dropped
     // for a person to set, rather than refusing the whole deploy.
+    // Memory is rounded to a size Cira offers, so what is recorded is what
+    // Google is given; a repository that asks for none gets the default.
     processes: parsed.data.processes.map((p) => ({
       ...p,
       schedule: p.schedule !== null && parseSchedule(p.schedule).ok ? p.schedule : null,
+      memoryMiB:
+        p.memoryMiB === null ? null : settleMemory(p.memoryMiB, DEFAULT_LIMITS).memoryMiB,
     })),
   });
 

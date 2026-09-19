@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, normalize, relative } from "node:path";
 import {
   mergeDeclarations,
+  readAppJsonSizes,
   readFlyToml,
   readProcfile,
   readScheduledWorkflow,
@@ -104,7 +105,21 @@ export function discoverProcesses(root: string, parts: readonly Part[]): FoundPr
     })),
   );
 
-  return { web: merged.web, processes: merged.processes as FoundProcess[] };
+  // An app.json beside a part, or at the root of an app that is one thing,
+  // gives the processes its Procfile names their dyno size.
+  const sizes = new Map<string, Map<string, number>>();
+  for (const part of parts) {
+    const text =
+      read(join(root, part.sourcePath, "app.json")) ??
+      (part === only ? read(join(root, "app.json")) : null);
+    if (text !== null) sizes.set(part.slug, readAppJsonSizes(text));
+  }
+  const processes = (merged.processes as FoundProcess[]).map((p) => ({
+    ...p,
+    memoryMiB: p.memoryMiB ?? sizes.get(p.service)?.get(p.name) ?? null,
+  }));
+
+  return { web: merged.web, processes };
 }
 
 function read(path: string): string | null {

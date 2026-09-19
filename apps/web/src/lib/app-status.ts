@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { appAccess, apps, db, processes, spaces, users } from "@cira/db";
 import {
   canManageApp,
+  describeMemory,
   visibleApps,
   type App,
   type AppAccess,
@@ -300,6 +301,18 @@ async function describeProcess(
     kind: p.kind,
     ...(p.command === null ? {} : { command: p.command }),
     switchedOn: p.enabled,
+    memory: describeMemory(p.memoryMiB),
+    ...(p.outOfMemoryAt === null || missing
+      ? {}
+      : {
+          ranOutOfMemory: {
+            at: new Date(p.outOfMemoryAt).toISOString(),
+            meaning:
+              p.kind === "worker"
+                ? "It was killed for using more memory than it has, and restarted. It needs more; the app's managers can give it more on the app's page."
+                : "Its last run was killed for using more memory than it has. It needs more; the app's managers can give it more on the app's page.",
+          },
+        }),
   };
 
   if (p.kind === "worker") {
@@ -354,6 +367,7 @@ function workerWords(p: ProcessView): string {
   if (health === null) return "on, but Cira could not reach Google Cloud to check it";
   if (health === "failed") return "failed to start";
   if (health === "starting") return "starting";
+  if (p.outOfMemoryAt !== null) return "running, but it ran out of memory recently";
   return "running";
 }
 
@@ -363,6 +377,7 @@ function runWords(run: ProcessRun): Record<string, unknown> {
   return {
     startedAt: started.toISOString(),
     outcome: run.outcome,
+    ...(run.outOfMemory ? { cause: "ran out of memory" } : {}),
     ...(finished === null
       ? {}
       : { took: took(Math.round((finished.getTime() - started.getTime()) / 1000)) }),

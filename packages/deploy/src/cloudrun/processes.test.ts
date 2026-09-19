@@ -45,6 +45,8 @@ class FakeGoogle {
   executions = new Map<string, Doc[]>();
   service: Doc | null = null;
   buildStatus = "SUCCESS";
+  /** Out-of-memory lines Cloud Run has logged, by worker pool. */
+  outOfMemory = new Map<string, string>();
 
   handle(url: string, method: string, body: unknown): Response {
     const u = new URL(url);
@@ -52,6 +54,18 @@ class FakeGoogle {
     const json = (value: unknown, status = 200) =>
       new Response(JSON.stringify(value), { status });
     const missing = () => json({ error: { status: "NOT_FOUND" } }, 404);
+
+    if (u.host.startsWith("logging")) {
+      const filter = String((body as { filter?: unknown }).filter);
+      const pool = /worker_pool_name="([^"]+)"/.exec(filter)?.[1] ?? "";
+      const at = this.outOfMemory.get(pool);
+      return json({
+        entries:
+          at !== undefined && filter.includes("Out-of-memory event detected")
+            ? [{ timestamp: at }]
+            : [],
+      });
+    }
 
     if (u.host.startsWith("cloudbuild")) {
       return method === "POST"
@@ -159,6 +173,7 @@ const report: ProcessSpec = {
   service: "app",
   schedule: "0 9 * * 1",
   timeoutSeconds: 600,
+  memoryMiB: 2048,
   enabled: false,
 };
 const worker: ProcessSpec = {
@@ -168,6 +183,7 @@ const worker: ProcessSpec = {
   service: "app",
   schedule: null,
   timeoutSeconds: 600,
+  memoryMiB: 1024,
   enabled: false,
 };
 
@@ -280,6 +296,84 @@ describe("an app that is only a scheduled run and a worker", () => {
     await provider().setProcess(handle, { ...report, schedule: null });
     expect(google.schedules.has("report-0000app1")).toBe(false);
     expect(google.jobs.has("report-0000app1")).toBe(true);
+  });
+
+  it("gives each its own memory, and changes it with nothing secret", async () => {
+    const started = await provider().deploy(scriptApp([report, worker]));
+    await provider().getStatus(started.providerDeploymentId);
+    const handle = started.providerDeploymentId;
+
+    expect(jobContainer("report-0000app1").resources).toEqual({
+      limits: { cpu: "1", memory: "2048Mi" },
+    });
+    expect(poolContainer("worker-0000app1").resources).toEqual({
+      limits: { cpu: "1", memory: "1024Mi" },
+    });
+
+    await provider().setProcess(handle, { ...worker, enabled: true, memoryMiB: 4096 });
+    expect(poolContainer("worker-0000app1")).toMatchObject({
+      image,
+      resources: { limits: { cpu: "1", memory: "4096Mi" } },
+      env: [{ name: "DATABASE_URL", value: "postgres://db/app" }],
+    });
+    await provider().setProcess(handle, { ...report, memoryMiB: 512 });
+    expect(jobContainer("report-0000app1").resources).toEqual({
+      limits: { cpu: "1", memory: "512Mi" },
+    });
+
+    const states = await provider().processStates(handle, [
+      { name: "worker", kind: "worker" },
+      { name: "report", kind: "scheduled" },
+    ]);
+    expect(states.map((s) => s.memoryMiB)).toEqual([4096, 512]);
+  });
+
+  it("notices a worker or a run that ran out of memory", async () => {
+    const started = await provider().deploy(scriptApp([report, worker]));
+    await provider().getStatus(started.providerDeploymentId);
+    const handle = started.providerDeploymentId;
+    await provider().setProcess(handle, { ...worker, enabled: true });
+
+    // A worker is restarted and still called ready; only its logs say why.
+    google.outOfMemory.set("worker-0000app1", "2026-09-19T11:58:22Z");
+    google.executions.set("report-0000app1", [
+      {
+        name: "e-1",
+        startTime: "2026-09-19T09:00:00Z",
+        completionTime: "2026-09-19T09:00:40Z",
+        failedCount: 1,
+        conditions: [
+          {
+            type: "Completed",
+            state: "CONDITION_FAILED",
+            message:
+              "Task e-1-task0 failed with exit code: 0 and message: The configured memory limit was reached.",
+          },
+        ],
+      },
+    ]);
+
+    const [pool, job] = await provider().processStates(handle, [
+      { name: "worker", kind: "worker" },
+      { name: "report", kind: "scheduled" },
+    ]);
+    expect(pool).toMatchObject({
+      health: "starting",
+      outOfMemoryAt: new Date("2026-09-19T11:58:22Z"),
+    });
+    expect(job?.kind === "scheduled" && job.runs[0]).toMatchObject({
+      outcome: "failed",
+      outOfMemory: true,
+    });
+
+    // Off, it cannot be running out of anything, and its logs are not read.
+    await provider().setProcess(handle, { ...worker, enabled: false });
+    calls.length = 0;
+    const [off] = await provider().processStates(handle, [
+      { name: "worker", kind: "worker" },
+    ]);
+    expect(off).toMatchObject({ outOfMemoryAt: null });
+    expect(calls.some((c) => c.url.includes("logging"))).toBe(false);
   });
 
   it("runs one now, but not while another run is still going", async () => {

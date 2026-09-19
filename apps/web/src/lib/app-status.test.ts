@@ -72,6 +72,7 @@ const lastRun = {
   startedAt: new Date("2026-09-18T09:00:04Z"),
   finishedAt: new Date("2026-09-18T09:01:50Z"),
   outcome: "failed" as const,
+  outOfMemory: false,
 };
 
 vi.mock("@cira/deploy", async (importOriginal) => {
@@ -84,11 +85,19 @@ vi.mock("@cira/deploy", async (importOriginal) => {
         googleDown
           ? Promise.reject(new Error("unreachable"))
           : Promise.resolve([
-              { kind: "worker", name: "worker", instances: 1, health: "ready" },
+              {
+                kind: "worker",
+                name: "worker",
+                instances: 1,
+                health: "ready",
+                memoryMiB: 1024,
+                outOfMemoryAt: null,
+              },
               {
                 kind: "scheduled",
                 name: "report",
                 exists: true,
+                memoryMiB: 1024,
                 runs: [
                   lastRun,
                   {
@@ -96,6 +105,7 @@ vi.mock("@cira/deploy", async (importOriginal) => {
                     startedAt: new Date("2026-09-17T09:00:03Z"),
                     finishedAt: new Date("2026-09-17T09:00:50Z"),
                     outcome: "succeeded",
+                    outOfMemory: false,
                   },
                 ],
               },
@@ -254,6 +264,7 @@ describe.skipIf(!hasDatabase)("app status", () => {
       name: "worker",
       kind: "worker",
       switchedOn: true,
+      memory: "1 GB",
       state: "running",
     });
     expect(report).toMatchObject({

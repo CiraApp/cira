@@ -331,6 +331,7 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
         command: string;
         schedule: string | null;
         source: "Procfile" | "fly.toml" | "GitHub Actions";
+        memoryMiB: number | null;
         service: string;
       }>;
     }) => {
@@ -353,6 +354,7 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       command: "python report.py",
       schedule: "0 9 * * 1",
       source: "GitHub Actions" as const,
+      memoryMiB: null,
       service: "app",
     };
 
@@ -383,6 +385,8 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
           service: "app",
           schedule: "0 9 * * 1",
           timeoutSeconds: 600,
+          // It asked for none, so it is given the default.
+          memoryMiB: 1024,
           enabled: false,
         },
       ]);

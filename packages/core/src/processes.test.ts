@@ -11,6 +11,11 @@ import {
   readFlyToml,
   readProcfile,
   readScheduledWorkflow,
+  readAppJsonSizes,
+  readMemory,
+  settleMemory,
+  describeMemory,
+  workerMonthlyDollars,
 } from "./processes.js";
 
 /** Wave's own fly.toml, trimmed to the parts that decide anything. */
@@ -53,6 +58,8 @@ describe("readFlyToml", () => {
           command: "arq app.workers.settings.WorkerSettings",
           schedule: null,
           source: "fly.toml",
+          // Its own [[vm]], which gives the ffmpeg worker twice the API's.
+          memoryMiB: 1024,
         },
       ],
     });
@@ -96,6 +103,7 @@ describe("readProcfile", () => {
           command: "celery -A tasks worker",
           schedule: null,
           source: "Procfile",
+          memoryMiB: null,
         },
         {
           name: "clock",
@@ -103,6 +111,7 @@ describe("readProcfile", () => {
           command: "python clock.py",
           schedule: null,
           source: "Procfile",
+          memoryMiB: null,
         },
       ],
     });
@@ -136,6 +145,7 @@ jobs:
       command: "python scripts/weekly_report.py",
       schedule: "0 9 * * 1",
       source: "GitHub Actions",
+      memoryMiB: null,
     });
   });
 
@@ -239,6 +249,8 @@ describe("planProcesses", () => {
     schedule: "0 9 * * 1",
     scheduleSetAt: null,
     timeoutMinutes: null,
+    memoryMiB: null,
+    memorySetAt: null,
     enabled: true,
     source: "GitHub Actions",
     ...over,
@@ -249,6 +261,7 @@ describe("planProcesses", () => {
     command: "python report.py --all",
     schedule: "0 8 * * 1",
     source: "GitHub Actions",
+    memoryMiB: 2048,
     service: "app",
     ...over,
   });
@@ -256,7 +269,13 @@ describe("planProcesses", () => {
   it("takes how it runs from the repository and whether it runs from people", () => {
     const plan = planProcesses([stored({})], [declared({})]);
     expect(plan.update).toEqual([
-      { id: "prc_1", process: declared({}), schedule: "0 8 * * 1", enabled: true },
+      {
+        id: "prc_1",
+        process: declared({}),
+        schedule: "0 8 * * 1",
+        memoryMiB: 2048,
+        enabled: true,
+      },
     ]);
   });
 
@@ -266,6 +285,14 @@ describe("planProcesses", () => {
       [declared({})],
     );
     expect(plan.update[0]?.schedule).toBe("30 7 * * *");
+  });
+
+  it("keeps memory a person chose over the repository's", () => {
+    const plan = planProcesses(
+      [stored({ memoryMiB: 4096, memorySetAt: new Date() })],
+      [declared({})],
+    );
+    expect(plan.update[0]?.memoryMiB).toBe(4096);
   });
 
   it("switches a process off when it changes kind, since its cost changed", () => {
@@ -306,5 +333,82 @@ describe("runTimeoutSeconds", () => {
     expect(
       runTimeoutSeconds({ schedule: null, timeoutMinutes: 20 }, DEFAULT_LIMITS, now),
     ).toBe(1200);
+  });
+});
+
+describe("memory", () => {
+  const vm = (lines: string) => `
+[processes]
+  worker = "python worker.py"
+  report = "python report.py"
+${lines}
+`;
+  const memories = (text: string) =>
+    Object.fromEntries(readFlyToml(text).processes.map((p) => [p.name, p.memoryMiB]));
+
+  it("reads a fly.toml's [[vm]] for the groups it lists, or for all of them", () => {
+    expect(
+      memories(
+        vm(`
+[[vm]]
+  memory = "2gb"
+  processes = ["worker"]
+[[vm]]
+  size = "shared-cpu-2x"
+`),
+      ),
+    ).toEqual({ worker: 2048, report: 512 });
+    expect(memories(vm(`[[compute]]\n  memory_mb = 768`))).toEqual({
+      worker: 768,
+      report: 768,
+    });
+    expect(memories(vm(""))).toEqual({ worker: null, report: null });
+  });
+
+  it("reads the ways memory is written", () => {
+    expect(readMemory("1024mb")).toBe(1024);
+    expect(readMemory("1GB")).toBe(1024);
+    expect(readMemory("1.5 gb")).toBe(1536);
+    expect(readMemory("512")).toBe(512);
+    expect(readMemory("lots")).toBeNull();
+  });
+
+  it("reads an app.json's dyno sizes by process name", () => {
+    const sizes = readAppJsonSizes(
+      JSON.stringify({
+        formation: { web: { size: "basic" }, worker: { size: "Standard-2X" } },
+      }),
+    );
+    expect(Object.fromEntries(sizes)).toEqual({ web: 512, worker: 1024 });
+    expect(readAppJsonSizes("not json").size).toBe(0);
+  });
+
+  it("rounds what is asked for up to a size Cira offers, and says when it cannot", () => {
+    expect(settleMemory(null, DEFAULT_LIMITS)).toEqual({
+      memoryMiB: 1024,
+      capped: false,
+    });
+    expect(settleMemory(256, DEFAULT_LIMITS)).toEqual({ memoryMiB: 512, capped: false });
+    expect(settleMemory(1536, DEFAULT_LIMITS)).toEqual({
+      memoryMiB: 2048,
+      capped: false,
+    });
+    expect(settleMemory(4096, DEFAULT_LIMITS)).toEqual({
+      memoryMiB: 4096,
+      capped: false,
+    });
+    expect(settleMemory(16384, DEFAULT_LIMITS)).toEqual({
+      memoryMiB: 4096,
+      capped: true,
+    });
+  });
+
+  it("says memory and a worker's cost in a page's words", () => {
+    expect(describeMemory(512)).toBe("512 MB");
+    expect(describeMemory(2048)).toBe("2 GB");
+    expect(workerMonthlyDollars(512)).toBe(50);
+    expect(workerMonthlyDollars(1024)).toBe(50);
+    expect(workerMonthlyDollars(2048)).toBe(55);
+    expect(workerMonthlyDollars(4096)).toBe(65);
   });
 });

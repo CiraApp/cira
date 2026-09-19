@@ -7,6 +7,7 @@ import {
   DEFAULT_LIMITS,
   checkProcessOn,
   checkTimetable,
+  describeMemory,
   type StoredProcess,
 } from "@cira/core";
 import { ProcessError, deploymentProvider } from "@cira/deploy";
@@ -16,8 +17,8 @@ import { latestDeployment } from "@/lib/queries";
 
 /**
  * What someone who manages an app can do to its workers and scheduled runs:
- * switch one on or off, give a scheduled run its timetable and time, and run
- * one now.
+ * switch one on or off, give a scheduled run its timetable and time, give
+ * either more or less memory, and run one now.
  *
  * Google is asked first and the record changed only once it has agreed, so a
  * refusal - Cloud Scheduler not yet switched on, a worker not yet created -
@@ -85,6 +86,24 @@ export async function scheduleProcess(
   });
 }
 
+export async function setProcessMemory(
+  spaceSlug: string,
+  appSlug: string,
+  name: unknown,
+  memoryMiB: unknown,
+): Promise<ProcessActionResult> {
+  const choices = DEFAULT_LIMITS.processes.memoryChoicesMiB;
+  if (typeof memoryMiB !== "number" || !choices.includes(memoryMiB)) {
+    return {
+      ok: false,
+      error: `Choose one of ${choices.map(describeMemory).join(", ")}.`,
+    };
+  }
+  return change(spaceSlug, appSlug, name, (process) =>
+    Promise.resolve({ ...process, memoryMiB, memorySetAt: new Date() }),
+  );
+}
+
 export async function runProcessNow(
   spaceSlug: string,
   appSlug: string,
@@ -136,6 +155,8 @@ async function change(
       schedule: next.schedule,
       scheduleSetAt: next.scheduleSetAt,
       timeoutMinutes: next.timeoutMinutes,
+      memoryMiB: next.memoryMiB,
+      memorySetAt: next.memorySetAt,
       updatedAt: new Date(),
     })
     .where(eq(processes.id, next.id));

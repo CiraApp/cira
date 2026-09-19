@@ -200,6 +200,24 @@ describe.skipIf(!hasDatabase)("process actions", () => {
     expect((await stored(names[workersPerSpace]!))?.enabled).toBe(false);
   });
 
+  it("gives a process more memory, and keeps it past the next deploy", async () => {
+    const { setProcessMemory } = await import("./process-actions");
+    expect(await setProcessMemory("p", "sync", "worker-a", 2048)).toEqual({ ok: true });
+    expect(told.at(-1)).toMatchObject({ name: "worker-a", memoryMiB: 2048 });
+    expect(await stored("worker-a")).toMatchObject({ memoryMiB: 2048 });
+    expect((await stored("worker-a"))?.memorySetAt).not.toBeNull();
+
+    const odd = await setProcessMemory("p", "sync", "worker-a", 3000);
+    expect(odd.ok === false && odd.error).toBe("Choose one of 512 MB, 1 GB, 2 GB, 4 GB.");
+    expect(told).toHaveLength(1);
+  });
+
+  it("gives a process the default memory until someone says otherwise", async () => {
+    const { switchProcess } = await import("./process-actions");
+    await switchProcess("p", "sync", "worker-a", true);
+    expect(told.at(-1)).toMatchObject({ memoryMiB: 1024 });
+  });
+
   it("leaves the record as it was when Google refuses", async () => {
     const { scheduleProcess } = await import("./process-actions");
     googleRefuses = true;
@@ -216,6 +234,8 @@ describe.skipIf(!hasDatabase)("process actions", () => {
     const refusal = { ok: false, error: "No such app, or you do not manage it." };
     expect(await switchProcess("p", "sync", "worker-a", true)).toEqual(refusal);
     expect(await runProcessNow("p", "sync", "report")).toEqual(refusal);
+    const { setProcessMemory } = await import("./process-actions");
+    expect(await setProcessMemory("p", "sync", "worker-a", 4096)).toEqual(refusal);
     expect(told).toHaveLength(0);
   });
 });

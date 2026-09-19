@@ -765,6 +765,10 @@ export const processes = pgTable(
     scheduleSetAt: timestamp("schedule_set_at", { withTimezone: true }),
     /** How long each run may take, as asked for. Null for the default. */
     timeoutMinutes: integer("timeout_minutes"),
+    /** MiB, one of the sizes Cira offers. Null for the default. */
+    memoryMiB: integer("memory_mib"),
+    /** Set when a person chose the memory, so a redeploy keeps theirs. */
+    memorySetAt: timestamp("memory_set_at", { withTimezone: true }),
     enabled: boolean("enabled").notNull().default(false),
     /** Where it was found: Procfile, fly.toml or GitHub Actions. */
     source: text("source").notNull(),

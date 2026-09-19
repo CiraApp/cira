@@ -2,9 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { DEFAULT_LIMITS } from "@cira/core/limits";
+import { describeMemory, workerMonthlyDollars } from "@cira/core/processes";
 import { describeSchedule, parseSchedule } from "@cira/core/schedule";
 import type { ProcessView } from "@/lib/processes";
-import { runProcessNow, scheduleProcess, switchProcess } from "@/lib/process-actions";
+import {
+  runProcessNow,
+  scheduleProcess,
+  setProcessMemory,
+  switchProcess,
+} from "@/lib/process-actions";
 import { SectionLink } from "./section-link";
 
 /**
@@ -17,13 +24,13 @@ import { SectionLink } from "./section-link";
  * its controls only to those who manage it.
  */
 
-/**
- * A worker's rough monthly cost while on: one always-running instance of the
- * size the limits record gives it, at Cloud Run's instance-based rates
- * (about $0.000018 a vCPU-second and $0.000002 a GiB-second). Stated so the
- * switch is not a surprise on the bill.
- */
-const WORKER_MONTHLY = "about $50 a month";
+/** The memory sizes offered, smallest first. */
+const MEMORY_CHOICES = DEFAULT_LIMITS.processes.memoryChoicesMiB;
+
+/** The next size up, or null at the largest. */
+function roomier(memoryMiB: number): number | null {
+  return MEMORY_CHOICES.find((c) => c > memoryMiB) ?? null;
+}
 
 export function ProcessPanel({
   processes,
@@ -44,7 +51,13 @@ export function ProcessPanel({
   servesWeb: boolean;
 }) {
   if (processes.length === 0) return null;
-  const anyWorker = processes.some((p) => p.kind === "worker");
+  const costs = [
+    ...new Set(
+      processes
+        .filter((p) => p.kind === "worker")
+        .map((p) => workerMonthlyDollars(p.memoryMiB)),
+    ),
+  ].sort((a, b) => a - b);
 
   return (
     <section className="enter-up mt-10">
@@ -88,9 +101,11 @@ export function ProcessPanel({
         ))}
       </ul>
 
-      {anyWorker && canManage ? (
+      {costs.length > 0 && canManage ? (
         <p className="mt-2 text-[11.5px] text-ink-subtle">
-          A worker runs all the time, and costs {WORKER_MONTHLY} while it is on.
+          {costs.length === 1
+            ? `A worker runs all the time, and costs about $${costs[0]} a month while it is on.`
+            : `Workers run all the time, and cost about $${costs[0]} to $${costs.at(-1)} a month each while on.`}
         </p>
       ) : null}
     </section>
@@ -135,6 +150,7 @@ function Row({
   };
 
   const noTimetable = process.kind === "scheduled" && process.schedule === null;
+  const more = roomier(process.memoryMiB);
   const missing =
     (process.state?.kind === "worker" && process.state.health === "missing") ||
     (process.state?.kind === "scheduled" && !process.state.exists);
@@ -169,6 +185,9 @@ function Row({
                 </span>
               )
             ) : null}
+            <span className="text-ink-subtle">
+              {describeMemory(process.memoryMiB)} memory
+            </span>
             <span className="text-ink-subtle">from {process.source}</span>
             {process.kind === "worker" && !missing && logsHref !== null ? (
               <SectionLink href={logsHref}>Logs</SectionLink>
@@ -190,20 +209,20 @@ function Row({
                 >
                   Run now
                 </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => {
-                    setEditing((open) => !open);
-                    setError(null);
-                  }}
-                  aria-expanded={editing}
-                  className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
-                >
-                  {noTimetable ? "Set a timetable" : "Edit"}
-                </button>
               </>
             ) : null}
+            <button
+              type="button"
+              disabled={pending || missing}
+              onClick={() => {
+                setEditing((open) => !open);
+                setError(null);
+              }}
+              aria-expanded={editing}
+              className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
+            >
+              {noTimetable ? "Set a timetable" : "Edit"}
+            </button>
             <Switch
               on={process.enabled}
               disabled={pending || missing || (noTimetable && !process.enabled)}
@@ -217,6 +236,36 @@ function Row({
         ) : null}
       </div>
 
+      {process.outOfMemoryAt !== null && !missing ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+          <p className="text-failed">
+            {process.kind === "worker"
+              ? `Ran out of memory ${when(new Date(process.outOfMemoryAt))} and was restarted.`
+              : "Its last run ran out of memory."}{" "}
+            <span className="text-ink-muted">
+              {more === null
+                ? `${describeMemory(process.memoryMiB)} is the most Cira gives; the work needs to use less.`
+                : `It needs more than ${describeMemory(process.memoryMiB)}.`}
+            </span>
+          </p>
+          {canManage && more !== null ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                act(
+                  () => setProcessMemory(spaceSlug, appSlug, process.name, more),
+                  `Now ${describeMemory(more)}.`,
+                )
+              }
+              className="btn btn-secondary px-2.5 py-1 text-[12px]"
+            >
+              Give it {describeMemory(more)}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {error !== null ? (
         <p role="alert" className="enter-fade mt-2 text-[12px] text-failed">
           {error}
@@ -228,14 +277,29 @@ function Row({
       ) : null}
 
       {editing ? (
-        <TimetableEditor
+        <ProcessEditor
           process={process}
           pending={pending}
           onCancel={() => setEditing(false)}
-          onSave={(schedule, minutes) =>
-            act(() =>
-              scheduleProcess(spaceSlug, appSlug, process.name, schedule, minutes),
-            )
+          onSave={({ schedule, minutes, memoryMiB }) =>
+            act(async () => {
+              if (memoryMiB !== process.memoryMiB) {
+                const set = await setProcessMemory(
+                  spaceSlug,
+                  appSlug,
+                  process.name,
+                  memoryMiB,
+                );
+                if (!set.ok) return set;
+              }
+              const retimed =
+                schedule !== null &&
+                (schedule !== process.schedule ||
+                  minutes !== process.requestedTimeoutMinutes);
+              return retimed
+                ? scheduleProcess(spaceSlug, appSlug, process.name, schedule, minutes)
+                : { ok: true };
+            })
           }
         />
       ) : null}
@@ -254,6 +318,7 @@ function Row({
                 {when(new Date(run.startedAt))}
               </time>
               <span
+                title={run.outOfMemory ? "Ran out of memory" : undefined}
                 className={`w-[64px] shrink-0 sm:w-[76px] ${
                   run.outcome === "succeeded"
                     ? "text-live"
@@ -300,6 +365,10 @@ function Status({ process, missing }: { process: ProcessView; missing: boolean }
     }
     if (health === "failed") return <span className="text-failed">Failed to start</span>;
     if (health === "starting") return <span className="text-pending">Starting</span>;
+    // Up again now, but it has been killed for memory lately and will be again.
+    if (process.outOfMemoryAt !== null) {
+      return <span className="text-pending">Restarted</span>;
+    }
     return <span className="text-live">Running</span>;
   }
   return <span className="text-live">On · up to {process.timeoutMinutes} min a run</span>;
@@ -365,11 +434,13 @@ const PRESETS: Array<{ label: string; schedule: string }> = [
 ];
 
 /**
- * A timetable, written the way it is stored - five-field cron in UTC - with
- * the common ones a click away and what was typed said back in words as it is
- * typed, so nobody has to read cron to know what they set.
+ * How a process runs: for a scheduled run, its timetable, written the way it
+ * is stored - five-field cron in UTC - with the common ones a click away and
+ * what was typed said back in words as it is typed, so nobody has to read
+ * cron to know what they set; for either kind, its memory, with what a worker
+ * would cost a month at each size.
  */
-function TimetableEditor({
+function ProcessEditor({
   process,
   pending,
   onCancel,
@@ -378,73 +449,113 @@ function TimetableEditor({
   process: ProcessView;
   pending: boolean;
   onCancel: () => void;
-  onSave: (schedule: string, minutes: number | null) => void;
+  onSave: (changes: {
+    schedule: string | null;
+    minutes: number | null;
+    memoryMiB: number;
+  }) => void;
 }) {
+  const scheduled = process.kind === "scheduled";
   const [schedule, setSchedule] = useState(process.schedule ?? "0 6 * * *");
   const [minutes, setMinutes] = useState(
     process.requestedTimeoutMinutes === null
       ? ""
       : String(process.requestedTimeoutMinutes),
   );
+  const [memoryMiB, setMemoryMiB] = useState(process.memoryMiB);
   const parsed = parseSchedule(schedule);
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(schedule, minutes.trim() === "" ? null : Number(minutes));
+        onSave({
+          schedule: scheduled ? schedule : null,
+          minutes: minutes.trim() === "" ? null : Number(minutes),
+          memoryMiB,
+        });
       }}
       className="enter-up mt-3 rounded-[var(--radius-edge)] border border-line bg-sunken/40 p-3.5"
     >
-      <div className="flex flex-wrap gap-1.5">
-        {PRESETS.map((preset) => (
-          <button
-            key={preset.schedule}
-            type="button"
-            onClick={() => setSchedule(preset.schedule)}
-            aria-pressed={schedule === preset.schedule}
-            className={`rounded-[var(--radius-edge)] border px-2 py-1 text-[11.5px] transition-colors duration-150 ${
-              schedule === preset.schedule
-                ? "border-line-strong bg-surface text-ink"
-                : "border-line text-ink-muted hover:text-ink"
-            }`}
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
+      {scheduled ? (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((preset) => (
+              <button
+                key={preset.schedule}
+                type="button"
+                onClick={() => setSchedule(preset.schedule)}
+                aria-pressed={schedule === preset.schedule}
+                className={`rounded-[var(--radius-edge)] border px-2 py-1 text-[11.5px] transition-colors duration-150 ${
+                  schedule === preset.schedule
+                    ? "border-line-strong bg-surface text-ink"
+                    : "border-line text-ink-muted hover:text-ink"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
-        <label className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-[12px] text-ink-muted">Timetable (cron, UTC)</span>
-          <input
-            value={schedule}
-            onChange={(e) => setSchedule(e.target.value)}
-            spellCheck={false}
-            autoComplete="off"
-            maxLength={100}
-            className="field py-2 font-mono text-[12.5px]"
-          />
-          <span
-            className={`text-[11.5px] ${parsed.ok ? "text-ink-subtle" : "text-failed"}`}
-          >
-            {parsed.ok ? describeSchedule(parsed.schedule) : parsed.error}
-          </span>
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] text-ink-muted">Minutes a run</span>
-          <input
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
-            inputMode="numeric"
-            placeholder="10"
-            className="field py-2 text-[12.5px]"
-          />
-          <span className="text-[11.5px] text-ink-subtle">
-            Always stopped before its next run.
-          </span>
-        </label>
-      </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className="text-[12px] text-ink-muted">Timetable (cron, UTC)</span>
+              <input
+                value={schedule}
+                onChange={(e) => setSchedule(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+                maxLength={100}
+                className="field py-2 font-mono text-[12.5px]"
+              />
+              <span
+                className={`text-[11.5px] ${parsed.ok ? "text-ink-subtle" : "text-failed"}`}
+              >
+                {parsed.ok ? describeSchedule(parsed.schedule) : parsed.error}
+              </span>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] text-ink-muted">Minutes a run</span>
+              <input
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+                inputMode="numeric"
+                placeholder="10"
+                className="field py-2 text-[12.5px]"
+              />
+              <span className="text-[11.5px] text-ink-subtle">
+                Always stopped before its next run.
+              </span>
+            </label>
+          </div>
+        </>
+      ) : null}
+
+      <fieldset className={scheduled ? "mt-3" : ""}>
+        <legend className="text-[12px] text-ink-muted">Memory</legend>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {MEMORY_CHOICES.map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              onClick={() => setMemoryMiB(choice)}
+              aria-pressed={memoryMiB === choice}
+              className={`tabular rounded-[var(--radius-edge)] border px-2.5 py-1 text-[11.5px] transition-colors duration-150 ${
+                memoryMiB === choice
+                  ? "border-line-strong bg-surface text-ink"
+                  : "border-line text-ink-muted hover:text-ink"
+              }`}
+            >
+              {describeMemory(choice)}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11.5px] text-ink-subtle">
+          {scheduled
+            ? "Given to each run. It only costs anything while a run is going."
+            : `About $${workerMonthlyDollars(memoryMiB)} a month while it is on.`}
+        </p>
+      </fieldset>
 
       <div className="mt-3 flex justify-end gap-2">
         <button
@@ -456,10 +567,10 @@ function TimetableEditor({
         </button>
         <button
           type="submit"
-          disabled={pending || !parsed.ok}
+          disabled={pending || (scheduled && !parsed.ok)}
           className="btn btn-primary px-3 py-1.5 text-[12px]"
         >
-          {pending ? "Saving..." : "Save timetable"}
+          {pending ? "Saving..." : "Save"}
         </button>
       </div>
     </form>

@@ -119,6 +119,8 @@ export interface ProcessSpec {
   schedule: string | null;
   /** How long one run may take. Ignored for a worker. */
   timeoutSeconds: number;
+  /** MiB, one of the sizes the limits offer; always with one CPU. */
+  memoryMiB: number;
   enabled: boolean;
 }
 
@@ -130,11 +132,22 @@ export type ProcessState =
       /** Instances asked for: 1 when on, 0 when off. */
       instances: number;
       health: "ready" | "starting" | "failed" | "missing";
+      /** MiB it is actually given, or null when it does not exist. */
+      memoryMiB: number | null;
+      /**
+       * The last time it ran out of memory and was restarted, since it was
+       * last changed and within the last day. A worker that does this keeps
+       * restarting while its provider still calls it ready, so this is the
+       * only sign.
+       */
+      outOfMemoryAt: Date | null;
     }
   | {
       kind: "scheduled";
       name: string;
       exists: boolean;
+      /** MiB each run is actually given, or null when it does not exist. */
+      memoryMiB: number | null;
       runs: ProcessRun[];
     };
 
@@ -144,6 +157,8 @@ export interface ProcessRun {
   startedAt: Date;
   finishedAt: Date | null;
   outcome: "running" | "succeeded" | "failed" | "cancelled";
+  /** Failed because it used more memory than it was given. */
+  outOfMemory: boolean;
 }
 
 export interface DeployableService {
