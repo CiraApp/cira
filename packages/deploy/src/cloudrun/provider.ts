@@ -27,6 +27,7 @@ import {
   type GoogleLogEntry,
 } from "./runtime-logs.js";
 import { CloudRunProcesses } from "./processes.js";
+import { CloudRunUsage, type UsageTotals } from "./usage.js";
 import { imageTag, parseArchiveUri, type ParsedArchive } from "./source.js";
 import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
 
@@ -156,6 +157,7 @@ export class CloudRunProvider implements DeploymentProvider {
 
   /** Workers and scheduled runs; see processes.ts. */
   private readonly processes: CloudRunProcesses;
+  private readonly usageReader: CloudRunUsage;
 
   constructor(
     private readonly config: CloudRunConfig,
@@ -164,6 +166,7 @@ export class CloudRunProvider implements DeploymentProvider {
     this.processes = new CloudRunProcesses(config, tokens, (service, tag, part) =>
       this.imageFor(service, tag, part),
     );
+    this.usageReader = new CloudRunUsage(config, tokens);
   }
 
   async deploy(app: AppDeploymentInput): Promise<DeploymentResult> {
@@ -543,6 +546,15 @@ export class CloudRunProvider implements DeploymentProvider {
     processes: readonly Pick<ProcessSpec, "name" | "kind">[],
   ): Promise<ProcessState[]> {
     return this.processes.states(parseHandle(deploymentId).service, processes);
+  }
+
+  /**
+   * What everything Cira runs used between two moments, by the provider's own
+   * name for it. Whose is whose is Cira's to work out; this only reports what
+   * ran (see cloudrun/usage.ts).
+   */
+  async readUsage(since: Date, until: Date): Promise<UsageTotals> {
+    return this.usageReader.read(since, until);
   }
 
   private async removeService(service: string): Promise<void> {

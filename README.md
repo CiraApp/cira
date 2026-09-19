@@ -622,6 +622,21 @@ uptime monitor watches it, since Sentry's free plan has one, and keeps the
 body of a failed check, so its alert says which part broke.
 `/api/health/proxy` asks about the proxy alone.
 
+### What a company costs to run
+
+Every company's apps run in one Google project on one bill, so nothing in
+Google says whose is whose. Cira knows: a deployment names the Cloud Run
+service it made and a process names its job or worker pool, so Cloud
+Monitoring is asked what each ran for - in instance-seconds, the unit Cloud
+Run bills in - and `lib/usage.ts` adds it up per app. `pricing.ts` holds the
+rates that turn that into money, the same ones that estimate a worker's
+monthly cost beside its switch.
+
+Admins and owners see it at `/{space}/~/usage`: the month so far, per app,
+with deploys, capability runs and questions asked beside it. It is an
+estimate of Cira's cost, not an invoice, and it is the number a plan has to
+cover.
+
 ### Telling people when something breaks
 
 Whoever manages an app - its owner and the space's admins - is emailed when a
@@ -680,6 +695,7 @@ None of this is recreated by a deploy.
 | Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |
 | Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs     |
 | Google IAM     | the deployer service account holds `roles/cloudscheduler.admin`, so scheduled runs can be given timetables   |
+| Google IAM     | the deployer service account holds `roles/monitoring.viewer`, so each company can be shown what it used      |
 | Google APIs    | Cloud Scheduler (`cloudscheduler.googleapis.com`) is switched on for the project                             |
 
 `CIRA_PROXY_SECRET` must be identical in Vercel and the worker: Cira signs with

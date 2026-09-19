@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
+import { roleAtLeast } from "@cira/core";
 
 export default async function SettingsPage({
   params,
@@ -56,6 +58,17 @@ export default async function SettingsPage({
               </div>
             ))}
           </dl>
+
+          {roleAtLeast(ctx.role, "admin") ? (
+            <p className="mt-4 text-[12.5px]">
+              <Link
+                href={`/${spaceSlug}/~/usage`}
+                className="text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
+              >
+                What this space has run this month
+              </Link>
+            </p>
+          ) : null}
 
           <p className="mt-3 text-[12px] leading-relaxed text-ink-subtle">
             Renaming a space and changing who may join are not built yet. An app&rsquo;s

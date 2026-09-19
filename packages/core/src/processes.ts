@@ -1,4 +1,5 @@
-import type { Limits } from "./limits.js";
+import { DEFAULT_LIMITS, type Limits } from "./limits.js";
+import { monthlyCost } from "./pricing.js";
 import {
   describeSchedule,
   parseSchedule,
@@ -265,12 +266,11 @@ export function describeMemory(mib: number): string {
 /**
  * What a worker costs a month while it is on, in whole dollars rounded to the
  * nearest five: one always-running instance with one CPU and this much
- * memory, at Cloud Run's instance-based rates (about $0.000018 a vCPU-second
- * and $0.000002 a GiB-second). An estimate to put beside a switch, not a bill.
+ * memory, at the rates in pricing.ts. An estimate to put beside a switch, not
+ * a bill.
  */
 export function workerMonthlyDollars(memoryMiB: number): number {
-  const seconds = 30 * 24 * 3600;
-  const dollars = seconds * (0.000018 + (memoryMiB / 1024) * 0.000002);
+  const dollars = monthlyCost({ cpu: DEFAULT_LIMITS.app.cpu, memoryMiB });
   return Math.max(5, Math.round(dollars / 5) * 5);
 }
 
