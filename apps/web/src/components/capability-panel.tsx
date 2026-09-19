@@ -33,6 +33,7 @@ export function CapabilityPanel({
   running,
   spaceSlug,
   appSlug,
+  consoleHref,
 }: {
   capabilities: Capability[];
   canManage: boolean;
@@ -42,6 +43,8 @@ export function CapabilityPanel({
   running: boolean;
   spaceSlug: string;
   appSlug: string;
+  /** Where these can be run by hand. */
+  consoleHref: string;
 }) {
   const router = useRouter();
   const asked = useRef(false);
@@ -87,12 +90,32 @@ export function CapabilityPanel({
 
   return (
     <section className="enter-up mt-10">
-      <div className="flex items-baseline justify-between gap-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
           Capabilities
         </h2>
-        <p className="text-[12px] text-ink-subtle">
-          Detected from the code when this app was deployed
+        <p className="flex items-baseline gap-3 text-[12px] text-ink-subtle">
+          <span className="hidden sm:inline">
+            Detected from the code when this app was deployed
+          </span>
+          <a
+            href={consoleHref}
+            className="group inline-flex items-center gap-1 text-ink-muted transition-colors duration-150 hover:text-ink"
+          >
+            Run them in the console
+            <svg
+              viewBox="0 0 12 12"
+              aria-hidden="true"
+              className="h-2.5 w-2.5 self-center transition-transform duration-300 ease-[var(--ease-spring)] group-hover:translate-x-0.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M2.5 6h7M6.5 3l3 3-3 3" />
+            </svg>
+          </a>
         </p>
       </div>
 

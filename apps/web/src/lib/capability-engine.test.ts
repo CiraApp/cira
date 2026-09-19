@@ -4,7 +4,7 @@ import { newId, type User } from "@cira/core";
 import { NO_SUCH_CAPABILITY } from "./capabilities";
 import type * as CiraDb from "@cira/db";
 import type * as CiraDeploy from "@cira/deploy";
-import { createTestDatabase } from "../../../../packages/db/src/testing.js";
+import { migratedTestDatabase } from "../../../../packages/db/src/test-database.js";
 
 /**
  * The capability engine end to end: an agent searches, describes, and invokes,
@@ -33,32 +33,7 @@ const tokenFor = (audience: string): string => `id-token-for-${audience}`;
 let database: Awaited<ReturnType<typeof makeDatabase>>;
 
 async function makeDatabase() {
-  const { randomUUID } = await import("node:crypto");
-  const { readFileSync, readdirSync } = await import("node:fs");
-  const { join } = await import("node:path");
-  const { sql } = await import("drizzle-orm");
-
-  const namespace = `cira_engine_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-
-  const admin = createTestDatabase(TEST_DATABASE_URL as string);
-  await admin.execute(sql.raw(`drop schema if exists ${namespace} cascade`));
-  await admin.execute(sql.raw(`create schema ${namespace}`));
-  await admin.end();
-
-  const db = createTestDatabase(TEST_DATABASE_URL as string, namespace);
-  const dir = join(process.cwd(), "packages", "db", "migrations");
-  for (const file of readdirSync(dir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort()) {
-    const body = readFileSync(join(dir, file), "utf8").replaceAll(
-      '"public".',
-      `"${namespace}".`,
-    );
-    for (const statement of body.split("--> statement-breakpoint")) {
-      if (statement.trim() !== "") await db.execute(sql.raw(statement));
-    }
-  }
-  return db;
+  return migratedTestDatabase(TEST_DATABASE_URL as string, "cira_engine");
 }
 
 // Swapping only `db()`: every other export, the schema included, stays real.
@@ -79,6 +54,14 @@ vi.mock("@cira/deploy", async (importOriginal) => {
     }),
   };
 });
+
+// The console's action asks the session who is signed in; there is no session
+// here, so the test says who it is. Nothing else about identity is swapped.
+let signedIn: User | null = null;
+vi.mock("@/lib/identity", () => ({
+  getCurrentUser: () => Promise.resolve(signedIn),
+  requireCurrentUser: () => Promise.resolve(signedIn),
+}));
 
 let app: Server;
 const received: Array<{ method: string; url: string; headers: Record<string, unknown> }> =
@@ -103,6 +86,21 @@ const founder: User = {
   createdAt: new Date(),
 };
 
+/** Administers the space, with no grant on the app and no ownership of it. */
+const admin: User = {
+  id: newId("user"),
+  name: "Ines",
+  email: "ines@demo.test",
+  createdAt: new Date(),
+};
+/** In the space, and given nothing. */
+const bystander: User = {
+  id: newId("user"),
+  name: "Bo",
+  email: "bo@demo.test",
+  createdAt: new Date(),
+};
+
 const spaceId = newId("space");
 const appId = newId("app");
 const revenueId = newId("capability");
@@ -120,6 +118,8 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       { id: founder.id, externalId: "x1", name: "Aum", email: founder.email },
       { id: employee.id, externalId: "x2", name: "Dana", email: employee.email },
       { id: outsider.id, externalId: "x3", name: "Eve", email: outsider.email },
+      { id: admin.id, externalId: "x4", name: "Ines", email: admin.email },
+      { id: bystander.id, externalId: "x5", name: "Bo", email: bystander.email },
     ]);
     await database
       .insert(spaces)
@@ -127,6 +127,8 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     await database.insert(memberships).values([
       { id: newId("membership"), userId: founder.id, spaceId, role: "owner" },
       { id: newId("membership"), userId: employee.id, spaceId, role: "member" },
+      { id: newId("membership"), userId: admin.id, spaceId, role: "admin" },
+      { id: newId("membership"), userId: bystander.id, spaceId, role: "member" },
     ]);
     await database.insert(apps).values({
       id: appId,
@@ -910,5 +912,165 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       await database.delete(capabilities).where(eq(capabilities.id, lockId));
       await database.delete(capabilities).where(eq(capabilities.id, peekId));
     }
+  });
+
+  /**
+   * The console is a second door onto the same room.
+   *
+   * It is reached by a person in a browser rather than an agent over MCP, and
+   * it must not be a way round anything an agent is held to. So these run the
+   * console's own action and compare it with what an agent is told: the two
+   * agree on every refusal because they are the same call.
+   */
+  describe("through the console", () => {
+    const input = { startDate: "2026-08-01", endDate: "2026-08-31" };
+    // Their own rows, because the cases above rewrite the app's capability
+    // set as they go and these should not depend on where that left it.
+    const readId = newId("capability");
+    const writeId = newId("capability");
+
+    beforeAll(async () => {
+      const { capabilities } = await import("@cira/db");
+      const confirmed = {
+        appId,
+        spaceId,
+        reach: "callable" as const,
+        answeredBy: deploymentId,
+        verifiedAt: new Date(),
+      };
+      await database.insert(capabilities).values([
+        {
+          ...confirmed,
+          id: readId,
+          name: "consoleRevenue",
+          description: "Total revenue between two dates.",
+          inputSchema: {
+            type: "object",
+            properties: { startDate: { type: "string" }, endDate: { type: "string" } },
+            required: ["startDate", "endDate"],
+          },
+          method: "GET",
+          path: "/api/revenue",
+          risk: "read",
+          enabled: true,
+        },
+        {
+          ...confirmed,
+          id: writeId,
+          name: "consoleRefund",
+          description: "Refund a payment.",
+          inputSchema: { type: "object", properties: {}, required: [] },
+          method: "POST",
+          path: "/api/refunds",
+          risk: "write",
+          // As every write starts: confirmed by the app, and off.
+          enabled: false,
+        },
+      ]);
+    });
+
+    afterAll(async () => {
+      const { capabilities } = await import("@cira/db");
+      const { inArray } = await import("drizzle-orm");
+      signedIn = null;
+      await database
+        .delete(capabilities)
+        .where(inArray(capabilities.id, [readId, writeId]));
+    });
+
+    it("runs a read for everyone who may open the app", async () => {
+      const { runCapability } = await import("./console-actions");
+
+      // Access alone, ownership, and administering the space: each is enough.
+      for (const person of [employee, founder, admin]) {
+        signedIn = person;
+        received.length = 0;
+
+        const run = await runCapability(readId, input);
+
+        expect(run.ok).toBe(true);
+        expect(run.error).toBeNull();
+        expect(run.answer?.status).toBe(200);
+        expect(JSON.parse(run.answer?.body ?? "null")).toMatchObject({
+          total: 482913.55,
+        });
+        expect(run.answer?.elapsedMs).toBeGreaterThanOrEqual(0);
+
+        // It arrived as Cira and as nobody else: the app's token, and not one
+        // header that says which person pressed the button.
+        const hit = received[0];
+        expect(hit?.headers["x-serverless-authorization"]).toBe(
+          `Bearer ${tokenFor(APP_ORIGIN)}`,
+        );
+        expect(hit?.headers["authorization"]).toBeUndefined();
+        expect(hit?.headers["cookie"]).toBeUndefined();
+        expect(JSON.stringify(hit?.headers)).not.toContain(person.email);
+        expect(JSON.stringify(hit?.headers)).not.toContain(person.id);
+      }
+    });
+
+    it("gives a member without access nothing, in the words an agent gets", async () => {
+      const { runCapability } = await import("./console-actions");
+      const { runTool } = await import("./mcp");
+
+      for (const person of [bystander, outsider]) {
+        signedIn = person;
+        received.length = 0;
+
+        const run = await runCapability(readId, input);
+        const agent = await runTool(person, "invoke_capability", {
+          capabilityId: readId,
+          input,
+        });
+
+        expect(run).toEqual({ ok: false, error: NO_SUCH_CAPABILITY, answer: null });
+        expect(run.error).toBe(agent.content);
+        expect(received).toHaveLength(0);
+      }
+    });
+
+    it("cannot run a disabled write for anyone, whoever manages the app", async () => {
+      const { runCapability } = await import("./console-actions");
+      const { runTool } = await import("./mcp");
+
+      for (const person of [founder, admin, employee]) {
+        signedIn = person;
+        received.length = 0;
+
+        const run = await runCapability(writeId, {});
+        const agent = await runTool(person, "invoke_capability", {
+          capabilityId: writeId,
+          input: {},
+        });
+
+        expect(run.ok).toBe(false);
+        expect(run.error).toContain("not enabled");
+        expect(run.error).toBe(agent.content);
+        expect(run.answer).toBeNull();
+        expect(received).toHaveLength(0);
+      }
+    });
+
+    it("takes nobody's word for who is asking, or for what", async () => {
+      const { runCapability } = await import("./console-actions");
+
+      // Signed out: nothing, whatever the id.
+      signedIn = null;
+      received.length = 0;
+      expect(await runCapability(readId, input)).toEqual({
+        ok: false,
+        error: "Sign in to run capabilities.",
+        answer: null,
+      });
+
+      // An id that is not an id, and input the schema does not allow, are
+      // turned away before the app is reached.
+      signedIn = employee;
+      expect((await runCapability({ id: readId }, input)).error).toBe(NO_SUCH_CAPABILITY);
+      const bad = await runCapability(readId, { startDate: 20260801 });
+      expect(bad.ok).toBe(false);
+      expect(bad.error).toMatch(/^Invalid input/);
+      expect(received).toHaveLength(0);
+    });
   });
 });

@@ -170,3 +170,32 @@ function fromDeployment(
     blockedReason: null,
   };
 }
+
+/**
+ * Where an app's Open button goes, or null when there is no door to offer.
+ *
+ * An app with no web page opens into its console. It is running and working,
+ * and a person who may open it should be able to use it without an agent in
+ * between; a page that only explained why there was no button left API-only
+ * apps invisible to everyone but assistants.
+ *
+ * An app Cira serves is opened through `/open`, which checks access again and
+ * hands over to the door on Cira's own domain. One that carries its own
+ * address is simply linked to: Cira does not serve it, cannot vouch for it,
+ * and has no relationship with that host to hand a referrer to.
+ */
+export function openHref(
+  resolved: ResolvedApp,
+  address: { spaceSlug: string; appSlug: string },
+): string | null {
+  const page = `/${address.spaceSlug}/${address.appSlug}`;
+  if (resolved.openUrl !== null) {
+    return resolved.external ? resolved.openUrl : `${page}/open`;
+  }
+  return resolved.state === "no-ui" ? consoleHref(address) : null;
+}
+
+/** An app's capability console. */
+export function consoleHref(address: { spaceSlug: string; appSlug: string }): string {
+  return `/${address.spaceSlug}/${address.appSlug}/console`;
+}

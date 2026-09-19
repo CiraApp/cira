@@ -243,7 +243,6 @@ export async function replaceCapabilities(args: {
   return { enabled: plan.enabledCount, review: plan.reviewCount };
 }
 
-/** Every capability on an app, for the app's own page. */
 /**
  * Record what the deployed app said about the capabilities credited to it.
  *
@@ -334,7 +333,40 @@ export async function recordRefusal(args: {
     );
 }
 
+/** Every capability on an app, for the app's own page. */
 export async function listCapabilitiesForApp(appId: string): Promise<Capability[]> {
+  return (await capabilitiesOf(appId)).map(({ capability }) => capability);
+}
+
+/** A capability as the console draws it: with an input to start the form from. */
+export interface ConsoleCapability extends Capability {
+  /**
+   * The example input verification sent, for a read. Null for a write, which
+   * never has one: nothing is allowed to try a write to see if it works, so
+   * the form for one starts from the schema's defaults and nothing else.
+   */
+  example: Record<string, unknown> | null;
+}
+
+/**
+ * Every capability on an app, for the console.
+ *
+ * The caller has already established that the person may open the app; this
+ * adds nothing a person with that right could not already learn by running a
+ * read, since the example is the input the app was really called with.
+ */
+export async function listConsoleCapabilities(
+  appId: string,
+): Promise<ConsoleCapability[]> {
+  return (await capabilitiesOf(appId)).map(({ capability, row }) => ({
+    ...capability,
+    example: capability.risk === "read" ? (row.probe ?? null) : null,
+  }));
+}
+
+async function capabilitiesOf(
+  appId: string,
+): Promise<Array<{ capability: Capability; row: CapabilityRow }>> {
   const database = db();
   const [rows, serving] = await Promise.all([
     database.select().from(capabilities).where(eq(capabilities.appId, appId)),
@@ -342,8 +374,8 @@ export async function listCapabilitiesForApp(appId: string): Promise<Capability[
   ]);
 
   return rows
-    .map((row) => toCapability(row, serving.get(appId) ?? null))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map((row) => ({ row, capability: toCapability(row, serving.get(appId) ?? null) }))
+    .sort((a, b) => a.capability.name.localeCompare(b.capability.name));
 }
 
 /**

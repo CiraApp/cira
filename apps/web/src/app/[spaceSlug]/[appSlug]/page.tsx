@@ -20,7 +20,7 @@ import { AppIdentity } from "@/components/app-identity";
 import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
 import { appColor } from "@/lib/app-color";
-import { resolveAppState } from "@/lib/app-state";
+import { consoleHref, openHref, resolveAppState } from "@/lib/app-state";
 import { appOpenPath } from "@/lib/app-open";
 import { learnWebUi } from "@/lib/app-web-ui";
 
@@ -85,16 +85,8 @@ export default async function AppPage({
       manages &&
       (resolved.state === "no-ui" || resolved.state === "unreachable") &&
       (app.homepageUrl === null || app.homepageUrl === "");
-    // An app Cira serves is opened through `/open`, which checks access again
-    // and hands over to the door on Cira's own domain. One that carries its
-    // own address is simply linked to: Cira does not serve it, cannot vouch
-    // for it, and has no relationship with that host to hand a referrer to.
-    const openHref =
-      resolved.openUrl === null
-        ? null
-        : resolved.external
-          ? resolved.openUrl
-          : `/${spaceSlug}/${appSlug}/open`;
+    const door = openHref(resolved, { spaceSlug, appSlug });
+    const consolePath = consoleHref({ spaceSlug, appSlug });
 
     return (
       <AppShell
@@ -157,42 +149,52 @@ export default async function AppPage({
             </div>
 
             <div className="relative mt-6">
-              {openHref !== null ? (
-                <a
-                  href={openHref}
-                  rel={resolved.external ? "noreferrer" : undefined}
-                  className="btn btn-primary btn-lg group"
-                >
-                  Open {app.name}
-                  <svg
-                    viewBox="0 0 12 12"
-                    aria-hidden="true"
-                    className="h-3 w-3 transition-transform duration-300 ease-[var(--ease-spring)] group-hover:translate-x-0.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+              {door !== null ? (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+                  <a
+                    href={door}
+                    rel={resolved.external ? "noreferrer" : undefined}
+                    className="btn btn-primary btn-lg group"
                   >
-                    <path d="M2.5 6h7M6.5 3l3 3-3 3" />
-                  </svg>
-                </a>
+                    Open {app.name}
+                    <svg
+                      viewBox="0 0 12 12"
+                      aria-hidden="true"
+                      className="h-3 w-3 transition-transform duration-300 ease-[var(--ease-spring)] group-hover:translate-x-0.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2.5 6h7M6.5 3l3 3-3 3" />
+                    </svg>
+                  </a>
+                  {door === consolePath ? (
+                    <p className="text-[12.5px] text-ink-muted">
+                      Not a website, so it opens into its console.
+                      {offerHomepage ? (
+                        <>
+                          {" "}
+                          <a
+                            href="#settings"
+                            className="text-ink underline underline-offset-2 transition-colors duration-150 hover:text-ink-muted"
+                          >
+                            Opens somewhere else?
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 /*
-                  Dashed when a door is missing, solid when there was never
-                  meant to be one. A dashed outline reads as a placeholder -
-                  something belongs here and has not arrived - which is exactly
-                  right for an app mid-deploy or one that failed, and exactly
-                  wrong for a working API. Nothing is absent there; it simply
-                  is not a website.
+                  Dashed, because a door is missing: something belongs here
+                  and has not arrived, which is exactly right for an app
+                  mid-deploy or one that failed. An app that was never a
+                  website does not land here; it opens into its console.
                 */
-                <p
-                  className={`rounded-[var(--radius-edge)] border bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted ${
-                    resolved.state === "no-ui"
-                      ? "border-line"
-                      : "border-dashed border-line-strong"
-                  }`}
-                >
+                <p className="rounded-[var(--radius-edge)] border border-dashed border-line-strong bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted">
                   {resolved.blockedReason}
                   {offerHomepage ? (
                     <>
@@ -237,6 +239,7 @@ export default async function AppPage({
             running={deployment?.status === "live"}
             spaceSlug={spaceSlug}
             appSlug={appSlug}
+            consoleHref={consolePath}
           />
 
           <DeploymentHistory

@@ -344,6 +344,18 @@ agent is told before it tries. That only happens while calls identify nobody:
 the headers are checked against an allow-list, so any future change that
 passes a person's identity turns the recording off by itself.
 
+The same capabilities can be run by hand from an app's **console**
+(`/{space}/{app}/console`), for the person who knows which call they want and
+would rather not have a model in between. Each capability becomes a form
+generated from its input schema (`packages/core/src/capability-console.ts`),
+prefilled for a read from the example input it was verified with. Writes show
+exactly what they will send and wait for a confirmation. An app with no web
+page opens into its console, so an API-only app is usable by anyone who may
+open it. The console posts to one server action, `lib/console-actions.ts`,
+which resolves the person from the session and calls the same
+`invokeCapability` an agent's `invoke_capability` does. Runs are kept in the
+page's memory and nowhere else.
+
 ### 7. Access control
 
 One rule decides who may open an app, and everything else follows from it:

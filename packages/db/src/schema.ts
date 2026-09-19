@@ -621,6 +621,8 @@ export const capabilities = pgTable(
      * An example input, for reads, used once to ask the app whether the route
      * is there. Never sent to an agent and never used for a write - a write is
      * confirmed by asking which methods a path allows, not by performing it.
+     * The console starts a read's form from it, for a person who may already
+     * open the app and so could run that same read themselves.
      */
     probe: jsonb("probe").$type<Record<string, unknown>>(),
     enabled: boolean("enabled").notNull().default(false),

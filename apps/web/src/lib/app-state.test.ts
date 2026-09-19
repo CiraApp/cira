@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAppState } from "./app-state";
+import { openHref, resolveAppState } from "./app-state";
 import type { App, Deployment } from "@cira/core";
 
 /** Where a browser is sent when there is somewhere to send it. */
@@ -296,5 +296,47 @@ describe("an app that says where it really lives", () => {
     const resolved = resolveAppState(app("live"), deployment("live"), OPEN_AT);
     expect(resolved.external).toBe(false);
     expect(resolved.openUrl).toBe(OPEN_AT);
+  });
+});
+
+describe("openHref", () => {
+  const address = { spaceSlug: "acme", appSlug: "revenue" };
+
+  it("opens an app with no web page into its console", () => {
+    const resolved = resolveAppState(
+      app("live", { hasWebUi: false }),
+      deployment("live"),
+      OPEN_AT,
+    );
+    expect(resolved.state).toBe("no-ui");
+    expect(openHref(resolved, address)).toBe("/acme/revenue/console");
+  });
+
+  it("opens a website through Cira's door, and a homepage directly", () => {
+    const site = resolveAppState(
+      app("live", { hasWebUi: true }),
+      deployment("live"),
+      OPEN_AT,
+    );
+    expect(openHref(site, address)).toBe("/acme/revenue/open");
+
+    // An API that says where its front end lives goes there, not to the console.
+    const elsewhere = resolveAppState(
+      app("live", { hasWebUi: false, homepageUrl: "https://revenue.acme.com" }),
+      deployment("live"),
+      OPEN_AT,
+    );
+    expect(openHref(elsewhere, address)).toBe("https://revenue.acme.com");
+  });
+
+  it("offers no door while an app cannot be used at all", () => {
+    for (const resolved of [
+      resolveAppState(app("deploying"), deployment("building"), OPEN_AT),
+      resolveAppState(app("failed"), deployment("failed"), OPEN_AT),
+      resolveAppState(app("live"), null, OPEN_AT),
+      resolveAppState(app("live", { hasWebUi: true }), deployment("live"), null),
+    ]) {
+      expect(openHref(resolved, address)).toBeNull();
+    }
   });
 });
