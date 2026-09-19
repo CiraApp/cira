@@ -137,16 +137,16 @@ class FakeGoogle {
 }
 
 let google: FakeGoogle;
+let calls: Array<{ url: string; method: string; body: unknown }>;
 
 beforeEach(() => {
   google = new FakeGoogle();
+  calls = [];
   vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
     const raw = init?.body;
-    return google.handle(
-      String(input),
-      init?.method ?? "GET",
-      typeof raw === "string" ? JSON.parse(raw) : undefined,
-    );
+    const body = typeof raw === "string" ? JSON.parse(raw) : undefined;
+    calls.push({ url: String(input), method: init?.method ?? "GET", body });
+    return google.handle(String(input), init?.method ?? "GET", body);
   });
 });
 
@@ -203,6 +203,11 @@ describe("an app that is only a scheduled run and a worker", () => {
     expect(started.url).toBeNull();
     expect(started.providerDeploymentId).toMatch(/:noweb$/);
     expect(google.service).toBeNull();
+
+    // Google's buildpacks want a default command, which a Procfile with no
+    // web line does not give them; the build is told the first process's.
+    const build = calls.find((c) => c.url.includes("cloudbuild") && c.method === "POST");
+    expect(JSON.stringify(build?.body)).toContain("GOOGLE_ENTRYPOINT=python report.py");
 
     // Created with the environment, switched off, on Google's placeholder
     // until the build exists.

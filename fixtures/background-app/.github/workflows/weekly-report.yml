@@ -1,0 +1,11 @@
+name: Weekly report
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - run: python report.py

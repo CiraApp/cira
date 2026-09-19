@@ -179,10 +179,17 @@ export class CloudRunProvider implements DeploymentProvider {
     // tell apart. An ordinary app keeps the image name it has always had, so
     // nothing about redeploying one changes.
     const several = app.services.length > 1;
-    const planned = app.services.map((part) => ({
-      ...part,
-      image: this.imageFor(service, tag, several ? part.slug : undefined),
-    }));
+    const anyWeb = app.services.some((part) => part.ingress);
+    const planned = app.services.map((part) => {
+      const first = anyWeb
+        ? undefined
+        : app.processes.find((process) => process.service === part.slug);
+      return {
+        ...part,
+        image: this.imageFor(service, tag, several ? part.slug : undefined),
+        ...(first === undefined ? {} : { entrypoint: first.command }),
+      };
+    });
 
     // One build, not one per service. They share an upload, they succeed or
     // fail as a unit, and one build id is one thing to poll - which is what
@@ -628,7 +635,7 @@ export class CloudRunProvider implements DeploymentProvider {
    */
   private async startBuild(
     archive: ParsedArchive,
-    parts: ReadonlyArray<DeployableService & { image: string }>,
+    parts: ReadonlyArray<DeployableService & { image: string; entrypoint?: string }>,
   ): Promise<string> {
     const { projectId, region, serviceAccountEmail, sourceBucket } = this.config;
 
@@ -650,7 +657,7 @@ export class CloudRunProvider implements DeploymentProvider {
           // outcome for two halves of one app.
           steps: parts.flatMap((part) =>
             part.dockerfile === null
-              ? buildpackStep(part.image, part.sourcePath)
+              ? buildpackStep(part.image, part.sourcePath, part.entrypoint)
               : dockerSteps(part.image, part.dockerfile),
           ),
           // Both paths push the image themselves - `pack --publish` directly,
@@ -898,7 +905,11 @@ function resourcesFor(several: boolean): {
  * The reason Cira deploys more than Next.js: `pack` reads the source and
  * decides the language for itself, so nothing here has to know.
  */
-function buildpackStep(image: string, sourcePath: string): unknown[] {
+function buildpackStep(
+  image: string,
+  sourcePath: string,
+  entrypoint?: string,
+): unknown[] {
   return [
     {
       name: "gcr.io/k8s-skaffold/pack",
@@ -914,6 +925,15 @@ function buildpackStep(image: string, sourcePath: string): unknown[] {
         // Which part of the upload to read. Empty for an ordinary app, whose
         // whole repository is the thing being built.
         ...(sourcePath === "" ? [] : ["--path", sourcePath]),
+        // Google's buildpacks insist on a default command and look for it in
+        // a Procfile's `web` line, which an app that is only workers and
+        // scheduled runs does not have - the build fails with "web process
+        // not found in Procfile". Each process is started with its own
+        // command, so the default is only what the image does when run bare;
+        // it is given the first process's, which is at least something real.
+        // A command, never a secret: nothing from the environment reaches a
+        // build (docs/secrets.md).
+        ...(entrypoint === undefined ? [] : ["--env", `GOOGLE_ENTRYPOINT=${entrypoint}`]),
       ],
     },
   ];
