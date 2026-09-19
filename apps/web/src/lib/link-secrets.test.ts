@@ -126,20 +126,20 @@ describe.skipIf(!hasDatabase)("secrets Cira hands out", () => {
     expect(await dump("cli_auth_requests")).not.toContain(started.deviceCode);
   });
 
-  it("stores no app secret at all", async () => {
-    const columns = await database.execute(
+  it("has nowhere left to keep a secret as itself", async () => {
+    const found = await database.execute(
       sql.raw(
-        `select column_name from information_schema.columns
-         where table_schema = current_schema() and table_name = 'apps'
-           and column_name = 'access_secret'`,
+        `select table_name || '.' || column_name as name
+         from information_schema.columns
+         where table_schema = current_schema()
+           and (table_name, column_name) in (
+             ('apps', 'access_secret'),
+             ('apps', 'provider_project_id'),
+             ('invites', 'token'),
+             ('cli_auth_requests', 'device_code')
+           )`,
       ),
     );
-    // Present until the column is dropped, and empty either way.
-    if (columns.rows.length > 0) {
-      const held = await database.execute(
-        sql.raw(`select count(*)::int as n from apps where access_secret is not null`),
-      );
-      expect((held.rows[0] as { n: number }).n).toBe(0);
-    }
+    expect(found.rows).toEqual([]);
   });
 });

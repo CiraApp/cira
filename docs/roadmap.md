@@ -22,9 +22,9 @@ Small things already known to be outstanding.
       decided 2026-09-19 that the test Redis does not warrant it.
 - [x] **Confirm runtime logs work in production.** Logs Viewer granted and
       reads succeeding on 2026-09-19.
-- [ ] **Stop storing `apps.access_secret` in plain text.** The one credential
-      Cira keeps (see `docs/secrets.md`). Done when it is hashed or derived,
-      with a migration that is additive first. _Claude._
+- [x] **Store no credential as itself.** `apps.access_secret` erased and
+      dropped; invite links and `cira login` device codes kept only as
+      SHA-256 hashes, like CLI tokens (2026-09-19).
 
 ## Phase 1 - Safe to let a design partner in, for free
 

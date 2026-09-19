@@ -439,10 +439,9 @@ export const invites = pgTable(
     /**
      * SHA-256 of the secret in the invite link. The link itself is shown once,
      * to whoever created it, and never stored: a copy of this table admits
-     * nobody. Null only on rows written in the minute a deploy of the change
-     * that introduced it was rolling out, which the next migration fills in.
+     * nobody.
      */
-    tokenHash: text("token_hash"),
+    tokenHash: text("token_hash").notNull(),
     invitedByUserId: text("invited_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -501,7 +500,7 @@ export const cliAuthRequests = pgTable(
      * that started the login. Kept as a hash for the reason CLI tokens are:
      * the code can be exchanged for a token, so the table must not hold it.
      */
-    deviceCodeHash: text("device_code_hash"),
+    deviceCodeHash: text("device_code_hash").notNull(),
     /** Short and human-typable, e.g. "WXYZ-1234". */
     userCode: text("user_code").notNull(),
     label: text("label").notNull(),
