@@ -82,10 +82,14 @@ Deployed with `cira deploy` (CLI 0.5.0) into a real space on 2026-09-19:
 - **`/orders/lookup` survived.** The analyzer's example used a seeded id, so
   verification got a 200 rather than the 404 the caveat above warns about.
 - **Neither `/health` nor `/__reset` was proposed.**
-- **The CLI flagged `QUIET` as missing.** The environment scan treats any read
-  without a fallback as something the app needs, and `os.environ.get("QUIET")`
-  has none. The service runs fine without it; the warning is the scan being
-  cautious, not the fixture being wrong.
+- **The CLI flagged `QUIET` as missing.** That was a switch this service had
+  for silencing its request log, and two things were wrong. The switch was
+  dead: its only caller, the console test, discards the service's output
+  anyway, so it is gone. And the environment scan counted a value that is only
+  ever compared with a literal - `os.environ.get("QUIET") != "1"` - as one the
+  app needs, when unset is simply "off". It now leaves switches alone, which
+  also stopped it asking Wave for a demo flag its production deliberately
+  leaves unset.
 
 ## Running it
 

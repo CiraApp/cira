@@ -38,6 +38,32 @@ describe("findEnvNeeds", () => {
   });
 
   /**
+   * A value only ever compared is a switch, and unset is simply "off". Asking
+   * for one on every deploy is how a checklist teaches people to ignore it.
+   */
+  it("stays quiet about a switch, which is off when it is not set", () => {
+    expect(
+      names([
+        file("log.py", 'if os.environ.get("QUIET") != "1":\n    log()'),
+        file("flags.ts", 'const on = process.env.NEW_BILLING === "true";'),
+        file("mode.py", 'if os.getenv("MODE") in ("a", "b"):\n    pass'),
+        file("debug.rb", 'debug = ENV["DEBUG"] == "1"'),
+        file("trace.go", 'if os.Getenv("TRACE") == "on" {}'),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("still finds a value the app checks for before refusing to start", () => {
+    expect(
+      names([
+        file("boot.ts", 'if (process.env.API_KEY === undefined) throw new Error("x");'),
+        file("boot.py", 'if os.environ.get("SECRET") is None:\n    raise SystemExit'),
+        file("boot.go", 'if os.Getenv("DSN") == "" { log.Fatal("DSN") }'),
+      ]),
+    ).toEqual(["API_KEY", "DSN", "SECRET"]);
+  });
+
+  /**
    * The one that bit Wave. A default means the app starts, so nothing fails at
    * deploy time - and the default names a service on the developer's own
    * machine, which inside a container is nothing at all.

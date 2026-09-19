@@ -77,6 +77,18 @@ const LOCAL_DEFAULT =
 /** Enough of a fallback to mean the app copes without being told. */
 const FALLBACK = /^\s*[)\]]?\s*(\?\?|\|\||,\s*["']|\bor\b)/;
 
+/**
+ * A switch: the value is only compared with a literal, so being unset is one
+ * of its states rather than something missing. `os.environ.get("DEBUG") ==
+ * "1"`, `process.env.FEATURE === "on"`, `os.getenv("MODE") in ("a", "b")`.
+ *
+ * Only a literal with something in it counts. A comparison with nothing -
+ * `=== undefined`, `is None`, `== ""` - is how an app checks that it was told
+ * something it needs, usually on its way to refusing to start.
+ */
+const SWITCH =
+  /^\s*[)\]]?\s*(?:[!=]==?\s*(?:["'`](?!["'`])|\d|true\b|false\b)|(?:not\s+)?in\s*[([{])/;
+
 export function findEnvNeeds(entries: readonly ArchiveEntry[]): EnvNeed[] {
   const found = new Map<string, EnvNeed>();
 
@@ -109,7 +121,8 @@ export function findEnvNeeds(entries: readonly ArchiveEntry[]): EnvNeed[] {
         if (name === undefined) continue;
 
         const end = match.index + match[0].length;
-        if (FALLBACK.test(text.slice(end, end + 24))) continue;
+        const after = text.slice(end, end + 24);
+        if (FALLBACK.test(after) || SWITCH.test(after)) continue;
 
         note({ name, reason: "no default", file: entry.path });
       }

@@ -293,10 +293,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def log_message(self, format: str, *args) -> None:  # noqa: A002 - the base class's name
-        if os.environ.get("QUIET") != "1":
-            super().log_message(format, *args)
-
 
 def main() -> None:
     port = int(os.environ.get("PORT", "8080"))
