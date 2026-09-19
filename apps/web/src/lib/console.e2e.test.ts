@@ -198,7 +198,7 @@ describe.skipIf(!hasDatabase || !hasPython || !hasFixture)(
   () => {
     beforeAll(async () => {
       service = spawn("python3", [join(FIXTURE, "app.py")], {
-        env: { ...process.env, PORT: String(PORT), QUIET: "1" },
+        env: { ...process.env, PORT: String(PORT) },
         stdio: "ignore",
       });
       await until(async () => (await fetch(`${ORIGIN}/health`)).ok);
@@ -282,7 +282,7 @@ describe.skipIf(!hasDatabase || !hasPython || !hasFixture)(
       const [row] = await database.select().from(apps).where(eq(apps.id, appId));
       expect(row?.hasWebUi).toBe(false);
 
-      const { resolveAppState, openHref } = await import("./app-state");
+      const { resolveAppState, appDoor } = await import("./app-state");
       const { latestDeployment } = await import("./queries");
       const resolved = resolveAppState(
         row!,
@@ -290,9 +290,13 @@ describe.skipIf(!hasDatabase || !hasPython || !hasFixture)(
         "/enter/orders-service--orders",
       );
       expect(resolved.state).toBe("no-ui");
-      expect(openHref(resolved, { spaceSlug: "orders", appSlug: "orders-service" })).toBe(
-        "/orders/orders-service/console",
-      );
+      expect(
+        appDoor(
+          resolved,
+          { spaceSlug: "orders", appSlug: "orders-service" },
+          expected.length,
+        ).href,
+      ).toBe("/orders/orders-service/console");
 
       const stored = await database
         .select()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openHref, resolveAppState } from "./app-state";
+import { appDoor, resolveAppState } from "./app-state";
 import type { App, Deployment } from "@cira/core";
 
 /** Where a browser is sent when there is somewhere to send it. */
@@ -299,17 +299,30 @@ describe("an app that says where it really lives", () => {
   });
 });
 
-describe("openHref", () => {
+describe("appDoor", () => {
   const address = { spaceSlug: "acme", appSlug: "revenue" };
+  const noUi = () =>
+    resolveAppState(app("live", { hasWebUi: false }), deployment("live"), OPEN_AT);
 
   it("opens an app with no web page into its console", () => {
-    const resolved = resolveAppState(
-      app("live", { hasWebUi: false }),
-      deployment("live"),
-      OPEN_AT,
-    );
+    const resolved = noUi();
     expect(resolved.state).toBe("no-ui");
-    expect(openHref(resolved, address)).toBe("/acme/revenue/console");
+    expect(appDoor(resolved, address, 3)).toEqual({
+      href: "/acme/revenue/console",
+      blockedReason: null,
+    });
+  });
+
+  /**
+   * A hello-world service: running, and nothing anyone could use. A button
+   * into an empty console would be a door into a cupboard, and the usual
+   * sentence would promise capabilities that are not there.
+   */
+  it("offers no door into an empty console, and does not promise capabilities", () => {
+    const door = appDoor(noUi(), address, 0);
+    expect(door.href).toBeNull();
+    expect(door.blockedReason).toContain("nothing in it can be run");
+    expect(door.blockedReason).not.toContain("assistants can use");
   });
 
   it("opens a website through Cira's door, and a homepage directly", () => {
@@ -318,7 +331,7 @@ describe("openHref", () => {
       deployment("live"),
       OPEN_AT,
     );
-    expect(openHref(site, address)).toBe("/acme/revenue/open");
+    expect(appDoor(site, address, 0).href).toBe("/acme/revenue/open");
 
     // An API that says where its front end lives goes there, not to the console.
     const elsewhere = resolveAppState(
@@ -326,17 +339,19 @@ describe("openHref", () => {
       deployment("live"),
       OPEN_AT,
     );
-    expect(openHref(elsewhere, address)).toBe("https://revenue.acme.com");
+    expect(appDoor(elsewhere, address, 5).href).toBe("https://revenue.acme.com");
   });
 
-  it("offers no door while an app cannot be used at all", () => {
+  it("offers no door while an app cannot be used at all, and says why", () => {
     for (const resolved of [
       resolveAppState(app("deploying"), deployment("building"), OPEN_AT),
       resolveAppState(app("failed"), deployment("failed"), OPEN_AT),
       resolveAppState(app("live"), null, OPEN_AT),
       resolveAppState(app("live", { hasWebUi: true }), deployment("live"), null),
     ]) {
-      expect(openHref(resolved, address)).toBeNull();
+      const door = appDoor(resolved, address, 4);
+      expect(door.href).toBeNull();
+      expect(door.blockedReason).toBe(resolved.blockedReason);
     }
   });
 });

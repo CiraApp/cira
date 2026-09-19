@@ -20,7 +20,7 @@ import { AppIdentity } from "@/components/app-identity";
 import { StatusDot } from "@/components/status-dot";
 import { latestDeployment } from "@/lib/queries";
 import { appColor } from "@/lib/app-color";
-import { consoleHref, openHref, resolveAppState } from "@/lib/app-state";
+import { appDoor, consoleHref, resolveAppState } from "@/lib/app-state";
 import { appOpenPath } from "@/lib/app-open";
 import { learnWebUi } from "@/lib/app-web-ui";
 
@@ -85,7 +85,11 @@ export default async function AppPage({
       manages &&
       (resolved.state === "no-ui" || resolved.state === "unreachable") &&
       (app.homepageUrl === null || app.homepageUrl === "");
-    const door = openHref(resolved, { spaceSlug, appSlug });
+    const { href: door, blockedReason } = appDoor(
+      resolved,
+      { spaceSlug, appSlug },
+      capabilities.length,
+    );
     const consolePath = consoleHref({ spaceSlug, appSlug });
 
     return (
@@ -189,13 +193,21 @@ export default async function AppPage({
                 </div>
               ) : (
                 /*
-                  Dashed, because a door is missing: something belongs here
-                  and has not arrived, which is exactly right for an app
-                  mid-deploy or one that failed. An app that was never a
-                  website does not land here; it opens into its console.
+                  Dashed when a door is missing, solid when there was never
+                  meant to be one. A dashed outline reads as a placeholder -
+                  something belongs here and has not arrived - which is exactly
+                  right for an app mid-deploy or one that failed, and exactly
+                  wrong for a service with no web page and nothing to run.
+                  Nothing is late there; there is simply nothing to open.
                 */
-                <p className="rounded-[var(--radius-edge)] border border-dashed border-line-strong bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted">
-                  {resolved.blockedReason}
+                <p
+                  className={`rounded-[var(--radius-edge)] border bg-sunken/50 px-4 py-3 text-[13px] text-ink-muted ${
+                    resolved.state === "no-ui"
+                      ? "border-line"
+                      : "border-dashed border-line-strong"
+                  }`}
+                >
+                  {blockedReason}
                   {offerHomepage ? (
                     <>
                       {" "}

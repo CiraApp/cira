@@ -172,27 +172,46 @@ function fromDeployment(
 }
 
 /**
- * Where an app's Open button goes, or null when there is no door to offer.
+ * Where an app's Open button goes, and what is said instead when it has none.
  *
  * An app with no web page opens into its console. It is running and working,
  * and a person who may open it should be able to use it without an agent in
  * between; a page that only explained why there was no button left API-only
  * apps invisible to everyone but assistants.
  *
+ * Unless there is nothing in it to run. A service that answers "hello world"
+ * is running, but it is not software anyone can use, and a button that opens
+ * an empty console is a door into a cupboard. Then there is no button, and the
+ * sentence says so rather than promising capabilities that are not there.
+ *
  * An app Cira serves is opened through `/open`, which checks access again and
  * hands over to the door on Cira's own domain. One that carries its own
  * address is simply linked to: Cira does not serve it, cannot vouch for it,
  * and has no relationship with that host to hand a referrer to.
  */
-export function openHref(
+export function appDoor(
   resolved: ResolvedApp,
   address: { spaceSlug: string; appSlug: string },
-): string | null {
+  /** How many capabilities the app has, whatever state they are in. */
+  capabilities: number,
+): { href: string | null; blockedReason: string | null } {
   const page = `/${address.spaceSlug}/${address.appSlug}`;
   if (resolved.openUrl !== null) {
-    return resolved.external ? resolved.openUrl : `${page}/open`;
+    return {
+      href: resolved.external ? resolved.openUrl : `${page}/open`,
+      blockedReason: null,
+    };
   }
-  return resolved.state === "no-ui" ? consoleHref(address) : null;
+  if (resolved.state === "no-ui") {
+    return capabilities > 0
+      ? { href: consoleHref(address), blockedReason: null }
+      : {
+          href: null,
+          blockedReason:
+            "This app has no web interface, and nothing in it can be run from Cira yet.",
+        };
+  }
+  return { href: null, blockedReason: resolved.blockedReason };
 }
 
 /** An app's capability console. */
