@@ -22,6 +22,19 @@ export interface Limits {
    * Cira and the console together. Each is a request to somebody's app.
    */
   invocationsPerPersonPerMinute: number;
+  /** What a space may run besides answering requests (see processes.ts). */
+  processes: {
+    /** Scheduled runs switched on at once, across the space. */
+    scheduledPerSpace: number;
+    /** Workers switched on at once, across the space. They cost money idle. */
+    workersPerSpace: number;
+    /** The shortest time a timetable may leave between runs. */
+    minIntervalMinutes: number;
+    /** How long a scheduled run may take unless someone says otherwise. */
+    defaultTimeoutMinutes: number;
+    /** The longest anyone may let one run. */
+    maxTimeoutMinutes: number;
+  };
   /** What each app's service is given on Cloud Run. */
   app: {
     maxInstances: number;
@@ -39,6 +52,13 @@ export const DEFAULT_LIMITS: Limits = {
   appsPerSpace: 25,
   deploysPerSpacePerHour: 30,
   invocationsPerPersonPerMinute: 60,
+  processes: {
+    scheduledPerSpace: 10,
+    workersPerSpace: 2,
+    minIntervalMinutes: 5,
+    defaultTimeoutMinutes: 10,
+    maxTimeoutMinutes: 60,
+  },
   app: {
     maxInstances: 10,
     cpu: 1,
@@ -105,4 +125,27 @@ export function describeAppAllowance(limits: Limits, withSidecars: boolean): str
   const memory = withSidecars ? limits.app.memoryMiBWithSidecars : limits.app.memoryMiB;
   const size = memory >= 1024 ? `${memory / 1024} GB` : `${memory} MB`;
   return `Up to ${limits.app.maxInstances} instances, each ${limits.app.cpu} CPU and ${size}`;
+}
+
+/**
+ * Whether a space may switch on one more process of this kind, given how many
+ * of that kind it already has on.
+ */
+export function checkProcessOn(
+  kind: "worker" | "scheduled",
+  onAlready: number,
+  limits: Limits,
+): LimitVerdict {
+  const most =
+    kind === "worker"
+      ? limits.processes.workersPerSpace
+      : limits.processes.scheduledPerSpace;
+  if (onAlready < most) return { ok: true };
+  return {
+    ok: false,
+    message:
+      kind === "worker"
+        ? `This space already has ${most} workers on, which is the limit. Workers run all the time, so turn one off first.`
+        : `This space already has ${most} scheduled runs on, which is the limit. Turn one off first.`,
+  };
 }

@@ -10,3 +10,5 @@ export * from "./app-image.js";
 export * from "./capability-console.js";
 export * from "./runtime-logs.js";
 export * from "./limits.js";
+export * from "./schedule.js";
+export * from "./processes.js";
