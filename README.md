@@ -525,6 +525,11 @@ environments. A push to `prod` runs typecheck, lint, format, build and the
 full test suite, including the database tests; a green run migrates the
 database and deploys to Vercel.
 
+After changing an environment variable in Vercel, run the `ci` workflow by
+hand (`gh workflow run ci --ref prod`). `NEXT_PUBLIC_` values are compiled into
+the build, so they need a fresh one; redeploying from Vercel reuses the old
+output, with the old values still in it.
+
 Migrations run **before** the new code is live, so the previous deployment
 briefly serves against the new schema. Every migration therefore has to be
 additive: expand first, and contract in a later deploy once nothing reads the
