@@ -86,7 +86,7 @@ export function MobileNav({
                 <SidebarNav items={items} />
               </div>
 
-              <div className="flex shrink-0 items-center gap-2 border-t border-line p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))]">
+              <div className="flex shrink-0 items-center gap-[3px] border-t border-line p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))]">
                 <div className="flex min-w-0 flex-1 justify-center">
                   <Wordmark href={`/${spaceSlug}` as Route} />
                 </div>

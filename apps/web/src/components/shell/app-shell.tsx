@@ -92,7 +92,7 @@ export async function AppShell({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 border-t border-line p-2.5">
+        <div className="flex shrink-0 items-center gap-[3px] border-t border-line p-2.5">
           <div className="flex min-w-0 flex-1 justify-center">
             <Wordmark href={`/${spaceSlug}` as Route} />
           </div>
