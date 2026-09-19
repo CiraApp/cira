@@ -278,7 +278,12 @@ export default async function AppPage({
             servesWeb={deployment?.servesWeb ?? true}
           />
 
-          {runs !== null ? <RunHistory runs={runs} /> : null}
+          {/* Only where capabilities can be run: an app that is only workers
+              and scheduled runs would otherwise show an empty list of a kind
+              of run it can never have, right under its own runs. */}
+          {runs !== null && (capabilities.length > 0 || runs.length > 0) ? (
+            <RunHistory runs={runs} />
+          ) : null}
 
           <DeploymentHistory
             spaceSlug={spaceSlug}

@@ -11,7 +11,9 @@ export function RunHistory({ runs }: { runs: RunRecord[] }) {
   return (
     <section className="enter-up mt-10">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Runs</h2>
+        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
+          Capability runs
+        </h2>
         <p className="text-[12px] text-ink-subtle">
           Who ran what, from where. Never what was sent or returned.
         </p>

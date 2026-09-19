@@ -52,7 +52,7 @@ use its apps, and Cira would know if anything broke for them.
       tried once. Done when a thrown error and a downtime each reach you.
       _You create the accounts, Claude wires them._
 - [x] **1.4 A record of who ran what.** `invocations`, written by the one
-      path every surface shares, shown under Runs on each app page to whoever
+      path every surface shares, shown under Capability runs on each app page to whoever
       manages it; never the input or the reply (2026-09-19).
 - [ ] **1.5 Email.** A transactional provider (Resend) for invites, which
       today are links the inviter sends by hand. Done when an invite arrives

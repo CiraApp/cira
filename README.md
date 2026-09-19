@@ -359,7 +359,7 @@ page's memory and nowhere else.
 Every run, from MCP, Ask Cira or the console, is written to `invocations`:
 who, which capability, from where, and how it ended - the app's status, or the
 check that stopped it - and never the input or the reply. Whoever manages an
-app sees them on its page under Runs. The same record is what limits a person
+app sees them on its page under Capability runs. The same record is what limits a person
 to 60 runs a minute; a run refused by that limit is not written.
 
 ### 7. Access control
