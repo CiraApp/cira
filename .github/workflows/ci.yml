@@ -45,11 +45,11 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/cira_test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -92,11 +92,11 @@ jobs:
       VERCEL_PROJECT_ID: prj_R6VA3mzvZHtnNJZ7iqQNdjeWpvbG
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -134,7 +134,7 @@ jobs:
       # on PATH on the runner, and npm's is not either under a custom prefix.
       - name: Cache the Vercel CLI
         id: vercel-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.vercel-cli
           key: vercel-cli-59-${{ runner.os }}
