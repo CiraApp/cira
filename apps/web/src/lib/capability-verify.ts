@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isSafeTargetPath } from "@cira/core";
+import { fillTargetPath, isSafeTargetPath } from "@cira/core";
 
 /**
  * Asking the app whether the capabilities it was credited with are real.
@@ -280,17 +280,13 @@ async function allowed(
   }
 }
 
-/** Put something harmless where a path parameter goes. */
+/**
+ * Put the example's values, or something harmless, where path parameters go.
+ * The same rule invocation uses, so a route is asked about at the address it
+ * will really be called at.
+ */
 function fill(path: string, probe: Record<string, unknown> | undefined): string {
-  return path.replace(/\{([^}]+)\}|:([A-Za-z_][A-Za-z0-9_]*)/g, (_, braced, colon) => {
-    const key = (braced ?? colon) as string;
-    const given = probe?.[key];
-    const value =
-      typeof given === "string" || typeof given === "number"
-        ? String(given)
-        : PLACEHOLDER;
-    return encodeURIComponent(value);
-  });
+  return fillTargetPath(path, probe ?? {}, PLACEHOLDER).path;
 }
 
 /** A read's example input, as query parameters. */

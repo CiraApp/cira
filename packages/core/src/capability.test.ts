@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   currentReach,
+  fillTargetPath,
   isCapabilityName,
   isSafeTargetPath,
   publicationFor,
@@ -158,6 +159,49 @@ describe("currentReach", () => {
   it("never ages a yes", () => {
     expect(currentReach({ reach: "callable", answeredBy: "dep_before" }, "dep_now")).toBe(
       "callable",
+    );
+  });
+});
+
+describe("fillTargetPath", () => {
+  it("puts values into both kinds of hole and says which it used", () => {
+    expect(
+      fillTargetPath("/orders/{order_id}/lines/:line", {
+        order_id: "ord_1",
+        line: 2,
+        x: 1,
+      }),
+    ).toEqual({
+      path: "/orders/ord_1/lines/2",
+      used: ["order_id", "line"],
+      missing: [],
+    });
+  });
+
+  it("leaves a path with no holes alone", () => {
+    expect(fillTargetPath("/orders", { status: "paid" })).toEqual({
+      path: "/orders",
+      used: [],
+      missing: [],
+    });
+  });
+
+  // A value is data, never more address.
+  it("encodes a value so it cannot add path, query or fragment", () => {
+    const { path } = fillTargetPath("/orders/{id}", { id: "a/b?c#d" });
+    expect(path).toBe("/orders/a%2Fb%3Fc%23d");
+    expect(isSafeTargetPath(path)).toBe(true);
+  });
+
+  it("leaves a traversal for the path check to refuse", () => {
+    const { path } = fillTargetPath("/orders/{id}", { id: ".." });
+    expect(isSafeTargetPath(path)).toBe(false);
+  });
+
+  it("reports a hole nothing was given for, and fills it when asked to", () => {
+    expect(fillTargetPath("/orders/{id}", {}).missing).toEqual(["id"]);
+    expect(fillTargetPath("/orders/{id}", {}, "cira-probe").path).toBe(
+      "/orders/cira-probe",
     );
   });
 });

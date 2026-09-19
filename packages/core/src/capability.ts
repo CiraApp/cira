@@ -183,6 +183,53 @@ export function isSafeTargetPath(path: string): boolean {
   return path.length <= 300;
 }
 
+/** `{order_id}` or `:order_id`, the two ways a path names a parameter. */
+const PATH_PARAMETER = /\{([^}/]+)\}|:([A-Za-z_][A-Za-z0-9_]*)/g;
+
+/**
+ * A capability's path with its parameters put in.
+ *
+ * `/orders/{order_id}` is an address with a hole in it, and the value for the
+ * hole arrives in the input. Each one is encoded, so a value can never carry a
+ * slash, a query or a fragment into the address; the caller still re-checks
+ * the finished path with `isSafeTargetPath`, which is what refuses a value of
+ * `..`. `used` names the inputs that went into the path, so they are not sent
+ * a second time in the query or the body.
+ *
+ * `fallback` fills a hole nothing was given for. Verification passes one,
+ * because it has to ask about a route before anyone has asked it anything;
+ * invocation does not, and an unfilled hole is left in place for it to refuse.
+ */
+export function fillTargetPath(
+  path: string,
+  values: Record<string, unknown>,
+  fallback?: string,
+): { path: string; used: string[]; missing: string[] } {
+  const used: string[] = [];
+  const missing: string[] = [];
+
+  const filled = path.replace(
+    PATH_PARAMETER,
+    (whole: string, braced?: string, colon?: string) => {
+      const key = (braced ?? colon) as string;
+      const given = values[key];
+      if (
+        typeof given === "string" ||
+        typeof given === "number" ||
+        typeof given === "boolean"
+      ) {
+        used.push(key);
+        return encodeURIComponent(String(given));
+      }
+      if (fallback !== undefined) return encodeURIComponent(fallback);
+      missing.push(key);
+      return whole;
+    },
+  );
+
+  return { path: filled, used, missing };
+}
+
 /** What a redeploy should do to one app's capability set. */
 export interface Reconciliation<T> {
   /** Detected and not previously known. Takes the publication policy's default. */

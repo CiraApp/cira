@@ -1,7 +1,7 @@
 import "server-only";
 
 import { deploymentProvider } from "@cira/deploy";
-import { isSafeTargetPath, type Capability, type User } from "@cira/core";
+import { fillTargetPath, isSafeTargetPath, type Capability, type User } from "@cira/core";
 import {
   getCapabilityForUser,
   recordRefusal,
@@ -28,8 +28,26 @@ import { demoAnswer } from "@/lib/demo/answers";
  */
 
 export type InvocationResult =
-  | { ok: true; status: number; data: unknown }
-  | { ok: false; error: string; status?: number };
+  | { ok: true; status: number; data: unknown; answer: AppAnswer }
+  | { ok: false; error: string; status?: number; answer?: AppAnswer };
+
+/**
+ * Exactly what the app said, whenever it said anything.
+ *
+ * Kept beside the verdict rather than folded into it. An agent is best served
+ * by one sentence - "getRevenue failed (500)" - and that sentence is unchanged.
+ * A person running the capability by hand is served by the app's own words: the
+ * status, the body as it came back, and how long it took. Present on success
+ * and on failure alike, and absent only when the app was never reached - a
+ * check refused the call, or the network never got an answer.
+ */
+export interface AppAnswer {
+  status: number;
+  /** The body as text, as the app sent it, up to the response cap. */
+  body: string;
+  contentType: string | null;
+  elapsedMs: number;
+}
 
 /** A deployed app gets a few seconds; an agent is waiting on the other end. */
 const TIMEOUT_MS = 15_000;
@@ -82,9 +100,16 @@ export async function invokeCapability(args: {
   // reached. Only a deployment the seed created can take this path.
   if (target.provider === "demo") {
     const data = demoAnswer(capability.appSlug, capability.name, validation.value);
-    return data === undefined
-      ? { ok: false, error: `${capability.name} failed (404).`, status: 404 }
-      : { ok: true, status: 200, data };
+    if (data === undefined) {
+      const answer = demoReply(404, { error: "Not found" });
+      return {
+        ok: false,
+        error: `${capability.name} failed (404).`,
+        status: 404,
+        answer,
+      };
+    }
+    return { ok: true, status: 200, data, answer: demoReply(200, data) };
   }
 
   return call(target, capability, validation.value);
@@ -144,8 +169,28 @@ async function call(
   const url = new URL(target.url);
   let body: string | undefined;
 
+  // `/orders/{order_id}` is filled from the input before anything is sent, and
+  // the values that went into the address are not sent again. This used to be
+  // skipped: the braces went out literally and the id rode along as a query
+  // parameter, so every capability with an id in its path answered 404.
+  const filled = fillTargetPath(capability.target.path, input);
+  if (filled.missing.length > 0) {
+    return {
+      ok: false,
+      error: `Invalid input: ${filled.missing.join(", ")} is required.`,
+    };
+  }
+  // Re-checked with the values in: this is what refuses a value of `..`.
+  if (!isSafeTargetPath(filled.path)) {
+    return { ok: false, error: "Invalid input: that value cannot go in an address." };
+  }
+  url.pathname = filled.path;
+  const rest = Object.fromEntries(
+    Object.entries(input).filter(([key]) => !filled.used.includes(key)),
+  );
+
   if (capability.target.method === "GET") {
-    for (const [key, value] of Object.entries(input)) {
+    for (const [key, value] of Object.entries(rest)) {
       if (value === undefined || value === null) continue;
       url.searchParams.set(
         key,
@@ -153,7 +198,7 @@ async function call(
       );
     }
   } else {
-    body = JSON.stringify(input);
+    body = JSON.stringify(rest);
   }
 
   // Minted for this app's own URL and expiring in an hour, rather than read
@@ -180,6 +225,7 @@ async function call(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const started = performance.now();
 
   let response: Response;
   try {
@@ -215,6 +261,13 @@ async function call(
     return { ok: false, error: `${capability.name} returned too much data.` };
   }
 
+  const answer: AppAnswer = {
+    status: response.status,
+    body: text,
+    contentType: response.headers.get("content-type"),
+    elapsedMs: Math.round(performance.now() - started),
+  };
+
   // A write can only be verified by asking which methods its path allows,
   // and frameworks answer that before they check who is asking - so the app
   // saying no to the real call is the first time anyone could know. It is
@@ -235,7 +288,7 @@ async function call(
       capabilityId: capability.id,
       deploymentId: target.deploymentId,
     });
-    return { ok: false, status: 401, error: refusal(capability) };
+    return { ok: false, status: 401, error: refusal(capability), answer };
   }
 
   if (!response.ok) {
@@ -243,19 +296,37 @@ async function call(
       ok: false,
       status: response.status,
       error: `${capability.name} failed (${response.status}).`,
+      answer,
     };
   }
 
-  if (text.trim() === "") return { ok: true, status: response.status, data: null };
+  if (text.trim() === "")
+    return { ok: true, status: response.status, data: null, answer };
 
   try {
-    return { ok: true, status: response.status, data: JSON.parse(text) };
+    return { ok: true, status: response.status, data: JSON.parse(text), answer };
   } catch {
     // A capability is a structured operation. An app answering with HTML is
     // answering a different question, and passing that on to an agent as if it
-    // were a result is worse than saying it did not work.
-    return { ok: false, error: `${capability.name} did not return JSON.` };
+    // were a result is worse than saying it did not work. The page itself is
+    // still in `answer`, for anyone who wants to see what came back.
+    return {
+      ok: false,
+      status: response.status,
+      error: `${capability.name} did not return JSON.`,
+      answer,
+    };
   }
+}
+
+/** A demo app's answer, in the shape a real one arrives in. */
+function demoReply(status: number, data: unknown): AppAnswer {
+  return {
+    status,
+    body: JSON.stringify(data),
+    contentType: "application/json",
+    elapsedMs: 0,
+  };
 }
 
 /** Why an agent cannot run this, for a capability the app turned away. */

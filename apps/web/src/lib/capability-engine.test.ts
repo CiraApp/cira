@@ -233,6 +233,21 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         return;
       }
 
+      // An id in the path, the way most REST routes carry one.
+      if (url.pathname.startsWith("/api/orders/")) {
+        const id = decodeURIComponent(url.pathname.slice("/api/orders/".length));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ id, query: Object.fromEntries(url.searchParams) }));
+        return;
+      }
+
+      // An app failing in its own words, which a person needs to see as-is.
+      if (url.pathname === "/api/broken") {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "the ledger database is down" }));
+        return;
+      }
+
       if (url.pathname === "/api/html") {
         response.writeHead(200, { "content-type": "text/html" }).end("<html>hi</html>");
         return;
@@ -644,6 +659,112 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       "getRevenue",
     ]);
     expect(shrunk.review).toBe(0);
+  });
+
+  /**
+   * Found while building the console: invocation never filled path
+   * parameters. `/api/orders/{order_id}` went out with the braces in it and the
+   * id riding along as a query parameter, so every capability with an id in
+   * its path answered 404. Verification filled them; calling did not.
+   */
+  it("puts path parameters into the address and sends them nowhere else", async () => {
+    const { capabilities } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { invokeCapability } = await import("./invoke-capability");
+    const id = newId("capability");
+
+    await database.insert(capabilities).values({
+      id,
+      appId,
+      spaceId,
+      name: "getOrder",
+      description: "One order.",
+      inputSchema: {
+        type: "object",
+        properties: { order_id: { type: "string" }, expand: { type: "string" } },
+        required: ["order_id"],
+      },
+      method: "GET",
+      path: "/api/orders/{order_id}",
+      risk: "read",
+      enabled: true,
+      reach: "callable",
+      answeredBy: deploymentId,
+      verifiedAt: new Date(),
+    });
+
+    try {
+      const result = await invokeCapability({
+        user: employee,
+        capabilityId: id,
+        input: { order_id: "ord 7/x", expand: "lines" },
+      });
+
+      expect(result.ok).toBe(true);
+      // Encoded into the address, and not repeated in the query.
+      expect(result.ok && result.data).toEqual({
+        id: "ord 7/x",
+        query: { expand: "lines" },
+      });
+
+      const escape = await invokeCapability({
+        user: employee,
+        capabilityId: id,
+        input: { order_id: ".." },
+      });
+      expect(escape.ok).toBe(false);
+    } finally {
+      await database.delete(capabilities).where(eq(capabilities.id, id));
+    }
+  });
+
+  it("keeps what the app said when it fails, and still says why in a sentence", async () => {
+    const { capabilities } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { invokeCapability } = await import("./invoke-capability");
+    const { runTool } = await import("./mcp");
+    const id = newId("capability");
+
+    await database.insert(capabilities).values({
+      id,
+      appId,
+      spaceId,
+      name: "readLedgerTotals",
+      description: "Ledger totals.",
+      inputSchema: { type: "object", properties: {}, required: [] },
+      method: "GET",
+      path: "/api/broken",
+      risk: "read",
+      enabled: true,
+      reach: "callable",
+      answeredBy: deploymentId,
+      verifiedAt: new Date(),
+    });
+
+    try {
+      const result = await invokeCapability({
+        user: employee,
+        capabilityId: id,
+        input: {},
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.error).toBe("readLedgerTotals failed (500).");
+      // The app's own words, for a person.
+      expect(result.answer?.status).toBe(500);
+      expect(JSON.parse(result.answer?.body ?? "{}")).toEqual({
+        error: "the ledger database is down",
+      });
+      expect(result.answer?.elapsedMs).toBeGreaterThanOrEqual(0);
+
+      // An agent is told exactly what it was told before.
+      const tool = await runTool(employee, "invoke_capability", {
+        capabilityId: id,
+        input: {},
+      });
+      expect(tool).toEqual({ content: "readLedgerTotals failed (500).", isError: true });
+    } finally {
+      await database.delete(capabilities).where(eq(capabilities.id, id));
+    }
   });
 
   /**
