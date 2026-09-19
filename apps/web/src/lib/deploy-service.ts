@@ -20,10 +20,11 @@ import {
   newId,
   slugify,
 } from "@cira/core";
-import type { DeployableService } from "@cira/core";
+import type { DeployableService, DeployedProcess } from "@cira/core";
 import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
 import { recordEnvVars } from "@/lib/env-vars";
+import { recordProcesses, specsFor } from "@/lib/processes";
 
 export type DeployOutcome =
   | { ok: true; appId: string; appSlug: string; spaceSlug: string; deploymentId: string }
@@ -67,9 +68,17 @@ export async function deployToSpace(args: {
   services?: readonly DeployableService[] | null;
   /** Handed to the provider and then forgotten. See docs/secrets.md. */
   env?: Readonly<Record<string, string>>;
+  /**
+   * Whether the repository has a web process. False for an app that is only
+   * workers and scheduled runs. Absent from an older CLI, which means yes.
+   */
+  web?: boolean;
+  /** Workers and scheduled runs found in the repository. */
+  processes?: readonly DeployedProcess[];
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName } = args;
   const env = args.env ?? {};
+  const servesWeb = args.web !== false;
 
   const database = db();
 
@@ -249,25 +258,39 @@ export async function deployToSpace(args: {
             sourcePath: "",
             dockerfile: args.container?.dockerfile ?? null,
             port: args.container?.port ?? null,
-            ingress: true,
+            ingress: servesWeb,
           },
         ];
 
-  // Exactly one takes the port. A repository the CLI could not read that way
-  // does not reach here - it is stopped before anything is uploaded - so this
-  // is the last line of defence rather than the decision.
-  if (parts.filter((part) => part.ingress).length !== 1) {
+  // Exactly one takes the port, or - for an app that is only workers and
+  // scheduled runs - none does. A repository the CLI could not read that way
+  // does not reach here; it is stopped before anything is uploaded, so this is
+  // the last line of defence rather than the decision.
+  const declared = args.processes ?? [];
+  const refusal =
+    servesWeb && parts.filter((part) => part.ingress).length !== 1
+      ? "Cira could not tell which part of this app a browser should open."
+      : !servesWeb && parts.some((part) => part.ingress)
+        ? "This app says it has no web process, and one of its parts takes the port."
+        : !servesWeb && declared.length === 0
+          ? "This app has no web process and nothing else to run."
+          : declared.some((p) => !parts.some((part) => part.slug === p.service))
+            ? "A worker or scheduled run names a part of this app that is not in it."
+            : null;
+  if (refusal !== null) {
     await database
       .update(apps)
       .set({ status: "failed", updatedAt: new Date() })
       .where(eq(apps.id, app.id));
-    return {
-      ok: false,
-      error: "Cira could not tell which part of this app a browser should open.",
-    };
+    return { ok: false, error: refusal };
   }
 
   await recordServices(app.id, parts);
+  const stored = await recordProcesses({
+    appId: app.id,
+    spaceId: space.id,
+    declared,
+  });
 
   let result;
   try {
@@ -280,6 +303,7 @@ export async function deployToSpace(args: {
       source: { uri: archiveUri(source), size: source.size },
       services: parts,
       env,
+      processes: specsFor(stored),
     });
   } catch (error) {
     await database
@@ -305,6 +329,7 @@ export async function deployToSpace(args: {
     providerDeploymentId: result.providerDeploymentId,
     status: result.status,
     url: result.url,
+    servesWeb,
   });
 
   return {

@@ -21,6 +21,8 @@ const TEST_DATABASE_URL = process.env["TEST_DATABASE_URL"];
 const hasDatabase = TEST_DATABASE_URL !== undefined && TEST_DATABASE_URL !== "";
 
 let database: Awaited<ReturnType<typeof migratedTestDatabase>>;
+/** What the provider was asked to deploy, most recent last. */
+const told: Array<{ processes: unknown[] }> = [];
 /** Flipped by a test that wants the provider to refuse. */
 let providerFails = false;
 
@@ -42,14 +44,16 @@ vi.mock("@cira/deploy", async (importOriginal) => {
       find: () => Promise.resolve({ size: 1024, object: "source.tgz" }),
     }),
     deploymentProvider: () => ({
-      deploy: () =>
-        providerFails
+      deploy: (input: { processes: unknown[] }) => {
+        told.push(input);
+        return providerFails
           ? Promise.reject(new Error("the builder said no"))
           : Promise.resolve({
               providerDeploymentId: "prov_1",
               status: "building",
               url: null,
-            }),
+            });
+      },
     }),
   };
 });
@@ -315,6 +319,111 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       expect(rows).toHaveLength(deploysPerSpacePerHour + 1);
       const [app] = await database.select().from(apps).where(eq(apps.id, appId));
       expect(app?.status).toBe("live");
+    });
+  });
+  describe("workers and scheduled runs", () => {
+    const deployWith = async (args: {
+      appId: string | null;
+      web?: boolean;
+      processes: Array<{
+        name: string;
+        kind: "worker" | "scheduled";
+        command: string;
+        schedule: string | null;
+        source: "Procfile" | "fly.toml" | "GitHub Actions";
+        service: string;
+      }>;
+    }) => {
+      const { deployToSpace } = await import("./deploy-service");
+      return deployToSpace({
+        user: deployer,
+        spaceSlug: "paradym",
+        appName: "Sync",
+        appId: args.appId,
+        sourceId: "src_1",
+        framework: "python",
+        container: null,
+        ...(args.web === undefined ? {} : { web: args.web }),
+        processes: args.processes,
+      });
+    };
+    const report = {
+      name: "report",
+      kind: "scheduled" as const,
+      command: "python report.py",
+      schedule: "0 9 * * 1",
+      source: "GitHub Actions" as const,
+      service: "app",
+    };
+
+    it("deploys an app that is only a scheduled run, and records it off", async () => {
+      const { deployments, processes } = await import("@cira/db");
+      const outcome = await deployWith({ appId: null, web: false, processes: [report] });
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) return;
+
+      const [deployment] = await database
+        .select()
+        .from(deployments)
+        .where(eq(deployments.appId, outcome.appId));
+      expect(deployment?.servesWeb).toBe(false);
+
+      const rows = await database
+        .select()
+        .from(processes)
+        .where(eq(processes.appId, outcome.appId));
+      expect(rows).toMatchObject([
+        { name: "report", kind: "scheduled", schedule: "0 9 * * 1", enabled: false },
+      ]);
+      expect(told.at(-1)?.processes).toEqual([
+        {
+          name: "report",
+          kind: "scheduled",
+          command: "python report.py",
+          service: "app",
+          schedule: "0 9 * * 1",
+          timeoutSeconds: 600,
+          enabled: false,
+        },
+      ]);
+    });
+
+    it("keeps what a person decided when the app is deployed again", async () => {
+      const { processes } = await import("@cira/db");
+      const first = await deployWith({ appId: null, web: false, processes: [report] });
+      if (!first.ok) throw new Error(first.error);
+
+      await database
+        .update(processes)
+        .set({ enabled: true, schedule: "30 7 * * *", scheduleSetAt: new Date() })
+        .where(eq(processes.appId, first.appId));
+
+      await deployWith({
+        appId: first.appId,
+        web: false,
+        processes: [{ ...report, command: "python report.py --all" }],
+      });
+
+      const [row] = await database
+        .select()
+        .from(processes)
+        .where(eq(processes.appId, first.appId));
+      expect(row).toMatchObject({
+        command: "python report.py --all",
+        schedule: "30 7 * * *",
+        enabled: true,
+      });
+      expect(told.at(-1)?.processes).toMatchObject([
+        { schedule: "30 7 * * *", enabled: true },
+      ]);
+    });
+
+    it("refuses an app with no web process and nothing else to run", async () => {
+      const outcome = await deployWith({ appId: null, web: false, processes: [] });
+      expect(outcome).toMatchObject({
+        ok: false,
+        error: "This app has no web process and nothing else to run.",
+      });
     });
   });
 });

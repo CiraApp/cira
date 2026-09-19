@@ -9,6 +9,8 @@ import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { resolveMissing } from "./confirm.js";
 import { discoverServices } from "./services.js";
+import { discoverProcesses } from "./processes.js";
+import { describeSchedule, parseSchedule } from "@cira/core/schedule";
 import {
   checkBundle,
   findEnvNeeds,
@@ -161,8 +163,14 @@ export async function deploy(argv: string[] = []): Promise<number> {
   const found = discoverServices(root);
   let services = null;
 
+  // What else the app runs, from the files that already say so. A repository
+  // whose files name no web process is not a website, and nothing takes the
+  // port: deploying it must not fail for want of a server it never had.
+  const declared = discoverProcesses(root, found.services);
+  const servesWeb = declared.web !== false;
+
   if (found.services.length > 1) {
-    if (found.ingress === null) {
+    if (servesWeb && found.ingress === null) {
       fail(
         `This repository has more than one thing to deploy, and ${found.ambiguity}. ` +
           "Deploy them from their own directories for now.",
@@ -172,7 +180,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
 
     services = found.services.map((part) => ({
       ...part,
-      ingress: part.slug === found.ingress?.slug,
+      ingress: servesWeb && part.slug === found.ingress?.slug,
     }));
 
     info(`${dim(`Found ${services.length} services`)}`);
@@ -182,6 +190,21 @@ export async function deploy(argv: string[] = []): Promise<number> {
         ? "front door"
         : `internal${part.port === null ? "" : `, port ${part.port}`}`;
       success(`  ${part.slug}  ${dim(part.sourcePath)}  ${dim(`${how}, ${role}`)}`);
+    }
+  }
+
+  if (declared.processes.length > 0) {
+    info(`${dim(servesWeb ? "Also runs" : "Runs, with no web process")}`);
+    for (const process of declared.processes) {
+      const when =
+        process.kind === "worker"
+          ? "worker, runs all the time"
+          : process.schedule === null
+            ? "scheduled, no timetable yet"
+            : `scheduled, ${describeTimetable(process.schedule)}`;
+      success(
+        `  ${process.name}  ${dim(process.command)}  ${dim(`${when}, from ${process.source}`)}`,
+      );
     }
   }
 
@@ -303,6 +326,8 @@ export async function deploy(argv: string[] = []): Promise<number> {
         framework,
         container,
         ...(services === null ? {} : { services }),
+        web: servesWeb,
+        processes: declared.processes,
         env: collected.env,
       },
     });
@@ -358,6 +383,13 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info(`  ${bold(`${config.apiUrl}/${started.spaceSlug}/${started.appSlug}`)}`);
       info("");
       info(dim("  Only you can see it. Give people access from that page."));
+      if (declared.processes.length > 0) {
+        info(
+          dim(
+            "  Its workers and scheduled runs are off until someone who manages it turns them on there.",
+          ),
+        );
+      }
 
       // Nothing is published until the app itself confirms it serves the
       // route. That can only be asked now, which is why it is not part of the
@@ -377,6 +409,12 @@ export async function deploy(argv: string[] = []): Promise<number> {
 
   fail("Timed out waiting for the deploy to finish.");
   return 1;
+}
+
+/** A timetable in words, or as written when it cannot be read. */
+function describeTimetable(expression: string): string {
+  const parsed = parseSchedule(expression);
+  return parsed.ok ? describeSchedule(parsed.schedule) : expression;
 }
 
 function prettyName(folder: string): string {

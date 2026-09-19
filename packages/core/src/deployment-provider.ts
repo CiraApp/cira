@@ -98,6 +98,52 @@ export interface AppDeploymentInput {
    * not this interface's to prevent.
    */
   env: Readonly<Record<string, string>>;
+  /**
+   * Workers and scheduled runs, each from one of `services`' images with its
+   * own command. Created now, while the environment is in hand - it is never
+   * stored, so this is the only moment it can be given to them - and moved
+   * onto the new image when the build finishes. An app none of whose
+   * services takes the port is only these: no service, and no address.
+   */
+  processes: readonly ProcessSpec[];
+}
+
+/** One worker or scheduled run, as the provider needs it. */
+export interface ProcessSpec {
+  name: string;
+  kind: "worker" | "scheduled";
+  command: string;
+  /** The slug of the service whose image it runs. */
+  service: string;
+  /** Cron in UTC. Null for a worker, or a run with no timetable yet. */
+  schedule: string | null;
+  /** How long one run may take. Ignored for a worker. */
+  timeoutSeconds: number;
+  enabled: boolean;
+}
+
+/** How a worker or scheduled run is doing, from the provider. */
+export type ProcessState =
+  | {
+      kind: "worker";
+      name: string;
+      /** Instances asked for: 1 when on, 0 when off. */
+      instances: number;
+      health: "ready" | "starting" | "failed" | "missing";
+    }
+  | {
+      kind: "scheduled";
+      name: string;
+      exists: boolean;
+      runs: ProcessRun[];
+    };
+
+/** One execution of a scheduled run. */
+export interface ProcessRun {
+  id: string;
+  startedAt: Date;
+  finishedAt: Date | null;
+  outcome: "running" | "succeeded" | "failed" | "cancelled";
 }
 
 export interface DeployableService {
@@ -150,6 +196,26 @@ export interface DeploymentProvider {
    * whichever build is serving. Throws `RuntimeLogsError`.
    */
   getRuntimeLogs(deploymentId: string, query: RuntimeLogQuery): Promise<RuntimeLogPage>;
+
+  /**
+   * Put one process into the state a person chose: a worker on or off, a
+   * scheduled run on or off with its timetable and time allowed. Needs no
+   * secrets - those were given to the process when it was deployed - which is
+   * what lets it be changed from a page at any time.
+   */
+  setProcess(deploymentId: string, process: ProcessSpec): Promise<void>;
+
+  /** Start a scheduled run now, off its timetable. Refused while one is going. */
+  runProcess(
+    deploymentId: string,
+    name: string,
+  ): Promise<{ started: boolean; reason?: string }>;
+
+  /** How each process is doing: a worker's health, a scheduled run's recent runs. */
+  processStates(
+    deploymentId: string,
+    processes: readonly Pick<ProcessSpec, "name" | "kind">[],
+  ): Promise<ProcessState[]>;
 
   remove(deploymentId: string): Promise<void>;
 }

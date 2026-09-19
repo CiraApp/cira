@@ -58,6 +58,11 @@ export interface RuntimeLogQuery {
   order: "newest" | "oldest";
   pageToken: string | null;
   limit: number;
+  /**
+   * Which of the app's processes to read: its web service, or one worker or
+   * scheduled run by name. Absent means the web service.
+   */
+  process?: { kind: "worker" | "scheduled"; name: string } | undefined;
 }
 
 /**

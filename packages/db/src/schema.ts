@@ -54,6 +54,9 @@ export const capabilityReachEnum = pgEnum("capability_reach", [
   "refused",
 ]);
 
+/** What an app runs besides serving requests. See core's processes.ts. */
+export const processKindEnum = pgEnum("process_kind", ["worker", "scheduled"]);
+
 /** Where a capability run came from. */
 export const invocationViaEnum = pgEnum("invocation_via", ["mcp", "ask", "console"]);
 
@@ -387,6 +390,12 @@ export const deployments = pgTable(
       onDelete: "cascade",
     }),
     providerDeploymentId: text("provider_deployment_id").notNull(),
+    /**
+     * Whether this deploy has a web process. False for an app that is only a
+     * worker or a scheduled script: there is no service, no address and
+     * nothing to open, and none of that means the deploy went wrong.
+     */
+    servesWeb: boolean("serves_web").notNull().default(true),
     status: deploymentStatusEnum("status").notNull().default("queued"),
     url: text("url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -721,5 +730,49 @@ export const invocations = pgTable(
   (t) => [
     index("invocations_user_time_idx").on(t.userId, t.createdAt),
     index("invocations_app_time_idx").on(t.appId, t.createdAt),
+  ],
+);
+
+/**
+ * What an app runs besides answering requests: workers, which run all the
+ * time, and scheduled runs, which run to completion on a timetable.
+ *
+ * Found in the repository at each deploy (a Procfile, fly.toml, a GitHub
+ * Actions schedule), never written down for Cira. A redeploy updates what the
+ * repository says and keeps what a person decided - switched on, the
+ * timetable they set, the time they allowed - and one the repository no
+ * longer mentions is removed. Everything starts off: it runs code nobody is
+ * watching, and a worker costs money every hour it is on.
+ */
+export const processes = pgTable(
+  "processes",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: processKindEnum("kind").notNull(),
+    command: text("command").notNull(),
+    /** Which of the app's images it runs in, by service slug. */
+    serviceSlug: text("service_slug").notNull(),
+    /** Five-field cron in UTC. Null for a worker, or a run nobody has timed yet. */
+    schedule: text("schedule"),
+    /** Set when a person chose the timetable, so a redeploy keeps theirs. */
+    scheduleSetAt: timestamp("schedule_set_at", { withTimezone: true }),
+    /** How long each run may take, as asked for. Null for the default. */
+    timeoutMinutes: integer("timeout_minutes"),
+    enabled: boolean("enabled").notNull().default(false),
+    /** Where it was found: Procfile, fly.toml or GitHub Actions. */
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("processes_app_name_idx").on(t.appId, t.name),
+    index("processes_space_idx").on(t.spaceId),
   ],
 );

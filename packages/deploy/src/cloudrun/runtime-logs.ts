@@ -45,13 +45,37 @@ export function runtimeLogFilter(args: {
   until: Date;
   minimum: RuntimeLogMinimum;
   search: string | null;
+  /**
+   * Which of the app's processes: its web service (the default), or one of
+   * its scheduled runs or workers by its name on Google. Each logs under its
+   * own resource type, which is what keeps them apart.
+   */
+  target?: { type: "job" | "worker-pool"; name: string };
 }): string {
   if (!SERVICE_NAME.test(args.service)) throw new Error("Not a Cloud Run service name.");
   if (!REGION.test(args.region)) throw new Error("Not a Cloud Run region.");
+  if (args.target !== undefined && !SERVICE_NAME.test(args.target.name)) {
+    throw new Error("Not a Cloud Run name.");
+  }
+
+  const resource =
+    args.target === undefined
+      ? [
+          'resource.type = "cloud_run_revision"',
+          `resource.labels.service_name = "${args.service}"`,
+        ]
+      : args.target.type === "job"
+        ? [
+            'resource.type = "cloud_run_job"',
+            `resource.labels.job_name = "${args.target.name}"`,
+          ]
+        : [
+            'resource.type = "cloud_run_worker_pool"',
+            `resource.labels.worker_pool_name = "${args.target.name}"`,
+          ];
 
   const clauses = [
-    'resource.type = "cloud_run_revision"',
-    `resource.labels.service_name = "${args.service}"`,
+    ...resource,
     `resource.labels.location = "${args.region}"`,
     `timestamp >= "${args.since.toISOString()}"`,
     `timestamp <= "${args.until.toISOString()}"`,

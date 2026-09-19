@@ -3,6 +3,10 @@ import { DEFAULT_LIMITS, checkProcessOn } from "./limits.js";
 import {
   checkTimetable,
   mergeDeclarations,
+  planProcesses,
+  runTimeoutSeconds,
+  type DeployedProcess,
+  type StoredProcess,
   processName,
   readFlyToml,
   readProcfile,
@@ -222,5 +226,85 @@ describe("checkProcessOn", () => {
     expect(checkProcessOn("scheduled", workersPerSpace, DEFAULT_LIMITS).ok).toBe(
       workersPerSpace < scheduledPerSpace,
     );
+  });
+});
+
+describe("planProcesses", () => {
+  const stored = (over: Partial<StoredProcess>): StoredProcess => ({
+    id: "prc_1",
+    name: "report",
+    kind: "scheduled",
+    command: "python report.py",
+    serviceSlug: "app",
+    schedule: "0 9 * * 1",
+    scheduleSetAt: null,
+    timeoutMinutes: null,
+    enabled: true,
+    source: "GitHub Actions",
+    ...over,
+  });
+  const declared = (over: Partial<DeployedProcess>): DeployedProcess => ({
+    name: "report",
+    kind: "scheduled",
+    command: "python report.py --all",
+    schedule: "0 8 * * 1",
+    source: "GitHub Actions",
+    service: "app",
+    ...over,
+  });
+
+  it("takes how it runs from the repository and whether it runs from people", () => {
+    const plan = planProcesses([stored({})], [declared({})]);
+    expect(plan.update).toEqual([
+      { id: "prc_1", process: declared({}), schedule: "0 8 * * 1", enabled: true },
+    ]);
+  });
+
+  it("keeps a timetable a person chose over the repository's", () => {
+    const plan = planProcesses(
+      [stored({ schedule: "30 7 * * *", scheduleSetAt: new Date() })],
+      [declared({})],
+    );
+    expect(plan.update[0]?.schedule).toBe("30 7 * * *");
+  });
+
+  it("switches a process off when it changes kind, since its cost changed", () => {
+    const plan = planProcesses(
+      [stored({})],
+      [declared({ kind: "worker", schedule: null })],
+    );
+    expect(plan.update[0]).toMatchObject({ enabled: false, schedule: null });
+  });
+
+  it("creates what is new and removes what the repository no longer mentions", () => {
+    const plan = planProcesses(
+      [stored({}), stored({ id: "prc_2", name: "old" })],
+      [declared({}), declared({ name: "worker", kind: "worker", schedule: null })],
+    );
+    expect(plan.create.map((p) => p.name)).toEqual(["worker"]);
+    expect(plan.remove).toEqual(["prc_2"]);
+  });
+});
+
+describe("runTimeoutSeconds", () => {
+  const now = new Date("2026-09-19T12:00:00Z");
+  it("is the time asked for, held under the gap to the next run", () => {
+    expect(
+      runTimeoutSeconds(
+        { schedule: "0 9 * * 1", timeoutMinutes: null },
+        DEFAULT_LIMITS,
+        now,
+      ),
+    ).toBe(600);
+    expect(
+      runTimeoutSeconds(
+        { schedule: "*/5 * * * *", timeoutMinutes: 30 },
+        DEFAULT_LIMITS,
+        now,
+      ),
+    ).toBe(240);
+    expect(
+      runTimeoutSeconds({ schedule: null, timeoutMinutes: 20 }, DEFAULT_LIMITS, now),
+    ).toBe(1200);
   });
 });

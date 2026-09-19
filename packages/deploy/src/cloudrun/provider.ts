@@ -6,6 +6,8 @@ import {
   type DeploymentLogLine,
   type DeploymentProvider,
   type DeploymentResult,
+  type ProcessSpec,
+  type ProcessState,
   type RuntimeLogPage,
   type RuntimeLogQuery,
 } from "@cira/core";
@@ -16,6 +18,7 @@ import {
   imageRef,
   parseHandle,
   parseSourceObject,
+  processResourceName,
   serviceName,
 } from "./names.js";
 import {
@@ -23,6 +26,7 @@ import {
   toRuntimeLogEntry,
   type GoogleLogEntry,
 } from "./runtime-logs.js";
+import { CloudRunProcesses } from "./processes.js";
 import { imageTag, parseArchiveUri, type ParsedArchive } from "./source.js";
 import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
 
@@ -150,10 +154,17 @@ interface ServiceSpec {
 export class CloudRunProvider implements DeploymentProvider {
   readonly name = "cloudrun";
 
+  /** Workers and scheduled runs; see processes.ts. */
+  private readonly processes: CloudRunProcesses;
+
   constructor(
     private readonly config: CloudRunConfig,
     private readonly tokens: GoogleTokens,
-  ) {}
+  ) {
+    this.processes = new CloudRunProcesses(config, tokens, (service, tag, part) =>
+      this.imageFor(service, tag, part),
+    );
+  }
 
   async deploy(app: AppDeploymentInput): Promise<DeploymentResult> {
     const service = serviceName({
@@ -187,6 +198,42 @@ export class CloudRunProvider implements DeploymentProvider {
     // one that cannot start, so a redeploy would take the app down for the
     // length of its own build. The swap happens in `getStatus`, once there is
     // something to swap to.
+    // An app none of whose parts takes the port is only workers and
+    // scheduled runs. It has no service to write, and no address.
+    const web = app.services.some((part) => part.ingress);
+
+    // Workers and scheduled runs get the environment now, for the same reason
+    // the service does below: nothing later in the deploy will have it.
+    const writeProcesses = this.processes.deploy({
+      service,
+      processes: app.processes,
+      env: app.env,
+      parts: new Map(
+        app.services.map((part) => [
+          part.slug,
+          {
+            builder: part.dockerfile === null ? "buildpacks" : "dockerfile",
+            imagePart: several ? part.slug : "",
+          },
+        ]),
+      ),
+    });
+
+    if (!web) {
+      // With no web service they are the app, so failing to create them is
+      // failing to deploy it.
+      await writeProcesses;
+      return {
+        providerDeploymentId: deploymentHandle({ buildId, service, tag, web: false }),
+        status: "building",
+        url: null,
+      };
+    }
+
+    // Beside a web service they are not the app, and a problem with them is
+    // reported on its page rather than standing in the way of the deploy.
+    await writeProcesses.catch(() => undefined);
+
     const current = await this.getService(service);
     const serving = current?.template?.containers ?? [];
     // By name when there are several, and by position when there is one -
@@ -223,7 +270,7 @@ export class CloudRunProvider implements DeploymentProvider {
    * puts it into service.
    */
   async getStatus(deploymentId: string): Promise<DeploymentResult> {
-    const { buildId, service, tag } = parseHandle(deploymentId);
+    const { buildId, service, tag, web } = parseHandle(deploymentId);
     const build = await this.getBuild(buildId);
 
     if (!buildSucceeded(build.status)) {
@@ -233,6 +280,22 @@ export class CloudRunProvider implements DeploymentProvider {
         url: null,
       };
     }
+
+    // Workers and scheduled runs move onto the new build with the command the
+    // repository now declares. Asked every poll until nothing is left to
+    // move, the same way the service's own swap below is.
+    if (!web) {
+      const moved = await this.processes.swap({ service, tag, buildId });
+      if (moved) {
+        return { providerDeploymentId: deploymentId, status: "deploying", url: null };
+      }
+      // Nothing to answer requests, so nothing to wait on: it is live the
+      // moment its processes are on the build.
+      return (await this.processes.any(service))
+        ? { providerDeploymentId: deploymentId, status: "live", url: null }
+        : { providerDeploymentId: deploymentId, status: "removed", url: null };
+    }
+    await this.processes.swap({ service, tag, buildId }).catch(() => undefined);
 
     const current = await this.getService(service);
     if (current === null) {
@@ -370,6 +433,14 @@ export class CloudRunProvider implements DeploymentProvider {
       until: query.until,
       minimum: query.minimum,
       search: query.search,
+      ...(query.process === undefined
+        ? {}
+        : {
+            target: {
+              type: query.process.kind === "scheduled" ? "job" : "worker-pool",
+              name: processResourceName(service, query.process.name),
+            },
+          }),
     });
 
     const access = await this.tokens.accessToken();
@@ -442,7 +513,29 @@ export class CloudRunProvider implements DeploymentProvider {
   }
 
   async remove(deploymentId: string): Promise<void> {
-    await this.removeService(parseHandle(deploymentId).service);
+    const { service } = parseHandle(deploymentId);
+    // Everything it runs goes with it, timetables included: a scheduled run
+    // outliving its app would keep starting code nobody can see.
+    await this.processes.removeAll(service);
+    await this.removeService(service);
+  }
+
+  async setProcess(deploymentId: string, process: ProcessSpec): Promise<void> {
+    await this.processes.set(parseHandle(deploymentId).service, process);
+  }
+
+  async runProcess(
+    deploymentId: string,
+    name: string,
+  ): Promise<{ started: boolean; reason?: string }> {
+    return this.processes.run(parseHandle(deploymentId).service, name);
+  }
+
+  async processStates(
+    deploymentId: string,
+    processes: readonly Pick<ProcessSpec, "name" | "kind">[],
+  ): Promise<ProcessState[]> {
+    return this.processes.states(parseHandle(deploymentId).service, processes);
   }
 
   private async removeService(service: string): Promise<void> {

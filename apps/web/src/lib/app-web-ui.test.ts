@@ -73,6 +73,7 @@ const deployment = (
   providerDeploymentId: "p1",
   status,
   url,
+  servesWeb: true,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });

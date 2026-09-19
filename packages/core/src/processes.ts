@@ -314,3 +314,96 @@ export function checkTimetable(
     gapMinutes: gap,
   };
 }
+
+/** A process as Cira keeps it, with the decisions people made about it. */
+export interface StoredProcess {
+  id: string;
+  name: string;
+  kind: ProcessKind;
+  command: string;
+  serviceSlug: string;
+  schedule: string | null;
+  /** When a person chose the timetable; null when it came from the repository. */
+  scheduleSetAt: Date | null;
+  timeoutMinutes: number | null;
+  enabled: boolean;
+  source: string;
+}
+
+/** A declared process, and which of the app's images it runs in. */
+export type DeployedProcess = DeclaredProcess & { service: string };
+
+/**
+ * What a deploy does to the processes already on record.
+ *
+ * The repository is the truth about what exists and how it runs; people are
+ * the truth about whether it runs and when. So a redeploy takes the command,
+ * kind and source from the repository, keeps a timetable a person chose over
+ * the one the repository suggests, and keeps whether it was switched on -
+ * unless it changed kind, because a scheduled run turning into a worker costs
+ * money every hour and nobody agreed to that. What the repository no longer
+ * mentions is removed.
+ */
+export function planProcesses(
+  existing: readonly StoredProcess[],
+  declared: readonly DeployedProcess[],
+): {
+  create: DeployedProcess[];
+  update: Array<{
+    id: string;
+    process: DeployedProcess;
+    schedule: string | null;
+    enabled: boolean;
+  }>;
+  remove: string[];
+} {
+  const byName = new Map(existing.map((p) => [p.name, p]));
+  const create: DeployedProcess[] = [];
+  const update: Array<{
+    id: string;
+    process: DeployedProcess;
+    schedule: string | null;
+    enabled: boolean;
+  }> = [];
+
+  for (const process of declared) {
+    const stored = byName.get(process.name);
+    if (stored === undefined) {
+      create.push(process);
+      continue;
+    }
+    const sameKind = stored.kind === process.kind;
+    update.push({
+      id: stored.id,
+      process,
+      schedule:
+        process.kind === "worker"
+          ? null
+          : stored.scheduleSetAt !== null && sameKind
+            ? stored.schedule
+            : process.schedule,
+      enabled: sameKind && stored.enabled,
+    });
+  }
+
+  const kept = new Set(declared.map((p) => p.name));
+  const remove = existing.filter((p) => !kept.has(p.name)).map((p) => p.id);
+  return { create, update, remove };
+}
+
+/**
+ * How long each run of a scheduled process may take, in seconds: what was
+ * asked for, held under the gap to its next run. A run with no timetable yet
+ * is given the default, since it can only be started by hand.
+ */
+export function runTimeoutSeconds(
+  process: Pick<StoredProcess, "schedule" | "timeoutMinutes">,
+  limits: Limits,
+  now: Date,
+): number {
+  const fallback =
+    (process.timeoutMinutes ?? limits.processes.defaultTimeoutMinutes) * 60;
+  if (process.schedule === null) return fallback;
+  const checked = checkTimetable(process.schedule, process.timeoutMinutes, limits, now);
+  return checked.ok ? checked.timeoutMinutes * 60 : fallback;
+}

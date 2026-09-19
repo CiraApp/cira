@@ -91,27 +91,42 @@ export function imageRef(args: {
  * Colons separate them because none of the three can contain one: a build id
  * is a uuid, a service name is DNS-safe, and a tag is one of Cira's own ids.
  */
+/**
+ * What a deployment record holds to find its deploy again: the build, the
+ * service it rolls out to, the image tag - and, for an app with no web
+ * process, a fourth part saying so. Such an app has no service to roll out
+ * to, and without the mark its finished build would look like one whose
+ * service had been deleted from under it. Every handle written before this
+ * has three parts and means what it always meant.
+ */
 export function deploymentHandle(args: {
   buildId: string;
   service: string;
   tag: string;
+  web?: boolean;
 }): string {
-  return `${args.buildId}:${args.service}:${args.tag}`;
+  const base = `${args.buildId}:${args.service}:${args.tag}`;
+  return args.web === false ? `${base}:${NO_WEB}` : base;
 }
+
+const NO_WEB = "noweb";
 
 export interface DeploymentHandle {
   buildId: string;
   service: string;
   tag: string;
+  /** False for an app that is only workers and scheduled runs. */
+  web: boolean;
 }
 
 export function parseHandle(handle: string): DeploymentHandle {
-  const [buildId, service, tag, ...rest] = handle.split(":");
+  const [buildId, service, tag, mark, ...rest] = handle.split(":");
   if (
     buildId === undefined ||
     service === undefined ||
     tag === undefined ||
     rest.length > 0 ||
+    (mark !== undefined && mark !== NO_WEB) ||
     buildId === "" ||
     service === "" ||
     tag === ""
@@ -120,7 +135,17 @@ export function parseHandle(handle: string): DeploymentHandle {
     // and saying so beats a confusing failure against a build that never was.
     throw new Error("That deployment was not made by Cloud Run.");
   }
-  return { buildId, service, tag };
+  return { buildId, service, tag, web: mark !== NO_WEB };
+}
+
+/**
+ * A worker's or scheduled run's name on Google: the process's own name and
+ * the app's id suffix, which is unique across every company. Short enough
+ * for every Google product it is used in, readable in the console.
+ */
+export function processResourceName(service: string, process: string): string {
+  const suffix = service.slice(service.lastIndexOf("-") + 1);
+  return `${process}-${suffix}`;
 }
 
 /**

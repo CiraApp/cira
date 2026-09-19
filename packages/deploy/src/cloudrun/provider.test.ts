@@ -562,8 +562,10 @@ describe("remove", () => {
 
     await provider().remove(`b-1:${SERVICE}:${TAG}`);
 
-    expect(calls[0]?.method).toBe("DELETE");
-    expect(calls[0]?.url).toContain(`/services/${SERVICE}`);
+    const deleted = calls.filter((c) => c.method === "DELETE");
+    expect(deleted.map((c) => c.url)).toEqual([
+      expect.stringContaining(`/services/${SERVICE}`),
+    ]);
   });
 
   it("treats already gone as done", async () => {

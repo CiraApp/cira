@@ -22,6 +22,8 @@ export const ID_PREFIXES = {
   askUsage: "ask",
   /** One capability run: who, what, from where, never with what. */
   invocation: "run",
+  /** A worker or scheduled run an app declares. */
+  process: "prc",
   /** A CLI's long-lived credential, kept as a hash. */
   cliToken: "tok",
   /** One `cira login` in progress. */

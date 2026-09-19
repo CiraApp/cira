@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { FRAMEWORKS } from "@cira/core";
+import { FRAMEWORKS, parseSchedule } from "@cira/core";
 import { isSafeDockerfilePath } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
@@ -60,6 +60,25 @@ const body = z.object({
   // docs/secrets.md. Absent means "this app has none", which clears any the
   // app was previously deployed with.
   env: envSchema.optional(),
+  /** Whether the repository has a web process. Absent from an older CLI: yes. */
+  web: z.boolean().default(true),
+  /** Workers and scheduled runs found in the repository. */
+  processes: z
+    .array(
+      z.object({
+        name: z.string().regex(/^[a-z][a-z0-9-]{0,29}$/),
+        kind: z.enum(["worker", "scheduled"]),
+        command: z.string().trim().min(1).max(1000),
+        schedule: z.string().max(100).nullable(),
+        source: z.enum(["Procfile", "fly.toml", "GitHub Actions"]),
+        service: z
+          .string()
+          .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+          .max(24),
+      }),
+    )
+    .max(20)
+    .default([]),
 });
 
 export async function POST(request: Request) {
@@ -86,6 +105,13 @@ export async function POST(request: Request) {
     container: parsed.data.container,
     services: parsed.data.services ?? null,
     env: parsed.data.env ?? {},
+    web: parsed.data.web,
+    // A timetable is taken only if Cira can run it; one it cannot is dropped
+    // for a person to set, rather than refusing the whole deploy.
+    processes: parsed.data.processes.map((p) => ({
+      ...p,
+      schedule: p.schedule !== null && parseSchedule(p.schedule).ok ? p.schedule : null,
+    })),
   });
 
   if (!outcome.ok) {

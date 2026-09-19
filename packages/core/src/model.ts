@@ -138,6 +138,8 @@ export interface Deployment {
   providerDeploymentId: string;
   status: DeploymentStatus;
   url: string | null;
+  /** False for an app that is only workers or scheduled runs: nothing to open. */
+  servesWeb: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

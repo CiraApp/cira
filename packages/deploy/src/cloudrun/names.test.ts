@@ -4,6 +4,7 @@ import {
   deploymentHandle,
   imageRef,
   parseHandle,
+  processResourceName,
   serviceName,
   servicePath,
   sourceObject,
@@ -111,7 +112,20 @@ describe("deploymentHandle", () => {
       buildId: "9f1c-4a",
       service: "acme-ledger",
       tag: "src_123",
+      web: true,
     });
+  });
+
+  it("marks an app with no web process, and reads every older handle as one with", () => {
+    const handle = deploymentHandle({
+      buildId: "b1",
+      service: "acme-sync-0000app1",
+      tag: "t1",
+      web: false,
+    });
+    expect(handle).toBe("b1:acme-sync-0000app1:t1:noweb");
+    expect(parseHandle(handle).web).toBe(false);
+    expect(parseHandle("b1:acme-sync-0000app1:t1").web).toBe(true);
   });
 
   // Every deployment row written before this provider existed holds a bare
@@ -119,6 +133,7 @@ describe("deploymentHandle", () => {
   it("says so when it is handed another provider's id", () => {
     expect(() => parseHandle("dpl_9RaYvCa")).toThrow("not made by Cloud Run");
     expect(() => parseHandle("a:b:c:d")).toThrow("not made by Cloud Run");
+    expect(() => parseHandle("a:b:c:noweb:e")).toThrow("not made by Cloud Run");
     expect(() => parseHandle("a::c")).toThrow("not made by Cloud Run");
   });
 });
@@ -149,6 +164,14 @@ describe("servicePath", () => {
   it("is the name the Cloud Run API addresses", () => {
     expect(servicePath({ projectId: "p", region: "us-central1", service: "s" })).toBe(
       "projects/p/locations/us-central1/services/s",
+    );
+  });
+});
+
+describe("processResourceName", () => {
+  it("is the process and the app's unique suffix", () => {
+    expect(processResourceName("paradym-backend-only-service-5bad0d4c", "worker")).toBe(
+      "worker-5bad0d4c",
     );
   });
 });

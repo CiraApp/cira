@@ -101,6 +101,25 @@ describe("runtimeLogFilter", () => {
     }
   });
 
+  it("reads a scheduled run's or a worker's lines instead, by their own resource", () => {
+    expect(
+      runtimeLogFilter({ ...base, target: { type: "job", name: "report-3f9a1c2e" } }),
+    ).toContain(
+      'resource.type = "cloud_run_job" AND resource.labels.job_name = "report-3f9a1c2e"',
+    );
+    expect(
+      runtimeLogFilter({
+        ...base,
+        target: { type: "worker-pool", name: "worker-3f9a1c2e" },
+      }),
+    ).toContain(
+      'resource.type = "cloud_run_worker_pool" AND resource.labels.worker_pool_name = "worker-3f9a1c2e"',
+    );
+    expect(() =>
+      runtimeLogFilter({ ...base, target: { type: "job", name: 'x" OR "' } }),
+    ).toThrow();
+  });
+
   it("refuses a service or region that is not shaped like one", () => {
     expect(() =>
       runtimeLogFilter({ ...base, service: 'x" OR resource.type : "' }),
