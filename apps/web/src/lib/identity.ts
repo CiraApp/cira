@@ -74,11 +74,13 @@ export async function getCurrentUser(): Promise<User | null> {
 
   const database = db();
 
-  const [existing] = await database
+  const [known] = await database
     .select()
     .from(users)
     .where(eq(users.externalId, identity.externalId))
     .limit(1);
+
+  const existing = known ?? (await relink(identity));
 
   if (existing !== undefined) {
     // Keep the profile fresh, but never move the Cira id: access grants and app
@@ -121,7 +123,9 @@ export async function getCurrentUser(): Promise<User | null> {
       email: identity.email,
       imageUrl: identity.imageUrl,
     })
-    .onConflictDoNothing({ target: users.externalId })
+    // Either unique column: a concurrent first request may have created the
+    // row, or re-linked one with this address, between the reads and here.
+    .onConflictDoNothing()
     .returning();
 
   if (created !== undefined) return toUser(created);
@@ -134,6 +138,30 @@ export async function getCurrentUser(): Promise<User | null> {
     .limit(1);
 
   return raced === undefined ? null : toUser(raced);
+}
+
+/**
+ * The Cira user this person already is, arriving under a new provider id.
+ *
+ * A sign-in provider's id for a person is only stable within one instance of
+ * it. Moving Clerk from its development instance to a production one gives
+ * everybody a new id, and without this every existing person would arrive as a
+ * stranger - worse, as a stranger whose email is already taken, which the
+ * unique index refuses. So a person whose verified address is already a Cira
+ * user is that user, and the row is moved to the new id in one update.
+ *
+ * Only a verified address is ever used (see `readProviderIdentity`), and an
+ * email is already what Cira trusts for invites and for joining a space by
+ * domain, so this admits nobody that a verified address would not. It also
+ * works in reverse, so pointing Cira back at the old instance is safe.
+ */
+async function relink(identity: ProviderIdentity): Promise<UserRow | undefined> {
+  const [moved] = await db()
+    .update(users)
+    .set({ externalId: identity.externalId })
+    .where(eq(users.email, identity.email))
+    .returning();
+  return moved;
 }
 
 /**
