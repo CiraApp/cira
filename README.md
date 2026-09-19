@@ -614,13 +614,13 @@ through `/monitoring` on Cira's own domain so ad blockers do not drop them,
 and source maps are uploaded at the end of the production build, then deleted
 rather than served.
 
-Two endpoints exist for an uptime monitor to ask every minute. Both answer
-200 or 503 and say nothing else:
-
-| Endpoint            | Up when                                                                          |
-| ------------------- | -------------------------------------------------------------------------------- |
-| `/api/health`       | the app is serving and its database answers                                      |
-| `/api/health/proxy` | the app proxy turns a stranger away in its own words, so the Worker itself is up |
+`/api/health` is for an uptime monitor to ask every minute. It is up (200)
+only when the app is serving, its database answers and the app proxy turns a
+stranger away in its own words, which shows the Worker itself is running; it
+answers 503 naming each part that is not, and says nothing else. One Sentry
+uptime monitor watches it, since Sentry's free plan has one, and keeps the
+body of a failed check, so its alert says which part broke.
+`/api/health/proxy` asks about the proxy alone.
 
 ### Telling people when something breaks
 

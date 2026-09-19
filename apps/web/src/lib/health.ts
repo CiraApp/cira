@@ -61,6 +61,16 @@ function within<T>(work: Promise<T>): Promise<T> {
   ]);
 }
 
+/**
+ * Several checks as one answer: up only if every part is, and naming each
+ * part that is not. One monitor watches all of Cira this way, and its alert
+ * says which part broke, since the monitor keeps the body of a failed check.
+ */
+export function combine(verdicts: readonly HealthVerdict[]): HealthVerdict {
+  const failing = verdicts.flatMap((v) => (v.ok ? [] : [v.failing]));
+  return failing.length === 0 ? { ok: true } : { ok: false, failing: failing.join(", ") };
+}
+
 /** The answer a monitor reads: 200 when up, 503 when not, never cached. */
 export function healthResponse(verdict: HealthVerdict): Response {
   return Response.json(verdict, {

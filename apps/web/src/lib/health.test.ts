@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkProxy, healthResponse } from "./health";
+import { checkProxy, combine, healthResponse } from "./health";
 
 /** The app proxy counts as up only when it answers as itself. */
 describe("checkProxy", () => {
@@ -33,5 +33,16 @@ describe("checkProxy", () => {
     expect(up.status).toBe(200);
     expect(up.headers.get("cache-control")).toBe("no-store");
     expect(healthResponse({ ok: false, failing: "database" }).status).toBe(503);
+  });
+
+  it("is up only when every part is, and names each part that is not", () => {
+    expect(combine([{ ok: true }, { ok: true }])).toEqual({ ok: true });
+    expect(
+      combine([
+        { ok: false, failing: "database" },
+        { ok: true },
+        { ok: false, failing: "app proxy" },
+      ]),
+    ).toEqual({ ok: false, failing: "database, app proxy" });
   });
 });
