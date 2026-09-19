@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppDeploymentInput } from "@cira/core";
+import { RuntimeLogsError, type AppDeploymentInput } from "@cira/core";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
 import { CloudRunProvider } from "./provider.js";
@@ -411,6 +411,115 @@ describe("getLogs", () => {
     ]);
 
     expect(await provider().getLogs(`b-1:${SERVICE}:${TAG}`)).toEqual([]);
+  });
+});
+
+describe("getRuntimeLogs", () => {
+  const query = {
+    since: new Date("2026-09-19T13:00:00.000Z"),
+    until: new Date("2026-09-19T14:00:00.000Z"),
+    minimum: "all" as const,
+    search: null,
+    order: "newest" as const,
+    pageToken: null,
+    limit: 200,
+  };
+
+  it("asks Cloud Logging for this app's service and nothing else", async () => {
+    serve([
+      [
+        /logging\.googleapis/,
+        () => ({
+          entries: [
+            {
+              insertId: "1",
+              timestamp: "2026-09-19T13:59:00Z",
+              severity: "INFO",
+              textPayload: "orders service on :8080",
+            },
+          ],
+          nextPageToken: "older",
+        }),
+      ],
+    ]);
+
+    const page = await provider().getRuntimeLogs(`b-1:${SERVICE}:${TAG}`, query);
+
+    expect(page.nextPageToken).toBe("older");
+    expect(page.entries.map((e) => e.message)).toEqual(["orders service on :8080"]);
+
+    const call = calls.at(-1);
+    expect(call?.method).toBe("POST");
+    expect(call?.url).toBe("https://logging.googleapis.com/v2/entries:list");
+    const body = call?.body as Record<string, unknown>;
+    expect(body["resourceNames"]).toEqual(["projects/proj"]);
+    expect(body["orderBy"]).toBe("timestamp desc");
+    expect(body["pageSize"]).toBe(200);
+    expect(body["pageToken"]).toBeUndefined();
+    // The service is the one the deployment names, in the app's own region.
+    expect(body["filter"]).toContain(`resource.labels.service_name = "${SERVICE}"`);
+    expect(body["filter"]).toContain('resource.labels.location = "us-central1"');
+  });
+
+  it("reads forwards for Live, and continues from a page token", async () => {
+    serve([[/logging\.googleapis/, () => ({})]]);
+
+    const page = await provider().getRuntimeLogs(`b-1:${SERVICE}:${TAG}`, {
+      ...query,
+      order: "oldest",
+      pageToken: "t-2",
+      limit: 10_000,
+    });
+
+    expect(page).toEqual({ entries: [], nextPageToken: null });
+    const body = calls.at(-1)?.body as Record<string, unknown>;
+    expect(body["orderBy"]).toBe("timestamp asc");
+    expect(body["pageToken"]).toBe("t-2");
+    // Google caps a page; asking for more than it allows is clamped here.
+    expect(body["pageSize"]).toBe(500);
+  });
+
+  /**
+   * Google's refusals, as reasons a page can act on. The text Google sends
+   * names the project and the service account, so none of it is passed on.
+   */
+  it("turns Google's refusals into reasons, and repeats none of Google's words", async () => {
+    const reasons: Array<[number, string]> = [
+      [403, "not-allowed"],
+      [429, "busy"],
+      [500, "unavailable"],
+    ];
+    for (const [status, reason] of reasons) {
+      serve([
+        [
+          /logging\.googleapis/,
+          () =>
+            new Response(
+              JSON.stringify({
+                error: {
+                  message:
+                    "deployer@proj.iam.gserviceaccount.com lacks logging.logEntries.list",
+                },
+              }),
+              { status },
+            ),
+        ],
+      ]);
+
+      const failure = await provider()
+        .getRuntimeLogs(`b-1:${SERVICE}:${TAG}`, query)
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(RuntimeLogsError);
+      expect((failure as RuntimeLogsError).reason).toBe(reason);
+      expect((failure as Error).message).not.toContain("deployer@");
+    }
+  });
+
+  it("refuses a deployment Cloud Run did not make", async () => {
+    await expect(provider().getRuntimeLogs("dpl_vercel123", query)).rejects.toThrow(
+      "not made by Cloud Run",
+    );
   });
 });
 

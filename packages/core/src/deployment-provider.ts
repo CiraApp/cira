@@ -1,3 +1,4 @@
+import type { RuntimeLogPage, RuntimeLogQuery } from "./runtime-logs.js";
 import type { DeploymentStatus } from "./model.js";
 
 /**
@@ -140,5 +141,15 @@ export interface DeploymentProvider {
   getStatus(deploymentId: string): Promise<DeploymentResult>;
 
   getLogs(deploymentId: string): Promise<DeploymentLogLine[]>;
+
+  /**
+   * What the app has printed while running, and the requests that reached it.
+   *
+   * Any deployment of the app will do: runtime logs belong to the app's
+   * service, which every one of its deployments shares, so this reads the same
+   * whichever build is serving. Throws `RuntimeLogsError`.
+   */
+  getRuntimeLogs(deploymentId: string, query: RuntimeLogQuery): Promise<RuntimeLogPage>;
+
   remove(deploymentId: string): Promise<void>;
 }

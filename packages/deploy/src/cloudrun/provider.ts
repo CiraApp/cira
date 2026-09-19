@@ -1,9 +1,12 @@
-import type {
-  AppDeploymentInput,
-  DeployableService,
-  DeploymentLogLine,
-  DeploymentProvider,
-  DeploymentResult,
+import {
+  RuntimeLogsError,
+  type AppDeploymentInput,
+  type DeployableService,
+  type DeploymentLogLine,
+  type DeploymentProvider,
+  type DeploymentResult,
+  type RuntimeLogPage,
+  type RuntimeLogQuery,
 } from "@cira/core";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
@@ -14,6 +17,11 @@ import {
   parseSourceObject,
   serviceName,
 } from "./names.js";
+import {
+  runtimeLogFilter,
+  toRuntimeLogEntry,
+  type GoogleLogEntry,
+} from "./runtime-logs.js";
 import { imageTag, parseArchiveUri, type ParsedArchive } from "./source.js";
 import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
 
@@ -40,6 +48,7 @@ const BUILD_API = "https://cloudbuild.googleapis.com/v1";
 const RUN_API = "https://run.googleapis.com/v2";
 const ARTIFACTS_API = "https://artifactregistry.googleapis.com/v1";
 const STORAGE = "https://storage.googleapis.com/storage/v1";
+const LOGGING_API = "https://logging.googleapis.com/v2";
 
 /** Long enough for a cold buildpacks build of a large app, short of forever. */
 const BUILD_TIMEOUT = "1200s";
@@ -337,6 +346,82 @@ export class CloudRunProvider implements DeploymentProvider {
       .split("\n")
       .filter((line) => line.trim() !== "")
       .map((message) => ({ timestamp: at, message }));
+  }
+
+  /**
+   * What the app printed while it ran, and the requests that reached it.
+   *
+   * From Cloud Logging, which is the only place Cloud Run writes them - unlike
+   * build output, there is no bucket to read instead, so this is the one call
+   * that needs the deployer account to hold Logs Viewer. The service comes
+   * from the deployment's own handle and the rest of the query is built in
+   * `runtimeLogFilter`, so nothing here can be pointed at another app.
+   */
+  async getRuntimeLogs(
+    deploymentId: string,
+    query: RuntimeLogQuery,
+  ): Promise<RuntimeLogPage> {
+    const { service } = parseHandle(deploymentId);
+    const filter = runtimeLogFilter({
+      service,
+      region: this.config.region,
+      since: query.since,
+      until: query.until,
+      minimum: query.minimum,
+      search: query.search,
+    });
+
+    const access = await this.tokens.accessToken();
+    let response: Response;
+    try {
+      response = await fetch(`${LOGGING_API}/entries:list`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${access}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          resourceNames: [`projects/${this.config.projectId}`],
+          filter,
+          orderBy: query.order === "newest" ? "timestamp desc" : "timestamp asc",
+          pageSize: Math.min(Math.max(Math.trunc(query.limit), 1), 500),
+          ...(query.pageToken === null ? {} : { pageToken: query.pageToken }),
+        }),
+      });
+    } catch {
+      throw new RuntimeLogsError("Could not reach Google's logs.", "unavailable");
+    }
+
+    // Google's error text names the project and the account, so it is turned
+    // into a reason rather than passed on.
+    if (response.status === 403 || response.status === 401) {
+      throw new RuntimeLogsError(
+        "Cira is not allowed to read this project's logs.",
+        "not-allowed",
+      );
+    }
+    if (response.status === 429) {
+      throw new RuntimeLogsError("Google is limiting log reads right now.", "busy");
+    }
+    if (!response.ok) {
+      throw new RuntimeLogsError(
+        `Google would not return the logs (${response.status}).`,
+        "unavailable",
+      );
+    }
+
+    const body = (await response.json()) as {
+      entries?: GoogleLogEntry[];
+      nextPageToken?: string;
+    };
+
+    return {
+      entries: (body.entries ?? []).map(toRuntimeLogEntry),
+      nextPageToken:
+        typeof body.nextPageToken === "string" && body.nextPageToken !== ""
+          ? body.nextPageToken
+          : null,
+    };
   }
 
   async remove(deploymentId: string): Promise<void> {
