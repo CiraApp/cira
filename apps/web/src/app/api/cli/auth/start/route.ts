@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   await db()
     .insert(cliAuthRequests)
     .values({
-      id: newId("invite"),
+      id: newId("cliLogin"),
       // The CLI gets the code; the table keeps only enough to recognise it.
       deviceCodeHash: hashToken(deviceCode),
       userCode,

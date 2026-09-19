@@ -54,6 +54,23 @@ export const capabilityReachEnum = pgEnum("capability_reach", [
   "refused",
 ]);
 
+/** Where a capability run came from. */
+export const invocationViaEnum = pgEnum("invocation_via", ["mcp", "ask", "console"]);
+
+/**
+ * How a capability run ended, in Cira's words. `ran` means the app answered,
+ * whatever it said - its status is kept beside this. Everything else is a
+ * check that stopped the run before anything was sent.
+ */
+export const invocationOutcomeEnum = pgEnum("invocation_outcome", [
+  "ran",
+  "refused",
+  "pending",
+  "disabled",
+  "invalid-input",
+  "unreachable",
+]);
+
 export const capabilityMethodEnum = pgEnum("capability_method", [
   "GET",
   "POST",
@@ -662,4 +679,47 @@ export const askUsage = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ask_usage_user_time_idx").on(t.userId, t.createdAt)],
+);
+
+/**
+ * Who ran which capability, from where, and how it ended.
+ *
+ * The record a company asks for the first time a refund goes out that nobody
+ * remembers issuing - and exactly as much as answers that. Never the input and
+ * never the reply: those are the app's data, and Cira passes them through
+ * rather than keeping them (docs/secrets.md). A capability that is later
+ * removed leaves its runs behind under the name it had.
+ *
+ * Also what the per-person run limit counts, so a run that limit refused is
+ * not written: it did not happen, and recording it would let someone who is
+ * being limited keep themselves limited.
+ */
+export const invocations = pgTable(
+  "invocations",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    capabilityId: text("capability_id").references(() => capabilities.id, {
+      onDelete: "set null",
+    }),
+    capabilityName: text("capability_name").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    via: invocationViaEnum("via").notNull(),
+    outcome: invocationOutcomeEnum("outcome").notNull(),
+    /** What the app answered with, when it was reached. */
+    status: integer("status"),
+    elapsedMs: integer("elapsed_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("invocations_user_time_idx").on(t.userId, t.createdAt),
+    index("invocations_app_time_idx").on(t.appId, t.createdAt),
+  ],
 );

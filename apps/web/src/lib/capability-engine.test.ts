@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { newId, type User } from "@cira/core";
+import { sql } from "drizzle-orm";
+import { DEFAULT_LIMITS, newId, type User } from "@cira/core";
 import { NO_SUCH_CAPABILITY } from "./capabilities";
 import type * as CiraDb from "@cira/db";
 import type * as CiraDeploy from "@cira/deploy";
@@ -700,6 +701,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         user: employee,
         capabilityId: id,
         input: { order_id: "ord 7/x", expand: "lines" },
+        via: "mcp",
       });
 
       expect(result.ok).toBe(true);
@@ -713,6 +715,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         user: employee,
         capabilityId: id,
         input: { order_id: ".." },
+        via: "mcp",
       });
       expect(escape.ok).toBe(false);
     } finally {
@@ -748,6 +751,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         user: employee,
         capabilityId: id,
         input: {},
+        via: "mcp",
       });
       expect(result.ok).toBe(false);
       expect(result.ok === false && result.error).toBe("readLedgerTotals failed (500).");
@@ -1071,6 +1075,162 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       expect(bad.ok).toBe(false);
       expect(bad.error).toMatch(/^Invalid input/);
       expect(received).toHaveLength(0);
+    });
+  });
+  /**
+   * The record of who ran what, and the per-person limit counted from it.
+   *
+   * Every surface goes through the same function, so each writes the same
+   * row: who, which capability, from where, how it ended - and never what was
+   * sent or what came back.
+   */
+  describe("the record of who ran what", () => {
+    const readId = newId("capability");
+    const writeId = newId("capability");
+
+    beforeAll(async () => {
+      const { capabilities } = await import("@cira/db");
+      const confirmed = {
+        appId,
+        spaceId,
+        reach: "callable" as const,
+        answeredBy: deploymentId,
+        verifiedAt: new Date(),
+      };
+      await database.insert(capabilities).values([
+        {
+          ...confirmed,
+          id: readId,
+          name: "recordedRevenue",
+          description: "Total revenue between two dates.",
+          inputSchema: {
+            type: "object",
+            properties: { startDate: { type: "string" }, endDate: { type: "string" } },
+            required: ["startDate", "endDate"],
+          },
+          method: "GET",
+          path: "/api/revenue",
+          risk: "read",
+          enabled: true,
+        },
+        {
+          ...confirmed,
+          id: writeId,
+          name: "recordedRefund",
+          description: "Refund a payment.",
+          inputSchema: { type: "object", properties: {}, required: [] },
+          method: "POST",
+          path: "/api/refunds",
+          risk: "write",
+          enabled: false,
+        },
+      ]);
+    });
+
+    const runsOf = async (capabilityId: string) => {
+      const { invocations } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      return database
+        .select()
+        .from(invocations)
+        .where(eq(invocations.capabilityId, capabilityId));
+    };
+
+    it("records each run with who, where from and how it ended, never the input", async () => {
+      const { runTool } = await import("./mcp");
+      const { runCapability } = await import("./console-actions");
+      const secretish = "2026-08-01";
+
+      await runTool(employee, "invoke_capability", {
+        capabilityId: readId,
+        input: { startDate: secretish, endDate: "2026-08-31" },
+      });
+      signedIn = founder;
+      await runCapability(readId, { startDate: secretish, endDate: "2026-08-31" });
+      await runTool(
+        employee,
+        "invoke_capability",
+        { capabilityId: writeId, input: {} },
+        "ask",
+      );
+
+      const reads = await runsOf(readId);
+      expect(
+        reads.map((r) => ({
+          user: r.userId,
+          via: r.via,
+          outcome: r.outcome,
+          status: r.status,
+        })),
+      ).toEqual(
+        expect.arrayContaining([
+          { user: employee.id, via: "mcp", outcome: "ran", status: 200 },
+          { user: founder.id, via: "console", outcome: "ran", status: 200 },
+        ]),
+      );
+      expect(reads[0]?.capabilityName).toBe("recordedRevenue");
+      expect(reads[0]?.appId).toBe(appId);
+
+      // Stopped by a check: recorded, with no status, because nothing was sent.
+      const writes = await runsOf(writeId);
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toMatchObject({ via: "ask", outcome: "disabled", status: null });
+
+      // Not a byte of what was sent is in the record.
+      const dump = await database.execute(sql`select t::text as row from invocations t`);
+      expect(JSON.stringify(dump.rows)).not.toContain(secretish);
+    });
+
+    it("writes nothing about a capability the person cannot see", async () => {
+      const { runTool } = await import("./mcp");
+      const before = (await runsOf(readId)).length;
+      await runTool(outsider, "invoke_capability", {
+        capabilityId: readId,
+        input: { startDate: "2026-08-01", endDate: "2026-08-31" },
+      });
+      expect(await runsOf(readId)).toHaveLength(before);
+    });
+
+    it("stops a person at the minute's limit, without calling the app or recording it", async () => {
+      const { invocations } = await import("@cira/db");
+      const { runTool } = await import("./mcp");
+      const { invocationsPerPersonPerMinute } = DEFAULT_LIMITS;
+
+      // A minute's worth already, the way a runaway script would have made it.
+      await database.insert(invocations).values(
+        Array.from({ length: invocationsPerPersonPerMinute }, () => ({
+          id: newId("invocation"),
+          spaceId,
+          appId,
+          capabilityId: readId,
+          capabilityName: "recordedRevenue",
+          userId: admin.id,
+          via: "mcp" as const,
+          outcome: "ran" as const,
+          status: 200,
+        })),
+      );
+      received.length = 0;
+      const before = (await runsOf(readId)).length;
+
+      const limited = await runTool(admin, "invoke_capability", {
+        capabilityId: readId,
+        input: { startDate: "2026-08-01", endDate: "2026-08-31" },
+      });
+
+      expect(limited.isError).toBe(true);
+      expect(limited.content).toContain(
+        `${invocationsPerPersonPerMinute} capabilities in the last minute`,
+      );
+      expect(received).toHaveLength(0);
+      expect(await runsOf(readId)).toHaveLength(before);
+
+      // Someone else is not held up by it.
+      const other = await runTool(employee, "invoke_capability", {
+        capabilityId: readId,
+        input: { startDate: "2026-08-01", endDate: "2026-08-31" },
+      });
+      expect(other.isError).toBe(false);
     });
   });
 });

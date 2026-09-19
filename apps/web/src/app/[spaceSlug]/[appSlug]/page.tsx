@@ -10,6 +10,8 @@ import { appSlugMovedTo, deploymentHistory, listServicesForApp } from "@/lib/que
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
+import { RunHistory } from "@/components/run-history";
+import { recentRuns } from "@/lib/invocations";
 import { AccessPanel } from "@/components/access-panel";
 import { AppSettings } from "@/components/app-settings";
 import { EnvPanel } from "@/components/env-panel";
@@ -71,6 +73,7 @@ export default async function AppPage({
     // Only to whoever can manage the app: what it is configured with is part of
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
+    const runs = manages ? await recentRuns(app.id) : null;
     const color = appColor(app.id);
     const resolved = resolveAppState(
       app,
@@ -258,6 +261,8 @@ export default async function AppPage({
             appSlug={appSlug}
             consoleHref={consolePath}
           />
+
+          {runs !== null ? <RunHistory runs={runs} /> : null}
 
           <DeploymentHistory
             spaceSlug={spaceSlug}

@@ -8,7 +8,7 @@ import {
   searchCapabilitiesForUser,
   type CapabilityWithApp,
 } from "@/lib/capabilities";
-import { invokeCapability } from "@/lib/invoke-capability";
+import { invokeCapability, type InvocationVia } from "@/lib/invoke-capability";
 
 /**
  * Cira's agent-facing surface.
@@ -90,6 +90,8 @@ export async function runTool(
   user: User,
   name: string,
   args: Record<string, unknown>,
+  /** Which surface is asking, for the record of who ran what. */
+  via: InvocationVia = "mcp",
 ): Promise<ToolOutcome> {
   switch (name) {
     case "search_capabilities":
@@ -97,7 +99,7 @@ export async function runTool(
     case "describe_capability":
       return describeTool(user, args);
     case "invoke_capability":
-      return invokeTool(user, args);
+      return invokeTool(user, args, via);
     default:
       return { content: `Cira has no tool called ${name}.`, isError: true };
   }
@@ -159,11 +161,12 @@ async function describeTool(
 async function invokeTool(
   user: User,
   args: Record<string, unknown>,
+  via: InvocationVia,
 ): Promise<ToolOutcome> {
   const id = typeof args["capabilityId"] === "string" ? args["capabilityId"] : "";
   const input = args["input"];
 
-  const result = await invokeCapability({ user, capabilityId: id, input });
+  const result = await invokeCapability({ user, capabilityId: id, input, via });
 
   if (!result.ok) return { content: result.error, isError: true };
 

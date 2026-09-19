@@ -1,7 +1,17 @@
 import "server-only";
 
 import { deploymentProvider } from "@cira/deploy";
-import { fillTargetPath, isSafeTargetPath, type Capability, type User } from "@cira/core";
+import { and, count, eq, gt } from "drizzle-orm";
+import { db, invocations } from "@cira/db";
+import {
+  DEFAULT_LIMITS,
+  checkInvocationRate,
+  fillTargetPath,
+  isSafeTargetPath,
+  newId,
+  type Capability,
+  type User,
+} from "@cira/core";
 import {
   getCapabilityForUser,
   recordRefusal,
@@ -55,44 +65,81 @@ const TIMEOUT_MS = 15_000;
 /** Enough for a report, small enough that one call cannot exhaust the server. */
 const MAX_RESPONSE_BYTES = 1_000_000;
 
+/** Where a run came from, for the record of who ran what. */
+export type InvocationVia = "mcp" | "ask" | "console";
+
+type Outcome = (typeof invocations.$inferInsert)["outcome"];
+
 export async function invokeCapability(args: {
   user: User;
   capabilityId: string;
   input: unknown;
+  via: InvocationVia;
 }): Promise<InvocationResult> {
   // Resolves the acting user from the session and applies app access. A
-  // capability the caller cannot see reads as one that does not exist.
+  // capability the caller cannot see reads as one that does not exist, and is
+  // not recorded either: a row naming it would say that it does.
   const capability = await getCapabilityForUser(args.user, args.capabilityId);
   if (capability === null) return { ok: false, error: NO_SUCH_CAPABILITY };
 
+  // One person can only start so many runs a minute, across MCP, Ask Cira and
+  // the console together, since each is a request to somebody's app. Counted
+  // from the record below, and a refused run is not added to it.
+  const limit = checkInvocationRate(await runsInLastMinute(args.user.id), DEFAULT_LIMITS);
+  if (!limit.ok) return { ok: false, error: limit.message };
+
+  const { result, outcome } = await attempt(capability, args.input);
+  await record({ capability, user: args.user, via: args.via, outcome, result });
+  return result;
+}
+
+/** Every check after access, and the call itself, with how it ended. */
+async function attempt(
+  capability: CapabilityWithApp,
+  input: unknown,
+): Promise<{ result: InvocationResult; outcome: Outcome }> {
   // Asked before `enabled`, because `enabled` is false for both of these and
   // the sentence it offers - go and ask an admin - is only true for one of
   // them. Telling an agent to get a refused capability switched on sends it
   // after something nobody can do.
-  if (capability.reach === "refused") return { ok: false, error: refusal(capability) };
+  if (capability.reach === "refused") {
+    return { result: { ok: false, error: refusal(capability) }, outcome: "refused" };
+  }
 
   if (capability.reach === "pending") {
     return {
-      ok: false,
-      error: `Cira has not confirmed ${capability.name} with ${capability.appName} yet.`,
+      result: {
+        ok: false,
+        error: `Cira has not confirmed ${capability.name} with ${capability.appName} yet.`,
+      },
+      outcome: "pending",
     };
   }
 
   if (!capability.enabled) {
     return {
-      ok: false,
-      error: `${capability.name} is registered but not enabled. An admin can turn it on from the app's page.`,
+      result: {
+        ok: false,
+        error: `${capability.name} is registered but not enabled. An admin can turn it on from the app's page.`,
+      },
+      outcome: "disabled",
     };
   }
 
-  const validation = validateInput(capability.inputSchema, args.input);
+  const validation = validateInput(capability.inputSchema, input);
   if (!validation.ok) {
-    return { ok: false, error: `Invalid input: ${validation.error}` };
+    return {
+      result: { ok: false, error: `Invalid input: ${validation.error}` },
+      outcome: "invalid-input",
+    };
   }
 
   const target = await resolveTarget(capability);
   if (target === null) {
-    return { ok: false, error: `${capability.appName} is not reachable right now.` };
+    return {
+      result: { ok: false, error: `${capability.appName} is not reachable right now.` },
+      outcome: "unreachable",
+    };
   }
 
   // The demo company's apps have nothing running behind them, so they answer
@@ -103,16 +150,99 @@ export async function invokeCapability(args: {
     if (data === undefined) {
       const answer = demoReply(404, { error: "Not found" });
       return {
-        ok: false,
-        error: `${capability.name} failed (404).`,
-        status: 404,
-        answer,
+        result: {
+          ok: false,
+          error: `${capability.name} failed (404).`,
+          status: 404,
+          answer,
+        },
+        outcome: "ran",
       };
     }
-    return { ok: true, status: 200, data, answer: demoReply(200, data) };
+    return {
+      result: { ok: true, status: 200, data, answer: demoReply(200, data) },
+      outcome: "ran",
+    };
   }
 
-  return call(target, capability, validation.value);
+  // `/orders/{order_id}` is filled from the input before anything is sent, and
+  // the values that went into the address are not sent again. This used to be
+  // skipped: the braces went out literally and the id rode along as a query
+  // parameter, so every capability with an id in its path answered 404.
+  const filled = fillTargetPath(capability.target.path, validation.value);
+  if (filled.missing.length > 0) {
+    return {
+      result: {
+        ok: false,
+        error: `Invalid input: ${filled.missing.join(", ")} is required.`,
+      },
+      outcome: "invalid-input",
+    };
+  }
+  // Re-checked with the values in: this is what refuses a value of `..`.
+  if (!isSafeTargetPath(filled.path)) {
+    return {
+      result: { ok: false, error: "Invalid input: that value cannot go in an address." },
+      outcome: "invalid-input",
+    };
+  }
+
+  const result = await call(target, capability, validation.value, filled);
+  // Past the checks, the only way not to have the app's answer is not to have
+  // reached it: a timeout, no connection, a token that could not be minted.
+  return { result, outcome: result.answer !== undefined ? "ran" : "unreachable" };
+}
+
+/** How many runs this person started in the last sixty seconds. */
+async function runsInLastMinute(userId: string): Promise<number> {
+  const [row] = await db()
+    .select({ n: count() })
+    .from(invocations)
+    .where(
+      and(
+        eq(invocations.userId, userId),
+        gt(invocations.createdAt, new Date(Date.now() - 60_000)),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/**
+ * Write down that it happened. Who, what, from where, and how it ended; never
+ * the input or the reply.
+ *
+ * A failure to write is logged rather than thrown. By now the app has been
+ * called, and telling the person it failed when it did not would be the worse
+ * of the two outcomes - they would run a refund again.
+ */
+async function record(args: {
+  capability: CapabilityWithApp;
+  user: User;
+  via: InvocationVia;
+  outcome: Outcome;
+  result: InvocationResult;
+}): Promise<void> {
+  const answer = args.result.answer;
+  try {
+    await db()
+      .insert(invocations)
+      .values({
+        id: newId("invocation"),
+        spaceId: args.capability.spaceId,
+        appId: args.capability.appId,
+        capabilityId: args.capability.id,
+        capabilityName: args.capability.name,
+        userId: args.user.id,
+        via: args.via,
+        outcome: args.outcome,
+        status: answer?.status ?? null,
+        elapsedMs: answer?.elapsedMs ?? null,
+      });
+  } catch (error) {
+    console.error(
+      `could not record a run of ${args.capability.id}: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
 }
 
 interface ResolvedTarget {
@@ -165,25 +295,12 @@ async function call(
   target: ResolvedTarget,
   capability: CapabilityWithApp,
   input: Record<string, unknown>,
+  /** The path with the input's values in it, already checked. */
+  filled: { path: string; used: readonly string[] },
 ): Promise<InvocationResult> {
   const url = new URL(target.url);
   let body: string | undefined;
 
-  // `/orders/{order_id}` is filled from the input before anything is sent, and
-  // the values that went into the address are not sent again. This used to be
-  // skipped: the braces went out literally and the id rode along as a query
-  // parameter, so every capability with an id in its path answered 404.
-  const filled = fillTargetPath(capability.target.path, input);
-  if (filled.missing.length > 0) {
-    return {
-      ok: false,
-      error: `Invalid input: ${filled.missing.join(", ")} is required.`,
-    };
-  }
-  // Re-checked with the values in: this is what refuses a value of `..`.
-  if (!isSafeTargetPath(filled.path)) {
-    return { ok: false, error: "Invalid input: that value cannot go in an address." };
-  }
   url.pathname = filled.path;
   const rest = Object.fromEntries(
     Object.entries(input).filter(([key]) => !filled.used.includes(key)),

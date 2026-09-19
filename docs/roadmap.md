@@ -41,24 +41,19 @@ use its apps, and Cira would know if anything broke for them.
         then delete the old key. Optional.
   - [ ] Sign in with Google, if wanted: custom OAuth credentials in Clerk's
         SSO connections. Not needed for parity; development never had it.
-- [ ] **1.2 Resource limits and quotas.** Today one runaway app can exhaust
-      the shared Google project and the bill has no ceiling.
-  - Per app: maximum instances, CPU, memory and request timeout on the Cloud
-    Run service.
-  - Per space: a cap on apps and on deploys per hour.
-  - Rate limits on the MCP endpoint and the console, as Ask Cira has.
-  - Done when each limit is enforced, tested, and shown on the page it
-    affects.
+- [x] **1.2 Resource limits and quotas.** One record in core
+      (`limits.ts`): 25 apps and 30 deploys an hour per space, 60 runs a
+      minute per person, and each app up to 10 instances of 1 CPU and 512 MB
+      with a five-minute request timeout. Enforced, tested, and shown on the
+      Deploy page and each app page (2026-09-19).
 - [ ] **1.3 Watch Cira itself.** Error tracking (Sentry) for the web app,
       server and browser; an uptime check on cira.dev and the app proxy;
       alerts to you. Confirm Neon's point-in-time restore is on and has been
       tried once. Done when a thrown error and a downtime each reach you.
       _You create the accounts, Claude wires them._
-- [ ] **1.4 A record of who ran what.** Every invocation, from MCP, Ask Cira
-      or the console: who, which capability, which app, when, and the status,
-      but never the input or the reply, which keeps Cira a conduit. Shown to
-      whoever manages the app. Additive migration. Done when a refund run from
-      the console appears on the app page with the person's name.
+- [x] **1.4 A record of who ran what.** `invocations`, written by the one
+      path every surface shares, shown under Runs on each app page to whoever
+      manages it; never the input or the reply (2026-09-19).
 - [ ] **1.5 Email.** A transactional provider (Resend) for invites, which
       today are links the inviter sends by hand. Done when an invite arrives
       by email and can be accepted from it. _You create the account and verify

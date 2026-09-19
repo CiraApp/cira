@@ -44,7 +44,7 @@ export async function runCapability(
     return { ok: false, error: NO_SUCH_CAPABILITY, answer: null };
   }
 
-  const result = await invokeCapability({ user, capabilityId, input });
+  const result = await invokeCapability({ user, capabilityId, input, via: "console" });
 
   return result.ok
     ? { ok: true, error: null, answer: result.answer }

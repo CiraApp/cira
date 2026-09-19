@@ -75,7 +75,7 @@ export async function createAssistantToken(
   await db()
     .insert(cliTokens)
     .values({
-      id: newId("invite"),
+      id: newId("cliToken"),
       userId: user.id,
       tokenHash: hashToken(token),
       label: parsed.data.label,

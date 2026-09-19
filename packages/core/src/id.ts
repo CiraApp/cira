@@ -20,6 +20,12 @@ export const ID_PREFIXES = {
   capability: "cap",
   /** One question put to Ask Cira: what it cost, never what was said. */
   askUsage: "ask",
+  /** One capability run: who, what, from where, never with what. */
+  invocation: "run",
+  /** A CLI's long-lived credential, kept as a hash. */
+  cliToken: "tok",
+  /** One `cira login` in progress. */
+  cliLogin: "lgn",
   /** An uploaded source archive. Not a row: it names an object in a bucket. */
   source: "src",
 } as const;

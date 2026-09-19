@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
   const token = newCliToken();
   await database.insert(cliTokens).values({
-    id: newId("invite"),
+    id: newId("cliToken"),
     userId: row.approvedByUserId,
     tokenHash: hashToken(token),
     label: row.label,
