@@ -295,11 +295,12 @@ describe.skipIf(!hasDatabase)("product journeys", () => {
     it("will not issue two invites with the same token", async () => {
       const [space] = await db.select().from(spaces).limit(1);
       const [user] = await db.select().from(users).limit(1);
-      const token = "t".repeat(64);
+      // What is stored is the token's hash, so that is what must be unique.
+      const tokenHash = "t".repeat(64);
       const base = {
         spaceId: (space as { id: string }).id,
         email: "someone@acme.com",
-        token,
+        tokenHash,
         invitedByUserId: (user as { id: string }).id,
         expiresAt: new Date(Date.now() + 86_400_000),
       };

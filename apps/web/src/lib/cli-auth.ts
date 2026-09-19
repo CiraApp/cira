@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 /**
  * Credentials for the `cira` CLI.
@@ -29,20 +29,6 @@ export function newDeviceCode(): string {
 /** The token handed to the CLI. Shown once, then only its hash is kept. */
 export function newCliToken(): string {
   return `cira_${randomBytes(32).toString("hex")}`;
-}
-
-export function hashToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
-/**
- * Compare two hashes without leaking, through timing, how much of a guess was
- * correct. Lengths are compared first because timingSafeEqual throws on a
- * mismatch, and length alone is not a secret.
- */
-export function hashesMatch(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
 }
 
 /** Normalise what someone typed: case, spaces, and a dash they may have dropped. */

@@ -877,11 +877,6 @@ export async function seedDemoOrg(
       description: app.description,
       status: "live" as const,
       ownerUserId: personId(app.owner),
-      // A real deploy stores the provider's bypass secret here; a synthetic one
-      // has nothing to bypass, and the value is never sent anywhere that could
-      // accept it. It exists so the app resolves as reachable rather than as
-      // half-deployed.
-      accessSecret: "demo",
     })),
   );
 

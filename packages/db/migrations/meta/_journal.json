@@ -141,6 +141,20 @@
       "when": 1789763573284,
       "tag": "0019_let_people_name_themselves",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789803478665,
+      "tag": "0020_forget_the_old_bypass_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789803639978,
+      "tag": "0021_keep_only_hashes_of_link_secrets",
+      "breakpoints": true
     }
   ]
 }

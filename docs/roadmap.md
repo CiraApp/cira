@@ -17,13 +17,11 @@ belong in the order rather than at the bottom.
 
 Small things already known to be outstanding.
 
-- [ ] **Promote CLI 0.5.1 on npm.** Staged by the publish workflow; promote
-      it from the package page on npmjs.com. _You._
-- [ ] **Rotate the Upstash token for Wave's test Redis.** Leaked during an
-      earlier session; rotate it in the Upstash console. _You._
-- [ ] **Confirm runtime logs work in production.** Logs Viewer was granted on
-      2026-09-19. Done when the backend-only fixture's logs page shows real
-      lines. _You reload, Claude checks._
+- [x] **Promote CLI 0.5.1 on npm.** Promoted 2026-09-19. _You._
+- [x] ~~**Rotate the Upstash token for Wave's test Redis.**~~ Not doing:
+      decided 2026-09-19 that the test Redis does not warrant it.
+- [x] **Confirm runtime logs work in production.** Logs Viewer granted and
+      reads succeeding on 2026-09-19.
 - [ ] **Stop storing `apps.access_secret` in plain text.** The one credential
       Cira keeps (see `docs/secrets.md`). Done when it is hashed or derived,
       with a migration that is additive first. _Claude._

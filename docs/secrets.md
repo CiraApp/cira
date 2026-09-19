@@ -28,11 +28,11 @@ Cira does not have - because the provider already stores deployment
 configuration securely, and Cira's job is only to get the values there.
 
 The security argument is stronger than the effort one. A database Cira does not
-hold is a database that cannot leak. Today `apps.access_secret` is the only
-credential Cira stores and it is plaintext, with a comment saying so. Adding a
-hundred customers' API keys beside it would turn a known weakness into a company
--ending one. Passing values through keeps Cira's blast radius exactly where it
-is.
+hold is a database that cannot leak. Cira stores no credential as itself: the
+secrets it hands out - CLI tokens, invite links, the device code a `cira login`
+polls with - are kept only as SHA-256 hashes (`lib/token-hash.ts`), so a copy of
+the database opens nothing. Adding customers' API keys to it would undo exactly
+that. Passing values through keeps Cira's blast radius where it is.
 
 If a customer one day needs Cira to hold values - to rotate them from the UI, or
 to satisfy a compliance team - that is a deliberate later project with a real

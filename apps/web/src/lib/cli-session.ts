@@ -3,7 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { cliTokens, db, users } from "@cira/db";
 import type { User } from "@cira/core";
-import { hashToken } from "@/lib/cli-auth";
+import { hashToken } from "@/lib/token-hash";
 
 /**
  * The person behind a CLI request, or null.

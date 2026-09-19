@@ -21,9 +21,9 @@ import { getVercelOidcToken } from "@vercel/oidc";
  *   checks its audience and refuses everyone else, which is what makes an app
  *   unreachable except through Cira.
  *
- * The second replaces Vercel's protection-bypass secret, and is better in one
+ * The second replaced Vercel's protection-bypass secret, and is better in one
  * specific way: minted per request and expiring, rather than a long-lived
- * value in a database column - which is what `apps.access_secret` is today.
+ * value in a database column, which is where that secret used to be kept.
  */
 
 export interface FederationConfig {

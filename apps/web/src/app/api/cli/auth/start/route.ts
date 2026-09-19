@@ -3,6 +3,7 @@ import { z } from "zod";
 import { cliAuthRequests, db } from "@cira/db";
 import { newId } from "@cira/core";
 import { loginExpiry, newDeviceCode, newUserCode } from "@/lib/cli-auth";
+import { hashToken } from "@/lib/token-hash";
 
 const body = z.object({
   label: z.string().trim().min(1).max(80).optional(),
@@ -20,7 +21,8 @@ export async function POST(request: Request) {
     .insert(cliAuthRequests)
     .values({
       id: newId("invite"),
-      deviceCode,
+      // The CLI gets the code; the table keeps only enough to recognise it.
+      deviceCodeHash: hashToken(deviceCode),
       userCode,
       label,
       expiresAt: loginExpiry(),

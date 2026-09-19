@@ -252,23 +252,6 @@ export const apps = pgTable(
     capabilitiesAnalyzedAt: timestamp("capabilities_analyzed_at", {
       withTimezone: true,
     }),
-    /**
-     * Both dead. Nothing reads or writes either any more.
-     *
-     * They belonged to a provider that needed a per-app project and a shared
-     * secret to open it. Cira now calls each app with an identity token minted
-     * for that app's own URL and expiring in an hour, so there is no long-lived
-     * value to keep - which was the acknowledged weak point of `accessSecret`,
-     * held in plain text because encrypting it needed key management V1 did
-     * not have.
-     *
-     * Still here because migrations expand before they contract: dropping a
-     * column in the same release that stops using it breaks the deployment
-     * still serving during the rollover. They go in a later migration, once
-     * nothing running has ever read them.
-     */
-    providerProjectId: text("provider_project_id"),
-    accessSecret: text("access_secret"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -453,7 +436,13 @@ export const invites = pgTable(
       .references(() => spaces.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
     role: roleEnum("role").notNull().default("member"),
-    token: text("token").notNull(),
+    /**
+     * SHA-256 of the secret in the invite link. The link itself is shown once,
+     * to whoever created it, and never stored: a copy of this table admits
+     * nobody. Null only on rows written in the minute a deploy of the change
+     * that introduced it was rolling out, which the next migration fills in.
+     */
+    tokenHash: text("token_hash"),
     invitedByUserId: text("invited_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -462,7 +451,7 @@ export const invites = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("invites_token_idx").on(t.token),
+    uniqueIndex("invites_token_hash_idx").on(t.tokenHash),
     index("invites_space_idx").on(t.spaceId),
     index("invites_email_idx").on(t.email),
   ],
@@ -507,8 +496,12 @@ export const cliAuthRequests = pgTable(
   "cli_auth_requests",
   {
     id: text("id").primaryKey(),
-    /** Secret, held only by the CLI instance that started the login. */
-    deviceCode: text("device_code").notNull(),
+    /**
+     * SHA-256 of the device code, the secret held only by the CLI instance
+     * that started the login. Kept as a hash for the reason CLI tokens are:
+     * the code can be exchanged for a token, so the table must not hold it.
+     */
+    deviceCodeHash: text("device_code_hash"),
     /** Short and human-typable, e.g. "WXYZ-1234". */
     userCode: text("user_code").notNull(),
     label: text("label").notNull(),
@@ -522,7 +515,7 @@ export const cliAuthRequests = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("cli_auth_device_idx").on(t.deviceCode),
+    uniqueIndex("cli_auth_device_hash_idx").on(t.deviceCodeHash),
     uniqueIndex("cli_auth_user_code_idx").on(t.userCode),
   ],
 );

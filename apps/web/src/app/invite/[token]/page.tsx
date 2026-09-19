@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/identity";
 import { checkInvite } from "@/lib/invite-rules";
 import { AcceptInvite } from "@/components/accept-invite";
 import { EntryFrame } from "@/components/entry-frame";
+import { hashToken } from "@/lib/token-hash";
 
 /**
  * The one screen reachable while signed out, because the person receiving an
@@ -26,7 +27,7 @@ export default async function InvitePage({
     .select({ invite: invites, space: spaces })
     .from(invites)
     .innerJoin(spaces, eq(invites.spaceId, spaces.id))
-    .where(eq(invites.token, token))
+    .where(eq(invites.tokenHash, hashToken(token)))
     .limit(1);
 
   if (row === undefined) return <EntryFrame title="This invite link is not valid." />;

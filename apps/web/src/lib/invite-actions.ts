@@ -1,12 +1,13 @@
 "use server";
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { atomically, db, invites, memberships, spaces, users } from "@cira/db";
 import { isInviteToken, newId, newInviteToken } from "@cira/core";
+import { hashToken } from "@/lib/token-hash";
 import type { Role } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
-import { ForbiddenError, requireInviteRights, requireSpaceMember } from "@/lib/authz";
+import { ForbiddenError, requireInviteRights } from "@/lib/authz";
 import { checkInvite, inviteExpiry } from "@/lib/invite-rules";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -102,38 +103,13 @@ export async function createInvite(
     spaceId: ctx.space.id,
     email,
     role: role as Role,
-    token,
+    // The link is returned once, below, and only its hash is kept.
+    tokenHash: hashToken(token),
     invitedByUserId: ctx.user.id,
     expiresAt: inviteExpiry(),
   });
 
   return { ok: true, data: { url: `/invite/${token}`, email } };
-}
-
-export interface PendingInvite {
-  id: string;
-  email: string;
-  role: Role;
-  url: string;
-  expiresAt: Date;
-}
-
-export async function listPendingInvites(spaceSlug: string): Promise<PendingInvite[]> {
-  const ctx = await requireSpaceMember(spaceSlug);
-
-  const rows = await db()
-    .select()
-    .from(invites)
-    .where(and(eq(invites.spaceId, ctx.space.id), isNull(invites.acceptedAt)))
-    .orderBy(desc(invites.createdAt));
-
-  return rows.map((r) => ({
-    id: r.id,
-    email: r.email,
-    role: r.role,
-    url: `/invite/${r.token}`,
-    expiresAt: r.expiresAt,
-  }));
 }
 
 export async function revokeInvite(
@@ -169,7 +145,7 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
     .select({ invite: invites, space: spaces })
     .from(invites)
     .innerJoin(spaces, eq(invites.spaceId, spaces.id))
-    .where(eq(invites.token, token))
+    .where(eq(invites.tokenHash, hashToken(token)))
     .limit(1);
 
   if (row === undefined) return { ok: false, error: "This invite link is not valid." };

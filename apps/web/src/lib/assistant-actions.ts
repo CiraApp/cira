@@ -4,7 +4,8 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { cliTokens, db } from "@cira/db";
 import { newId } from "@cira/core";
-import { hashToken, newCliToken } from "@/lib/cli-auth";
+import { newCliToken } from "@/lib/cli-auth";
+import { hashToken } from "@/lib/token-hash";
 import { requireCurrentUser } from "@/lib/identity";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };

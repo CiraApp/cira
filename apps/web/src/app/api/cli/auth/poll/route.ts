@@ -3,7 +3,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { cliAuthRequests, cliTokens, db, users } from "@cira/db";
 import { newId } from "@cira/core";
-import { hashToken, loginState, newCliToken } from "@/lib/cli-auth";
+import { loginState, newCliToken } from "@/lib/cli-auth";
+import { hashToken } from "@/lib/token-hash";
 
 const body = z.object({ deviceCode: z.string().min(32).max(128) });
 
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   const [row] = await database
     .select()
     .from(cliAuthRequests)
-    .where(eq(cliAuthRequests.deviceCode, parsed.data.deviceCode))
+    .where(eq(cliAuthRequests.deviceCodeHash, hashToken(parsed.data.deviceCode)))
     .limit(1);
 
   // An unknown device code is indistinguishable from an expired one, so
