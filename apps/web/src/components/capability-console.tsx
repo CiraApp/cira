@@ -17,6 +17,7 @@ import {
 } from "@cira/core";
 import { validateInput } from "@/lib/json-schema";
 import { runCapability, type ConsoleRun } from "@/lib/console-actions";
+import { SectionLink } from "./section-link";
 
 /**
  * The capability console: an app's capabilities, each one a form.
@@ -64,6 +65,7 @@ export function CapabilityConsole({
   appName,
   running,
   initial,
+  logsHref,
 }: {
   entries: ConsoleEntry[];
   appName: string;
@@ -71,6 +73,8 @@ export function CapabilityConsole({
   running: boolean;
   /** The capability named in the address, if any. */
   initial: string | null;
+  /** The app's runtime logs, for whoever manages it; null for everyone else. */
+  logsHref: string | null;
 }) {
   const reads = entries.filter((e) => e.risk === "read");
   const writes = entries.filter((e) => e.risk === "write");
@@ -132,6 +136,7 @@ export function CapabilityConsole({
             entry={selected}
             appName={appName}
             running={running}
+            logsHref={logsHref}
             runs={runs.filter((r) => r.capabilityId === selected.id)}
             onRun={(run) => setRuns((all) => [run, ...all])}
             onResult={(id, patch) =>
@@ -227,6 +232,7 @@ function Runner({
   entry,
   appName,
   running,
+  logsHref,
   runs,
   onRun,
   onResult,
@@ -234,6 +240,7 @@ function Runner({
   entry: ConsoleEntry;
   appName: string;
   running: boolean;
+  logsHref: string | null;
   runs: Run[];
   onRun: (run: Run) => void;
   onResult: (id: number, patch: Partial<Run>) => void;
@@ -419,7 +426,19 @@ function Runner({
       </form>
 
       {shown !== null ? (
-        <Result run={shown} history={runs} onShow={(id) => setShownRunId(id)} />
+        <Result
+          run={shown}
+          history={runs}
+          onShow={(id) => setShownRunId(id)}
+          logsHref={
+            logsHref === null
+              ? null
+              : `${logsHref}?${new URLSearchParams({
+                  around: shown.at.toISOString(),
+                  capability: entry.name,
+                }).toString()}`
+          }
+        />
       ) : null}
     </section>
   );
@@ -708,10 +727,13 @@ function Result({
   run,
   history,
   onShow,
+  logsHref,
 }: {
   run: Run;
   history: Run[];
   onShow: (id: number) => void;
+  /** The app's logs around this run, for whoever may read them. */
+  logsHref: string | null;
 }) {
   const [raw, setRaw] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -751,6 +773,12 @@ function Result({
         ) : (
           <span className="text-[12px] text-failed">Not run</span>
         )}
+
+        {/* A failure is when someone wants to know why, and the app's own
+            account of it is in its logs, around this moment. */}
+        {run.result !== null && !run.result.ok && logsHref !== null ? (
+          <SectionLink href={logsHref}>See logs from this run</SectionLink>
+        ) : null}
 
         {answer !== null && answer.body !== "" ? (
           <div className="ml-auto flex items-center gap-1">

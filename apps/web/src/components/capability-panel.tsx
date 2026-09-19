@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Capability } from "@cira/core";
 import { setCapabilityEnabled } from "@/lib/capability-actions";
+import { SectionLink } from "./section-link";
 import {
   retryCapabilityAnalysis,
   verifyPendingCapabilities,
@@ -98,24 +99,7 @@ export function CapabilityPanel({
           <span className="hidden sm:inline">
             Detected from the code when this app was deployed
           </span>
-          <a
-            href={consoleHref}
-            className="group inline-flex items-center gap-1 text-ink-muted transition-colors duration-150 hover:text-ink"
-          >
-            Run them in the console
-            <svg
-              viewBox="0 0 12 12"
-              aria-hidden="true"
-              className="h-2.5 w-2.5 self-center transition-transform duration-300 ease-[var(--ease-spring)] group-hover:translate-x-0.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M2.5 6h7M6.5 3l3 3-3 3" />
-            </svg>
-          </a>
+          <SectionLink href={consoleHref}>Run them in the console</SectionLink>
         </p>
       </div>
 

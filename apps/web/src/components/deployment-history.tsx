@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { fetchBuildLogs, type LogsResult } from "@/lib/log-actions";
+import { SectionLink } from "./section-link";
 import { StatusDot } from "./status-dot";
 
 export interface DeployRow {
@@ -30,10 +31,13 @@ export function DeploymentHistory({
   spaceSlug,
   appSlug,
   deploys,
+  logsHref,
 }: {
   spaceSlug: string;
   appSlug: string;
   deploys: DeployRow[];
+  /** The app's runtime logs, for whoever may read them. */
+  logsHref: string | null;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [logs, setLogs] = useState<Record<string, LogsResult>>({});
@@ -66,7 +70,12 @@ export function DeploymentHistory({
 
   return (
     <section className="enter-up mt-10">
-      <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Deploys</h2>
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Deploys</h2>
+        {logsHref !== null ? (
+          <SectionLink href={logsHref}>Runtime logs</SectionLink>
+        ) : null}
+      </div>
 
       <ul className="mt-3 divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
         {deploys.map((d) => {

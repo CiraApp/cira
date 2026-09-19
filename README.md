@@ -378,11 +378,31 @@ short-lived OIDC token; Google's workload identity federation is configured to
 trust that issuer and exchanges it for credentials of a deployer service
 account. Two kinds of token come out of that:
 
-- an **access token**, which lets Cira use Cloud Build, Cloud Run and Storage;
+- an **access token**, which lets Cira use Cloud Build, Cloud Run and Storage,
+  and read Cloud Logging for runtime logs;
 - an **identity token** per app, which Cloud Run checks before a request reaches
   the app. This is what makes every app unreachable except through Cira.
 
 Nothing long-lived exists, so there is nothing to leak or rotate.
+
+### 9. Runtime logs
+
+Whoever manages an app can read what it printed while it ran, and every
+request that reached it, at `/{space}/{app}/logs`. A console run that fails
+links there too, opened on the minute either side of the run. Logs are fetched
+from Cloud Logging when the page asks and handed straight to the browser: Cira
+keeps no copy, the same rule as build logs and console runs.
+
+The query is built on the server (`packages/deploy/src/cloudrun/runtime-logs.ts`).
+The service it reads is taken from the app's own deployment record, never from
+the browser, and the one piece of text a person supplies, the search, goes
+inside an escaped string, so nothing typed can widen it to another app. People
+who can only use an app do not see its logs: a log holds every user's requests
+and whatever the app chose to print.
+
+Google allows about sixty log reads a minute for the whole project, so Live
+asks for new lines every ten seconds, stops in hidden tabs, and backs off when
+Google says it is busy.
 
 ## Design principles
 
@@ -413,8 +433,6 @@ These are real gaps, not planned features in disguise.
   requests. A worker that is meant to run on a timer never runs.
 - **No backing services.** Cira does not provision databases or caches; an app
   needs connection strings to services that already exist.
-- **No runtime logs in Cira yet.** Build logs are shown on the app page;
-  runtime logs are only in Google Cloud Logging.
 - **Cold starts.** Apps scale to zero, so the first request after a quiet
   period waits for an instance to start.
 
@@ -541,6 +559,7 @@ None of this is recreated by a deploy.
 | GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                          |
 | Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
 | Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |
+| Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs     |
 
 `CIRA_PROXY_SECRET` must be identical in Vercel and the worker: Cira signs with
 it and the worker verifies with it, so a mismatch locks everyone out of every

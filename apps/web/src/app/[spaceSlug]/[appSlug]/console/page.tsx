@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { canManageApp } from "@cira/core";
 import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
@@ -117,6 +118,15 @@ export default async function ConsolePage({
                 appName={app.name}
                 running={deployment?.status === "live"}
                 initial={named}
+                logsHref={
+                  canManageApp({
+                    userId: ctx.user.id,
+                    app,
+                    memberships: ctx.memberships,
+                  })
+                    ? `/${spaceSlug}/${appSlug}/logs`
+                    : null
+                }
               />
             )}
           </div>

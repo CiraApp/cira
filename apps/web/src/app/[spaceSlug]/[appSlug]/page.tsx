@@ -257,6 +257,7 @@ export default async function AppPage({
           <DeploymentHistory
             spaceSlug={spaceSlug}
             appSlug={appSlug}
+            logsHref={manages ? `/${spaceSlug}/${appSlug}/logs` : null}
             deploys={history.map((d) => ({
               id: d.id,
               status: d.id === deployment?.id ? deployment.status : d.status,
