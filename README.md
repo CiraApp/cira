@@ -408,7 +408,44 @@ and whatever the app chose to print.
 
 Google allows about sixty log reads a minute for the whole project, so Live
 asks for new lines every ten seconds, stops in hidden tabs, and backs off when
-Google says it is busy.
+Google says it is busy. The page also reads each of an app's workers and
+scheduled runs, picked from a list.
+
+### 10. Workers and scheduled runs
+
+Not everything a company runs answers requests. A **worker** runs all the time
+with no web port - a queue consumer, or a process keeping its own timetable,
+like Wave's `arq`. A **scheduled run** is a command run to completion on a
+timetable. Both run from the app's own image with a different command, so they
+never drift from it.
+
+Nobody writes them down for Cira. The CLI reads the files a repository already
+has (`packages/core/src/processes.ts`):
+
+| File                      | Becomes                                                         |
+| ------------------------- | --------------------------------------------------------------- |
+| `Procfile`                | every line but `web` and `release` is a worker                  |
+| `fly.toml` `[processes]`  | every process group that takes no web traffic is a worker       |
+| GitHub Actions `schedule` | a workflow that runs a script on a timetable is a scheduled run |
+
+A repository whose files name no web process is an app with no web process: it
+deploys with no service and no address, and its page says it runs in the
+background. Everything found starts **off**. Whoever manages the app turns it
+on from the Processes section of its page, gives a scheduled run its timetable
+(five-field cron, in UTC, shown in words) and its time, or runs one now.
+
+On Google a scheduled run is a Cloud Run Job, started on its timetable by a
+Cloud Scheduler job calling Google directly as the deployer account - Cira is
+never the clock. A worker is a Cloud Run worker pool held at one instance or
+none. Both are created during a deploy, the only moment Cira holds the app's
+environment, and move onto the new image when the build finishes; switching
+one on or off afterwards touches nothing secret. A run is always stopped a
+minute before its next one could start, so runs never overlap without Cira
+having to watch them.
+
+A space may have 10 scheduled runs and 2 workers on, at most every 5 minutes,
+10 minutes a run by default and 60 at most (`limits.ts`). A worker costs money
+every hour it is on, about $50 a month, which the page says beside its switch.
 
 ## Design principles
 
@@ -435,8 +472,10 @@ These are real gaps, not planned features in disguise.
 - **Apps with their own sign-in cannot be called by agents.** Cira reaches an
   app as a service, not as one of its users. Their capabilities are discovered
   and shown as `refused`, with the reason.
-- **No scheduled jobs or background workers.** Cira runs things that answer
-  requests. A worker that is meant to run on a timer never runs.
+- **A process a repository does not mention cannot be added from the page.**
+  Workers and scheduled runs are created at deploy, when the app's environment
+  is in hand; adding one is a line in the Procfile, and it appears on the next
+  deploy. A Procfile's `release` command is not run.
 - **No backing services.** Cira does not provision databases or caches; an app
   needs connection strings to services that already exist.
 - **Cold starts.** Apps scale to zero, so the first request after a quiet
@@ -571,6 +610,8 @@ None of this is recreated by a deploy.
 | Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
 | Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |
 | Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs     |
+| Google IAM     | the deployer service account holds `roles/cloudscheduler.admin`, so scheduled runs can be given timetables   |
+| Google APIs    | Cloud Scheduler (`cloudscheduler.googleapis.com`) is switched on for the project                             |
 
 `CIRA_PROXY_SECRET` must be identical in Vercel and the worker: Cira signs with
 it and the worker verifies with it, so a mismatch locks everyone out of every

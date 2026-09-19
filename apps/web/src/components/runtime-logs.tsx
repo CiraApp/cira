@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { LogRange, RuntimeLogEntry, RuntimeLogMinimum } from "@cira/core";
 import {
   fetchRuntimeLogs,
@@ -55,6 +56,8 @@ export function RuntimeLogs({
   appSlug,
   initial,
   around,
+  process,
+  sources,
 }: {
   spaceSlug: string;
   appSlug: string;
@@ -62,7 +65,12 @@ export function RuntimeLogs({
   initial: RuntimeLogsResult;
   /** A console run to centre on: when it started, and what it ran. */
   around: { at: string; label: string | null } | null;
+  /** Which process these are the lines of; null for the web service. */
+  process: string | null;
+  /** What else could be read, for the picker. Shown when there is a choice. */
+  sources: Array<{ value: string | null; label: string }>;
 }) {
+  const router = useRouter();
   const [range, setRange] = useState<LogRange | null>(around === null ? "1h" : null);
   const [minimum, setMinimum] = useState<RuntimeLogMinimum>("all");
   const [search, setSearch] = useState("");
@@ -90,8 +98,12 @@ export function RuntimeLogs({
   const searched = useRef("");
 
   const call = useCallback(
-    (request: RuntimeLogsRequest) => fetchRuntimeLogs(spaceSlug, appSlug, request),
-    [spaceSlug, appSlug],
+    (request: RuntimeLogsRequest) =>
+      fetchRuntimeLogs(spaceSlug, appSlug, {
+        ...request,
+        ...(process === null ? {} : { process }),
+      }),
+    [spaceSlug, appSlug, process],
   );
 
   /** A fresh page, for exactly the range, level and search it is given. */
@@ -276,6 +288,30 @@ export function RuntimeLogs({
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
+        {sources.length > 1 ? (
+          <>
+            <label className="sr-only" htmlFor="log-source">
+              Process
+            </label>
+            <select
+              id="log-source"
+              value={process ?? ""}
+              onChange={(e) => {
+                const next = new URLSearchParams();
+                if (e.target.value !== "") next.set("process", e.target.value);
+                const query = next.toString();
+                router.push(query === "" ? "?" : `?${query}`);
+              }}
+              className="field h-[30px] w-auto py-0 pr-8 text-[12.5px]"
+            >
+              {sources.map((source) => (
+                <option key={source.value ?? ""} value={source.value ?? ""}>
+                  {source.label}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
         {range === null && around !== null ? (
           <span className="inline-flex h-[30px] items-center gap-2 rounded-[var(--radius-edge)] border border-line bg-surface pr-1 pl-2.5 text-[12px] text-ink">
             Around {around.label ?? "the run"} at {clock(new Date(around.at))}

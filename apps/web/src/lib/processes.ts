@@ -4,13 +4,18 @@ import { eq, inArray } from "drizzle-orm";
 import { atomically, db, processes } from "@cira/db";
 import {
   DEFAULT_LIMITS,
+  describeSchedule,
   newId,
+  nextRuns,
+  parseSchedule,
   planProcesses,
   runTimeoutSeconds,
   type DeployedProcess,
   type ProcessSpec,
+  type ProcessState,
   type StoredProcess,
 } from "@cira/core";
+import { deploymentProvider } from "@cira/deploy";
 
 /**
  * An app's workers and scheduled runs, as Cira keeps them.
@@ -104,4 +109,69 @@ export function specsFor(
     // A scheduled run with no timetable has nothing to be on for.
     enabled: p.enabled && (p.kind === "worker" || p.schedule !== null),
   }));
+}
+
+/** One process, ready for the app page to draw. */
+export interface ProcessView {
+  name: string;
+  kind: "worker" | "scheduled";
+  command: string;
+  source: string;
+  enabled: boolean;
+  schedule: string | null;
+  /** The timetable in words, with its zone; null without one. */
+  scheduleWords: string | null;
+  nextRunAt: Date | null;
+  /** What each run is actually given, after the gap to the next is allowed for. */
+  timeoutMinutes: number;
+  /** What someone asked for, to fill the editor; null for the default. */
+  requestedTimeoutMinutes: number | null;
+  /** What Google reports, or null when it could not be asked. */
+  state: ProcessState | null;
+}
+
+/**
+ * An app's processes with what Google says about each, for its page.
+ *
+ * Asking Google is one call per process, made while someone is looking -
+ * the same bargain the deployment status makes. If it cannot be asked, the
+ * page still lists what the app runs and says it could not check.
+ */
+export async function processesForPage(
+  appId: string,
+  handle: string | null,
+): Promise<ProcessView[]> {
+  const stored = await listProcesses(appId);
+  if (stored.length === 0) return [];
+
+  let states: ProcessState[] | null = null;
+  if (handle !== null) {
+    try {
+      states = await deploymentProvider().processStates(
+        handle,
+        stored.map((p) => ({ name: p.name, kind: p.kind })),
+      );
+    } catch {
+      states = null;
+    }
+  }
+
+  const now = new Date();
+  return stored.map((p) => {
+    const parsed = p.schedule === null ? null : parseSchedule(p.schedule);
+    const schedule = parsed !== null && parsed.ok ? parsed.schedule : null;
+    return {
+      name: p.name,
+      kind: p.kind,
+      command: p.command,
+      source: p.source,
+      enabled: p.enabled,
+      schedule: p.schedule,
+      scheduleWords: schedule === null ? null : describeSchedule(schedule),
+      nextRunAt: schedule === null ? null : (nextRuns(schedule, now, 1)[0] ?? null),
+      timeoutMinutes: Math.round(runTimeoutSeconds(p, DEFAULT_LIMITS, now) / 60),
+      requestedTimeoutMinutes: p.timeoutMinutes,
+      state: states?.find((s) => s.name === p.name) ?? null,
+    };
+  });
 }

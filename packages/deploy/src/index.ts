@@ -9,3 +9,4 @@ export * from "./cloudrun/config.js";
 export * from "./cloudrun/names.js";
 export * from "./cloudrun/provider.js";
 export * from "./cloudrun/source.js";
+export * from "./cloudrun/processes.js";

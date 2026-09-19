@@ -10,7 +10,8 @@ import {
   NotFoundError,
   requireAppManage,
 } from "@/lib/authz";
-import { appSlugMovedTo } from "@/lib/queries";
+import { appSlugMovedTo, latestDeployment } from "@/lib/queries";
+import { listProcesses } from "@/lib/processes";
 import { fetchRuntimeLogs } from "@/lib/runtime-log-actions";
 
 /**
@@ -39,16 +40,34 @@ export default async function LogsPage({
       ? query["capability"]
       : null;
 
+  const processParam = typeof query["process"] === "string" ? query["process"] : null;
+
   try {
     const { app, space } = await requireAppManage(spaceSlug, appSlug);
+    const [deployment, processList] = await Promise.all([
+      latestDeployment(app.id),
+      listProcesses(app.id),
+    ]);
+    // An app with no web process has no web logs; it opens on its first
+    // process instead of an empty page.
+    const servesWeb = deployment?.servesWeb ?? true;
+    const process =
+      processList.find((p) => p.name === processParam)?.name ??
+      (servesWeb ? null : (processList[0]?.name ?? null));
     const [spaces, initial] = await Promise.all([
       listMySpaces(),
-      fetchRuntimeLogs(
-        spaceSlug,
-        appSlug,
-        aroundParam !== null ? { around: aroundParam } : { range: "1h" },
-      ),
+      fetchRuntimeLogs(spaceSlug, appSlug, {
+        ...(aroundParam !== null ? { around: aroundParam } : { range: "1h" }),
+        ...(process === null ? {} : { process }),
+      }),
     ]);
+    const sources = [
+      ...(servesWeb ? [{ value: null, label: "Web" }] : []),
+      ...processList.map((p) => ({
+        value: p.name,
+        label: `${p.name} (${p.kind === "worker" ? "worker" : "scheduled"})`,
+      })),
+    ];
     // A moment the server would not use is dropped rather than shown as a
     // marker for a window that was never read.
     const around =
@@ -104,11 +123,13 @@ export default async function LogsPage({
           <div className="enter-up mt-7">
             <RuntimeLogs
               // A different moment is a different page, not a change to this one.
-              key={aroundParam ?? "range"}
+              key={`${process ?? "web"}:${aroundParam ?? "range"}`}
               spaceSlug={spaceSlug}
               appSlug={appSlug}
               initial={initial}
               around={around}
+              process={process}
+              sources={sources}
             />
           </div>
         </div>

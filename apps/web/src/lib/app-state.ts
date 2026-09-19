@@ -31,6 +31,8 @@ export interface ResolvedApp {
   label: string;
   /** Plain-language explanation shown when the app cannot be opened. */
   blockedReason: string | null;
+  /** Set for an app that is only workers and scheduled runs. */
+  background?: true;
 }
 
 export function resolveAppState(
@@ -115,6 +117,20 @@ function fromDeployment(
       external: false,
       label: "Removed",
       blockedReason: "This app's deployment has been removed.",
+    };
+  }
+
+  // An app that is only workers and scheduled runs: live, doing its work in
+  // the background, with nothing to open - and none of that is a problem.
+  if (!deployment.servesWeb) {
+    return {
+      state: "no-ui",
+      openUrl: null,
+      external: false,
+      label: "Live",
+      blockedReason:
+        "This app has no web interface. It runs in the background: its workers and scheduled runs are below.",
+      background: true,
     };
   }
 
@@ -203,13 +219,16 @@ export function appDoor(
     };
   }
   if (resolved.state === "no-ui") {
-    return capabilities > 0
-      ? { href: consoleHref(address), blockedReason: null }
-      : {
-          href: null,
-          blockedReason:
-            "This app has no web interface, and nothing in it can be run from Cira yet.",
-        };
+    if (capabilities > 0) return { href: consoleHref(address), blockedReason: null };
+    // One that runs in the background already says where its work is; any
+    // other no-web app with nothing to run is told so plainly.
+    return {
+      href: null,
+      blockedReason:
+        resolved.background === true
+          ? resolved.blockedReason
+          : "This app has no web interface, and nothing in it can be run from Cira yet.",
+    };
   }
   return { href: null, blockedReason: resolved.blockedReason };
 }

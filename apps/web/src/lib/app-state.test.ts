@@ -31,6 +31,7 @@ function app(
 function deployment(
   status: Deployment["status"],
   url: string | null = "https://x.example",
+  servesWeb = true,
 ): Deployment {
   return {
     id: "dep_1",
@@ -39,7 +40,7 @@ function deployment(
     providerDeploymentId: "dpl_1",
     status,
     url,
-    servesWeb: true,
+    servesWeb,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };
@@ -341,6 +342,23 @@ describe("appDoor", () => {
       OPEN_AT,
     );
     expect(appDoor(elsewhere, address, 5).href).toBe("https://revenue.acme.com");
+  });
+
+  /**
+   * An app that is only workers and scheduled runs: live, with no address and
+   * nothing to open, and saying where its work is rather than that something
+   * is missing.
+   */
+  it("reads an app that runs only in the background as live, and says where its work is", () => {
+    const resolved = resolveAppState(
+      app("live"),
+      deployment("live", null, false),
+      OPEN_AT,
+    );
+    expect(resolved).toMatchObject({ state: "no-ui", label: "Live", background: true });
+    const door = appDoor(resolved, address, 0);
+    expect(door.href).toBeNull();
+    expect(door.blockedReason).toContain("runs in the background");
   });
 
   it("offers no door while an app cannot be used at all, and says why", () => {

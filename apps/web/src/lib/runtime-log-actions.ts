@@ -12,6 +12,7 @@ import {
 } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 import { latestDeployment } from "@/lib/queries";
+import { listProcesses } from "@/lib/processes";
 
 /**
  * Runtime logs for the page that shows them.
@@ -43,6 +44,8 @@ export interface RuntimeLogsRequest {
   pageToken?: string;
   /** For Live: lines at or after this moment, oldest first. ISO 8601. */
   after?: string;
+  /** One of the app's workers or scheduled runs, by name, instead of its web service. */
+  process?: string;
 }
 
 export type RuntimeLogsResult =
@@ -121,10 +124,22 @@ export async function fetchRuntimeLogs(
     };
   }
 
+  // A process is named by the browser and looked up here, so only one of
+  // this app's own can be read.
+  let process: { kind: "worker" | "scheduled"; name: string } | undefined;
+  if (request.process !== undefined) {
+    const found = (await listProcesses(appId)).find((p) => p.name === request.process);
+    if (found === undefined) {
+      return { ok: false, reason: "bad-request", error: "This app has no such process." };
+    }
+    process = { kind: found.kind, name: found.name };
+  }
+
   try {
     const page = await deploymentProvider().getRuntimeLogs(
       deployment.providerDeploymentId,
       {
+        process,
         since: asked.since,
         until: asked.until,
         minimum: asked.minimum,

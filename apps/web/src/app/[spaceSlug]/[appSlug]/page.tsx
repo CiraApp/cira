@@ -11,6 +11,8 @@ import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { RunHistory } from "@/components/run-history";
+import { ProcessPanel } from "@/components/process-panel";
+import { processesForPage } from "@/lib/processes";
 import { recentRuns } from "@/lib/invocations";
 import { AccessPanel } from "@/components/access-panel";
 import { AppSettings } from "@/components/app-settings";
@@ -74,6 +76,12 @@ export default async function AppPage({
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
     const runs = manages ? await recentRuns(app.id) : null;
+    const processList = manages
+      ? await processesForPage(
+          app.id,
+          deployment?.provider === "cloudrun" ? deployment.providerDeploymentId : null,
+        )
+      : [];
     const color = appColor(app.id);
     const resolved = resolveAppState(
       app,
@@ -260,6 +268,14 @@ export default async function AppPage({
             spaceSlug={spaceSlug}
             appSlug={appSlug}
             consoleHref={consolePath}
+          />
+
+          <ProcessPanel
+            processes={processList}
+            spaceSlug={spaceSlug}
+            appSlug={appSlug}
+            logsHref={`/${spaceSlug}/${appSlug}/logs`}
+            servesWeb={deployment?.servesWeb ?? true}
           />
 
           {runs !== null ? <RunHistory runs={runs} /> : null}
