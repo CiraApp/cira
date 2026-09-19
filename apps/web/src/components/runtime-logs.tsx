@@ -43,6 +43,13 @@ const LEVELS: Array<{ value: RuntimeLogMinimum; label: string }> = [
 
 type Failure = Extract<RuntimeLogsResult, { ok: false }>;
 
+/**
+ * The failures that can pass on their own. Anything else - no permission, a
+ * demo app, one never deployed - stays true however often it is asked, so the
+ * page stops offering controls that could only ask again.
+ */
+const PASSING: ReadonlySet<Failure["reason"]> = new Set(["busy", "unavailable"]);
+
 export function RuntimeLogs({
   spaceSlug,
   appSlug,
@@ -207,6 +214,11 @@ export function RuntimeLogs({
         setEntries((now) => merge(now, result.entries));
       } else {
         setFailure(result);
+        // Asking again every ten seconds cannot change a missing permission.
+        if (!PASSING.has(result.reason)) {
+          setLive(false);
+          return;
+        }
       }
       const wait =
         !result.ok && result.reason === "busy" ? BUSY_BACKOFF_MS : LIVE_EVERY_MS;
@@ -253,6 +265,13 @@ export function RuntimeLogs({
     range !== null
       ? RANGES.find((r) => r.value === range)?.words
       : `the two minutes around ${aroundAt === null ? "the run" : clock(aroundAt)}`;
+
+  // Nothing here can be read, and nothing on the toolbar would change that:
+  // a range, a level or Live would each only ask Google the same question and
+  // be told the same no. So the page says why, and offers nothing else.
+  if (failure !== null && !PASSING.has(failure.reason)) {
+    return <FailureNotice failure={failure} />;
+  }
 
   return (
     <div className="min-w-0">
@@ -366,8 +385,10 @@ export function RuntimeLogs({
         </button>
       </div>
 
-      {failure !== null && failure.reason !== "busy" ? (
-        <FailureNotice failure={failure} />
+      {failure?.reason === "unavailable" ? (
+        <div className="mt-3.5">
+          <FailureNotice failure={failure} />
+        </div>
       ) : (
         <div className="mt-3.5 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-sunken/60">
           {failure?.reason === "busy" ? (
@@ -545,7 +566,7 @@ function Marker({ label, at }: { label: string | null; at: Date }) {
 function FailureNotice({ failure }: { failure: Failure }) {
   const waiting = failure.reason === "not-allowed";
   return (
-    <div className="mt-3.5 flex items-start gap-2.5 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5 text-[13px] leading-relaxed text-ink-muted">
+    <div className="flex items-start gap-2.5 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5 text-[13px] leading-relaxed text-ink-muted">
       <span
         aria-hidden="true"
         className={`mt-[8px] h-[6px] w-[6px] shrink-0 rounded-full ${
