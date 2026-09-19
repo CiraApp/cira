@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { newId, type User } from "@cira/core";
 import type * as CiraDb from "@cira/db";
 import type * as CiraDeploy from "@cira/deploy";
-import { createTestDatabase } from "../../../../packages/db/src/testing.js";
+import { migratedTestDatabase } from "../../../../packages/db/src/test-database.js";
 
 /**
  * A first deploy, against a real database.
@@ -20,35 +20,12 @@ import { createTestDatabase } from "../../../../packages/db/src/testing.js";
 const TEST_DATABASE_URL = process.env["TEST_DATABASE_URL"];
 const hasDatabase = TEST_DATABASE_URL !== undefined && TEST_DATABASE_URL !== "";
 
-let database: ReturnType<typeof createTestDatabase>;
+let database: Awaited<ReturnType<typeof migratedTestDatabase>>;
 /** Flipped by a test that wants the provider to refuse. */
 let providerFails = false;
 
 async function makeDatabase() {
-  const { randomUUID } = await import("node:crypto");
-  const { readFileSync, readdirSync } = await import("node:fs");
-  const { join } = await import("node:path");
-
-  const namespace = `cira_deploy_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-  const admin = createTestDatabase(TEST_DATABASE_URL as string);
-  await admin.execute(sql.raw(`drop schema if exists ${namespace} cascade`));
-  await admin.execute(sql.raw(`create schema ${namespace}`));
-  await admin.end();
-
-  const db = createTestDatabase(TEST_DATABASE_URL as string, namespace);
-  const dir = join(process.cwd(), "packages", "db", "migrations");
-  for (const file of readdirSync(dir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort()) {
-    const body = readFileSync(join(dir, file), "utf8").replaceAll(
-      '"public".',
-      `"${namespace}".`,
-    );
-    for (const statement of body.split("--> statement-breakpoint")) {
-      if (statement.trim() !== "") await db.execute(sql.raw(statement));
-    }
-  }
-  return db;
+  return migratedTestDatabase(TEST_DATABASE_URL as string, "cira_deploy");
 }
 
 vi.mock("@cira/db", async (importOriginal) => {
