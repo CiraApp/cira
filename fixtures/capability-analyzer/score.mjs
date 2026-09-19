@@ -9,25 +9,37 @@ import { fileURLToPath } from "node:url";
  * it was right. Exits non-zero on anything short of perfect, so it can be the
  * last step of a prompt change rather than something read and nodded at.
  *
- * Usage:  node fixtures/capability-analyzer/score.mjs <result.json>
+ * Usage:  node fixtures/capability-analyzer/score.mjs <result.json> [fixture-dir]
+ *
+ * The fixture defaults to this one. Any directory holding a `truth.txt` and an
+ * `excluded.txt` in the same shape can be scored the same way - which is how
+ * fixtures/backend-only-service doubles as a second analyzer fixture.
  */
 
-const here = dirname(fileURLToPath(import.meta.url));
 const resultPath = process.argv[2];
+const here = process.argv[3] ?? dirname(fileURLToPath(import.meta.url));
 
 if (resultPath === undefined) {
-  console.error("usage: node score.mjs <result.json>");
+  console.error("usage: node score.mjs <result.json> [fixture-dir]");
   process.exit(2);
 }
 
 const truth = new Set(
   readFileSync(join(here, "truth.txt"), "utf8").trim().split("\n").filter(Boolean),
 );
+// Each line is `METHOD[|METHOD] /path`, optionally followed by a note after two
+// spaces or a bracket. A path ending in `*` covers everything under it; any
+// other path is that route exactly. It used to be a prefix match for every
+// line, which made an excluded `GET /` forbid every GET there is.
 const forbidden = readFileSync(join(here, "excluded.txt"), "utf8")
   .trim()
   .split("\n")
   .filter(Boolean)
-  .map((line) => line.split(/\s{2,}|\s\(/)[0].trim());
+  .map((line) => line.split(/\s{2,}|\s\(/)[0].trim())
+  .flatMap((entry) => {
+    const [methods, path] = entry.split(/\s+/);
+    return methods.split("|").map((method) => `${method} ${path}`);
+  });
 
 const result = JSON.parse(readFileSync(resultPath, "utf8"));
 const capabilities = result.capabilities ?? [];
@@ -36,7 +48,7 @@ const claimed = capabilities.map((c) => `${c.method} ${c.path}`);
 const invented = claimed.filter((c) => !truth.has(c));
 const missed = [...truth].filter((t) => !claimed.includes(t));
 const trapped = claimed.filter((c) =>
-  forbidden.some((f) => c === f || c.startsWith(f.replace("*", ""))),
+  forbidden.some((f) => (f.endsWith("*") ? c.startsWith(f.slice(0, -1)) : c === f)),
 );
 
 const say = (text) => process.stdout.write(`${text}\n`);

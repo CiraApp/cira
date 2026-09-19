@@ -1,0 +1,7 @@
+GET /admin/audit
+GET /customers/top
+GET /orders
+GET /orders/lookup
+GET /revenue
+POST /orders/refund
+POST /reports/regenerate

@@ -1,0 +1,3 @@
+GET /   (a JSON description of the service, not an operation)
+GET /health
+POST /__reset   (test-only)
