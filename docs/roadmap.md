@@ -46,27 +46,39 @@ use its apps, and Cira would know if anything broke for them.
       minute per person, and each app up to 10 instances of 1 CPU and 512 MB
       with a five-minute request timeout. Enforced, tested, and shown on the
       Deploy page and each app page (2026-09-19).
-- [ ] **1.3 Watch Cira itself.** Error tracking (Sentry) for the web app,
-      server and browser; an uptime check on cira.dev and the app proxy;
-      alerts to you. Confirm Neon's point-in-time restore is on and has been
-      tried once. Done when a thrown error and a downtime each reach you.
-      _You create the accounts, Claude wires them._
+- [x] **1.3 Watch Cira itself.** Errors from the server and the browser go to
+      Sentry (`cira-web`), scrubbed of anything a request carried; a thrown
+      error reached Sentry from a production build and through cira.dev's
+      relay on 2026-09-19. One Sentry uptime monitor checks `/api/health`
+      every minute - the app, its database and the app proxy together, since
+      the free plan has one monitor - and a workflow emails the `cira` team
+      when it opens a downtime issue. Neon restore: not tried, your call.
+  - [ ] _You:_ create an organization token named `cira-ci` in Sentry
+        (Settings, Organization Tokens; the API will not make one) and store
+        it with `gh secret set SENTRY_AUTH_TOKEN --repo CiraApp/cira`, so
+        stack traces show Cira's source rather than minified code.
+  - [ ] A downtime reaching you, end to end: not yet seen, since nothing has
+        been down. A drill (pointing the monitor at a failing address for a
+        few minutes) is yours to allow.
 - [x] **1.4 A record of who ran what.** `invocations`, written by the one
       path every surface shares, shown under Capability runs on each app page to whoever
       manages it; never the input or the reply (2026-09-19).
-- [ ] **1.5 Email.** A transactional provider (Resend) for invites, which
-      today are links the inviter sends by hand. Done when an invite arrives
-      by email and can be accepted from it. _You create the account and verify
-      the domain, Claude builds._
+- [ ] **1.5 Email.** Resend, sending as `notifications@cira.dev` (domain
+      verified 2026-09-19, records in Cloudflare). Invitations are emailed
+      when created, with the link still shown. Done when an invite arrives by
+      email and is accepted from it - one real invite is all that is left.
 - [x] **1.6 Scheduled jobs and workers.** Found in a repository's Procfile,
       fly.toml or scheduled GitHub Actions workflows; scheduled runs on Cloud
       Run Jobs started by Cloud Scheduler, workers on Cloud Run worker pools;
       switched on, timed and run from the app page. Verified end to end with
       `fixtures/background-app` on 2026-09-19.
-- [ ] **1.7 Notifications.** Email when a deploy fails, an app stops
-      answering, a scheduled run fails, or a capability becomes refused.
-      Depends on 1.5 and 1.6. Done when each of those four reaches whoever
-      manages the app.
+- [ ] **1.7 Notifications.** Built: an app's managers are emailed when a
+      deploy fails, it stops answering (two checks in a row) or comes back, a
+      worker keeps stopping, a scheduled run fails, or a working capability
+      starts refusing Cira. Each event is claimed once in `notifications`; the
+      watcher runs every five minutes on Vercel Cron. Every path is tested,
+      and a sample reached the inbox. Done when a real one of each reaches a
+      manager, which happens as they occur.
 
 ## Phase 2 - Ready to charge
 
