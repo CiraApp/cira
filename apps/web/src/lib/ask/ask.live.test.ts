@@ -70,7 +70,8 @@ describe.skipIf(!live)("Ask Cira, live", () => {
     const usage = await runAsk({
       model: anthropicModel(new AbortController().signal),
       host: {
-        run: (name, args) => runTool(user, name, args),
+        run: (name, args) =>
+          runTool(user, name, args, { via: "ask", origin: "https://cira.test" }),
         capability: (id) => getCapabilityForUser(user, id),
       },
       system: askSystemPrompt(new Date()),

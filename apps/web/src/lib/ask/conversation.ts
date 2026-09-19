@@ -6,7 +6,7 @@ import { MAX_QUESTION_CHARS, type AskMessage } from "./protocol";
  * The conversation, as the browser hands it back.
  *
  * It is untrusted input like any other request body, so it is rebuilt from a
- * schema rather than passed through: three kinds of block, the three tools and
+ * schema rather than passed through: three kinds of block, Cira's tools and
  * no others, and bounded sizes. What cannot be forged is enforced elsewhere -
  * every tool call is checked against the asking person's permissions when it
  * runs - so the job here is only to keep the shape honest and the request
@@ -19,6 +19,7 @@ export const ASK_TOOL_NAMES = [
   "search_capabilities",
   "describe_capability",
   "invoke_capability",
+  "app_status",
 ] as const;
 
 /**

@@ -315,7 +315,9 @@ async function perform(
   const capabilityId =
     typeof args["capabilityId"] === "string" ? args["capabilityId"] : "";
   const capability =
-    call.name === "search_capabilities" ? null : await host.capability(capabilityId);
+    call.name === "describe_capability" || call.name === "invoke_capability"
+      ? await host.capability(capabilityId)
+      : null;
 
   const started = now();
   emit({
@@ -368,6 +370,12 @@ function runningLabel(
     };
   }
 
+  if (call.name === "app_status") {
+    const app = (call.input as Record<string, unknown>)["app"];
+    const named = typeof app === "string" ? app.trim() : "";
+    return { label: named === "" ? "Looking through your apps" : `Checking on ${named}` };
+  }
+
   if (capability === null) return { label: "Looking something up" };
 
   return call.name === "describe_capability"
@@ -390,6 +398,8 @@ function settledLabel(
       detail: found === 0 ? "nothing found" : `${found} found`,
     };
   }
+
+  if (call.name === "app_status") return statusSettled(call, outcome, elapsed);
 
   if (capability === null) {
     return { state: "failed", label: "Couldn't find that" };
@@ -432,6 +442,48 @@ function settledLabel(
     detail: `${(elapsed / 1000).toFixed(1)}s`,
     app,
     data: outcome.content,
+  };
+}
+
+/**
+ * A status check, named after the app it found. The app comes from what the
+ * check returned rather than what was asked for, so "the report thing" is
+ * shown as the app it turned out to be.
+ */
+function statusSettled(
+  call: Anthropic.ToolUseBlockParam,
+  outcome: { content: string; isError: boolean },
+  elapsed: number,
+): { state: StepState; label: string; detail?: string; app?: AskApp; data?: string } {
+  if (outcome.isError) return { state: "failed", label: "Couldn't check on that" };
+
+  let parsed: { app?: unknown; appId?: unknown; apps?: unknown } = {};
+  try {
+    parsed = JSON.parse(outcome.content) as typeof parsed;
+  } catch {
+    // Read as a list of nothing below.
+  }
+
+  if (typeof parsed.app === "string" && typeof parsed.appId === "string") {
+    return {
+      state: "done",
+      label: `Checked on ${parsed.app}`,
+      detail: `${(elapsed / 1000).toFixed(1)}s`,
+      app: { id: parsed.appId, name: parsed.app },
+      data: outcome.content,
+    };
+  }
+
+  const found = Array.isArray(parsed.apps) ? parsed.apps.length : 0;
+  // No single app: a list to choose from, because nothing was named or
+  // because what was named did not settle on one.
+  const asked = (call.input as Record<string, unknown>)["app"];
+  const named = typeof asked === "string" ? asked.trim() : "";
+  return {
+    state: "done",
+    label:
+      named === "" ? "Looked through your apps" : `Looked for “${named}” among your apps`,
+    detail: found === 1 ? "1 app" : `${found} apps`,
   };
 }
 

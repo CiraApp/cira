@@ -125,7 +125,11 @@ export async function POST(request: Request) {
         usage = await runAsk({
           model: anthropicModel(request.signal),
           host: {
-            run: (name, args) => runTool(user, name, args, "ask"),
+            run: (name, args) =>
+              runTool(user, name, args, {
+                via: "ask",
+                origin: new URL(request.url).origin,
+              }),
             capability: (id) => getCapabilityForUser(user, id),
           },
           system: askSystemPrompt(new Date()),

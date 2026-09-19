@@ -319,17 +319,18 @@ off and wait for someone who can manage the app to turn them on.
 
 `cira mcp connect` points Claude Code and Cursor on the machine at
 `https://cira.dev/api/mcp`, using the `cira login` token. The endpoint is
-stateless Streamable HTTP and exposes three fixed tools, whatever the company
-has deployed:
+stateless Streamable HTTP and exposes four fixed tools, whatever the company
+has deployed. Ask Cira drives the same four, as the person asking:
 
 | Tool                  | Does                                                                             |
 | --------------------- | -------------------------------------------------------------------------------- |
 | `search_capabilities` | Finds capabilities across every app this person can open. Empty query lists all. |
 | `describe_capability` | Returns one capability's full description and input schema.                      |
 | `invoke_capability`   | Runs it and returns the app's JSON.                                              |
+| `app_status`          | Says whether an app is live and how its workers and scheduled runs are doing.    |
 
-Three stable tools rather than one per capability, so a company's shelf can
-change with every deploy without an agent re-reading a tool list.
+Fixed tools rather than one per capability, so a company's shelf can change
+with every deploy without an agent re-reading a tool list.
 
 An invocation passes, in order: the person's access to the app, the capability
 being enabled and callable, and its input against the schema. Only then is a
@@ -442,6 +443,13 @@ environment, and move onto the new image when the build finishes; switching
 one on or off afterwards touches nothing secret. A run is always stopped a
 minute before its next one could start, so runs never overlap without Cira
 having to watch them.
+
+Whether each is running, when it last ran, how that went and when it runs next
+is shown to anyone who can open the app, on its page and through `app_status`,
+because "did the report go out?" should not need an admin. The commands, the
+logs and the controls are for whoever manages it; for them `app_status` also
+carries a worker's latest log lines and those of a failed run
+(`apps/web/src/lib/app-status.ts`).
 
 A space may have 10 scheduled runs and 2 workers on, at most every 5 minutes,
 10 minutes a run by default and 60 at most (`limits.ts`). A worker costs money

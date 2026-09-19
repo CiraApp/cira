@@ -10,7 +10,6 @@ import {
   deployments,
   memberships,
   spaces,
-  teamMembers,
 } from "@cira/db";
 import {
   canAccessApp,
@@ -22,10 +21,10 @@ import {
   type AppAccess,
   type Capability,
   type Membership,
-  type Principal,
   type User,
 } from "@cira/core";
 import type { AnalyzedCapability } from "@/lib/capability-grounding";
+import { principalFor } from "@/lib/principal";
 
 /**
  * The capability registry.
@@ -416,25 +415,10 @@ async function servingDeployments(
 async function visibleCapabilities(user: User): Promise<{ rows: CapabilityWithApp[] }> {
   const database = db();
 
-  const mine = (await database
-    .select()
-    .from(memberships)
-    .where(eq(memberships.userId, user.id))) as Membership[];
+  const principal = await principalFor(user);
+  if (principal === null) return { rows: [] };
 
-  if (mine.length === 0) return { rows: [] };
-
-  const spaceIds = mine.map((m) => m.spaceId);
-
-  const onTeams = await database
-    .select({ teamId: teamMembers.teamId })
-    .from(teamMembers)
-    .where(eq(teamMembers.userId, user.id));
-
-  const principal: Principal = {
-    userId: user.id,
-    memberships: mine,
-    teamIds: onTeams.map((t) => t.teamId),
-  };
+  const spaceIds = principal.memberships.map((m) => m.spaceId);
 
   const rows = await database
     .select({ capability: capabilities, app: apps })
@@ -520,7 +504,8 @@ function toCapability(row: CapabilityRow, serving: string | null): Capability {
   };
 }
 
-function toApp(row: typeof apps.$inferSelect): App {
+/** An app row as the access rules read it. */
+export function toApp(row: typeof apps.$inferSelect): App {
   return {
     id: row.id,
     spaceId: row.spaceId,

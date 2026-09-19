@@ -8,7 +8,7 @@ export const maxDuration = 60;
  * Cira's MCP endpoint.
  *
  * Streamable HTTP, stateless: every request carries its own credential and
- * nothing is remembered between them. An MCP server with three fixed tools and
+ * nothing is remembered between them. An MCP server with four fixed tools and
  * no subscriptions needs no session, and not having one means an agent can
  * reconnect, retry or run several calls at once without coordinating.
  *
@@ -62,7 +62,8 @@ export async function POST(request: Request) {
         serverInfo: { name: "cira", version: "0.1.0" },
         instructions:
           "Cira exposes the internal software this employee is allowed to use. " +
-          "Search for a capability, describe it to learn its input, then invoke it.",
+          "Search for a capability, describe it to learn its input, then invoke it. " +
+          "To see whether an app's workers and scheduled runs are working, check its status.",
       });
 
     case "notifications/initialized":
@@ -89,6 +90,7 @@ export async function POST(request: Request) {
         typeof args === "object" && args !== null && !Array.isArray(args)
           ? (args as Record<string, unknown>)
           : {},
+        { via: "mcp", origin: new URL(request.url).origin },
       );
 
       // A tool that refused is a result, not a transport failure: the agent

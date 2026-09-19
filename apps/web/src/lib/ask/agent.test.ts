@@ -204,6 +204,46 @@ describe("runAsk", () => {
     expect(events.at(-1)?.type).toBe("done");
   });
 
+  it("checks on an app's background work, named after the app it found", async () => {
+    const status = JSON.stringify({ app: "Weekly Reports", appId: "app_reports" });
+    const host: AskHost = {
+      run: (name, args) =>
+        Promise.resolve(
+          name === "app_status" && args["app"] === "the report"
+            ? { content: status, isError: false }
+            : {
+                content: JSON.stringify({ apps: [{ app: "A" }, { app: "B" }] }),
+                isError: false,
+              },
+        ),
+      capability: () => Promise.reject(new Error("A status check is not a capability.")),
+    };
+
+    const { events } = await ask({
+      host,
+      input: { question: "Did the report run?" },
+      turns: [
+        call("t1", "app_status", { app: "reports app thing" }),
+        call("t2", "app_status", { app: "the report" }),
+        say("It ran at 09:00 UTC and succeeded."),
+      ],
+    });
+
+    const steps = events.filter((e) => e.type === "step");
+    expect(steps.map((e) => (e.type === "step" ? e.label : ""))).toEqual([
+      "Checking on reports app thing",
+      "Looked for “reports app thing” among your apps",
+      "Checking on the report",
+      "Checked on Weekly Reports",
+    ]);
+    const found = steps.at(-1);
+    expect(found?.type === "step" && found.app).toEqual({
+      id: "app_reports",
+      name: "Weekly Reports",
+    });
+    expect(found?.type === "step" && found.data).toBe(status);
+  });
+
   /**
    * The rule the whole feature rests on. A write is stopped by the server
    * from the capability's own record - not left to the model to remember to

@@ -66,7 +66,7 @@ describe("the MCP endpoint", () => {
     expect(body.result.capabilities).toHaveProperty("tools");
   });
 
-  it("advertises exactly the three stable tools", async () => {
+  it("advertises exactly the four stable tools", async () => {
     const body = (await (
       await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })
     ).json()) as {
@@ -76,6 +76,7 @@ describe("the MCP endpoint", () => {
       "search_capabilities",
       "describe_capability",
       "invoke_capability",
+      "app_status",
     ]);
     for (const tool of body.result.tools) {
       expect(tool.inputSchema).toHaveProperty("type", "object");

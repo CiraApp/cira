@@ -21,7 +21,7 @@ export const ASK_MODEL = process.env["CIRA_ASK_MODEL"] ?? "claude-haiku-4-5";
 const MAX_TOKENS = 2048;
 
 /**
- * The three tools, exactly as agents see them over MCP.
+ * Cira's tools, exactly as agents see them over MCP.
  *
  * Derived rather than restated, so the chat and the MCP endpoint cannot drift
  * into describing the same tool two ways. Fine-grained input streaming is left

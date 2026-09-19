@@ -115,7 +115,8 @@ export function specsFor(
 export interface ProcessView {
   name: string;
   kind: "worker" | "scheduled";
-  command: string;
+  /** Null for anyone who does not manage the app: how it runs is theirs to know. */
+  command: string | null;
   source: string;
   enabled: boolean;
   schedule: string | null;
@@ -131,7 +132,13 @@ export interface ProcessView {
 }
 
 /**
- * An app's processes with what Google says about each, for its page.
+ * An app's processes with what Google says about each, for its page and for
+ * Ask Cira.
+ *
+ * Whether each is running, how its runs went and when it runs next is for
+ * anyone who can open the app: troubleshooting "did last night's report go
+ * out?" should not need an admin. The command is withheld unless `commands`
+ * is set, from the one place both readers get it, so neither can forget to.
  *
  * Asking Google is one call per process, made while someone is looking -
  * the same bargain the deployment status makes. If it cannot be asked, the
@@ -140,6 +147,7 @@ export interface ProcessView {
 export async function processesForPage(
   appId: string,
   handle: string | null,
+  { commands }: { commands: boolean },
 ): Promise<ProcessView[]> {
   const stored = await listProcesses(appId);
   if (stored.length === 0) return [];
@@ -163,7 +171,7 @@ export async function processesForPage(
     return {
       name: p.name,
       kind: p.kind,
-      command: p.command,
+      command: commands ? p.command : null,
       source: p.source,
       enabled: p.enabled,
       schedule: p.schedule,

@@ -8,16 +8,18 @@ import {
   searchCapabilitiesForUser,
   type CapabilityWithApp,
 } from "@/lib/capabilities";
+import { appStatusForUser } from "@/lib/app-status";
 import { invokeCapability, type InvocationVia } from "@/lib/invoke-capability";
 
 /**
  * Cira's agent-facing surface.
  *
- * MCP is an adapter, not Cira's internal standard. Three stable tools rather
+ * MCP is an adapter, not Cira's internal standard. A few stable tools rather
  * than one per capability: a company's shelf changes every time somebody
  * deploys, and an agent should not have to re-read a tool list to notice.
  * Search, describe, invoke - the same three verbs however many capabilities
- * exist behind them.
+ * exist behind them - and one more for what apps do when nobody calls them:
+ * how their workers and scheduled runs are doing.
  *
  * Every function here is a thin translation. Permission, validation, target
  * resolution and the call itself all live in the capability service, so an
@@ -76,6 +78,27 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "app_status",
+    description:
+      "Check on one of the company's apps: whether it is live, and how its " +
+      "background work is doing - whether each worker is running, when each " +
+      "scheduled run last ran, whether it succeeded, and when it runs next. " +
+      "For the app's managers it also includes the commands and the latest log " +
+      "lines. An empty app name lists the apps the employee can open.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: {
+          type: "string",
+          description:
+            "The app's name, as the employee said it or as a search result gave it.",
+        },
+      },
+      required: ["app"],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
@@ -86,12 +109,18 @@ export interface ToolOutcome {
   isError: boolean;
 }
 
+export interface ToolContext {
+  /** Which surface is asking, for the record of who ran what. */
+  via: InvocationVia;
+  /** Cira's own origin, for links to its pages in what a tool returns. */
+  origin: string;
+}
+
 export async function runTool(
   user: User,
   name: string,
   args: Record<string, unknown>,
-  /** Which surface is asking, for the record of who ran what. */
-  via: InvocationVia = "mcp",
+  { via, origin }: ToolContext,
 ): Promise<ToolOutcome> {
   switch (name) {
     case "search_capabilities":
@@ -100,6 +129,8 @@ export async function runTool(
       return describeTool(user, args);
     case "invoke_capability":
       return invokeTool(user, args, via);
+    case "app_status":
+      return statusTool(user, args, origin);
     default:
       return { content: `Cira has no tool called ${name}.`, isError: true };
   }
@@ -167,6 +198,19 @@ async function invokeTool(
   const input = args["input"];
 
   const result = await invokeCapability({ user, capabilityId: id, input, via });
+
+  if (!result.ok) return { content: result.error, isError: true };
+
+  return { content: JSON.stringify(result.data, null, 2), isError: false };
+}
+
+async function statusTool(
+  user: User,
+  args: Record<string, unknown>,
+  origin: string,
+): Promise<ToolOutcome> {
+  const query = typeof args["app"] === "string" ? args["app"] : "";
+  const result = await appStatusForUser(user, query, origin);
 
   if (!result.ok) return { content: result.error, isError: true };
 

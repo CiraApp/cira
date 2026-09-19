@@ -23,6 +23,17 @@ import { migratedTestDatabase } from "../../../../packages/db/src/test-database.
  * the right place carrying the right thing" something this test can observe.
  */
 
+/** `runTool` as the MCP route calls it, with the surface named only where it matters. */
+async function toolsAs() {
+  const { runTool } = await import("./mcp");
+  return (
+    user: User,
+    name: string,
+    args: Record<string, unknown>,
+    via: "mcp" | "ask" | "console" = "mcp",
+  ) => runTool(user, name, args, { via, origin: "https://cira.test" });
+}
+
 const TEST_DATABASE_URL = process.env["TEST_DATABASE_URL"];
 const hasDatabase = TEST_DATABASE_URL !== undefined && TEST_DATABASE_URL !== "";
 
@@ -260,6 +271,11 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     });
 
     await new Promise<void>((resolve) => app.listen(APP_PORT, "127.0.0.1", resolve));
+
+    // Loaded here, under this hook's allowance, rather than by whichever test
+    // happens to run first: transforming the agent surface's whole module
+    // graph took most of a test's five seconds on a busy machine.
+    await import("./mcp");
   }, 60_000);
 
   afterAll(async () => {
@@ -268,7 +284,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("walks search, describe and invoke the way an agent would", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
 
     // 1. The agent looks for what it needs.
     const search = await runTool(employee, "search_capabilities", {
@@ -337,7 +353,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("hides a capability from someone who cannot open the app", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
 
     const search = await runTool(outsider, "search_capabilities", { query: "revenue" });
     expect(search.content).toContain("No capabilities match");
@@ -349,7 +365,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("gives a missing capability and a forbidden one the very same answer", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
 
     const forbidden = await runTool(outsider, "describe_capability", {
       capabilityId: revenueId,
@@ -365,7 +381,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("refuses to invoke for someone who cannot open the app, even with the id", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
     received.length = 0;
 
     const invoked = await runTool(outsider, "invoke_capability", {
@@ -380,7 +396,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("refuses to invoke a capability that is registered but disabled", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
     received.length = 0;
 
     const invoked = await runTool(founder, "invoke_capability", {
@@ -405,7 +421,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
    * wasted the turn.
    */
   it("tells an agent a refused capability is the app's doing, not a missing switch", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
     const { recordVerification } = await import("./capabilities");
     received.length = 0;
 
@@ -454,7 +470,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("rejects input the schema does not allow, without calling the app", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
     received.length = 0;
 
     const missing = await runTool(employee, "invoke_capability", {
@@ -475,7 +491,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   it("sends only the fields the capability described", async () => {
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
     received.length = 0;
 
     await runTool(employee, "invoke_capability", {
@@ -489,7 +505,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   it("cannot be steered at another host by rewriting the stored target", async () => {
     const { capabilities } = await import("@cira/db");
     const { eq } = await import("drizzle-orm");
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
 
     // Simulates the worst case: something got a hostile value into the target
     // column. The path is re-checked immediately before the call, so it never
@@ -517,7 +533,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   it("refuses a response that is not JSON rather than handing an agent a page", async () => {
     const { capabilities } = await import("@cira/db");
     const { eq } = await import("drizzle-orm");
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
 
     await database
       .update(capabilities)
@@ -727,7 +743,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     const { capabilities } = await import("@cira/db");
     const { eq } = await import("drizzle-orm");
     const { invokeCapability } = await import("./invoke-capability");
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
     const id = newId("capability");
 
     await database.insert(capabilities).values({
@@ -848,7 +864,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   it("records a write the app turns away when it is really called", async () => {
     const { capabilities } = await import("@cira/db");
     const { eq } = await import("drizzle-orm");
-    const { runTool } = await import("./mcp");
+    const runTool = await toolsAs();
 
     const lockId = newId("capability");
     const peekId = newId("capability");
@@ -1015,7 +1031,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
 
     it("gives a member without access nothing, in the words an agent gets", async () => {
       const { runCapability } = await import("./console-actions");
-      const { runTool } = await import("./mcp");
+      const runTool = await toolsAs();
 
       for (const person of [bystander, outsider]) {
         signedIn = person;
@@ -1035,7 +1051,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
 
     it("cannot run a disabled write for anyone, whoever manages the app", async () => {
       const { runCapability } = await import("./console-actions");
-      const { runTool } = await import("./mcp");
+      const runTool = await toolsAs();
 
       for (const person of [founder, admin, employee]) {
         signedIn = person;
@@ -1137,7 +1153,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     };
 
     it("records each run with who, where from and how it ended, never the input", async () => {
-      const { runTool } = await import("./mcp");
+      const runTool = await toolsAs();
       const { runCapability } = await import("./console-actions");
       const secretish = "2026-08-01";
 
@@ -1182,7 +1198,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     });
 
     it("writes nothing about a capability the person cannot see", async () => {
-      const { runTool } = await import("./mcp");
+      const runTool = await toolsAs();
       const before = (await runsOf(readId)).length;
       await runTool(outsider, "invoke_capability", {
         capabilityId: readId,
@@ -1193,7 +1209,7 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
 
     it("stops a person at the minute's limit, without calling the app or recording it", async () => {
       const { invocations } = await import("@cira/db");
-      const { runTool } = await import("./mcp");
+      const runTool = await toolsAs();
       const { invocationsPerPersonPerMinute } = DEFAULT_LIMITS;
 
       // A minute's worth already, the way a runaway script would have made it.

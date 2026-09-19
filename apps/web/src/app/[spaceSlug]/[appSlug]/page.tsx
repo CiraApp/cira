@@ -76,12 +76,14 @@ export default async function AppPage({
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
     const runs = manages ? await recentRuns(app.id) : null;
-    const processList = manages
-      ? await processesForPage(
-          app.id,
-          deployment?.provider === "cloudrun" ? deployment.providerDeploymentId : null,
-        )
-      : [];
+    // Whether its workers are running and how its runs went is for anyone
+    // who can open the app - troubleshooting "did the report go out?" should
+    // not need an admin. How they run, and the switches, stay with managers.
+    const processList = await processesForPage(
+      app.id,
+      deployment?.provider === "cloudrun" ? deployment.providerDeploymentId : null,
+      { commands: manages },
+    );
     const color = appColor(app.id);
     const resolved = resolveAppState(
       app,
@@ -274,7 +276,8 @@ export default async function AppPage({
             processes={processList}
             spaceSlug={spaceSlug}
             appSlug={appSlug}
-            logsHref={`/${spaceSlug}/${appSlug}/logs`}
+            canManage={manages}
+            logsHref={manages ? `/${spaceSlug}/${appSlug}/logs` : null}
             servesWeb={deployment?.servesWeb ?? true}
           />
 

@@ -12,8 +12,9 @@ import { SectionLink } from "./section-link";
  *
  * Found in the repository when it was deployed, and all off until someone who
  * manages the app turns them on - they run code nobody is watching, and a
- * worker costs money every hour it is on. Each says what it runs, whether it
- * is on, and what happened last.
+ * worker costs money every hour it is on. Each says whether it is on and what
+ * happened last, to anyone who can open the app; what it runs, its logs and
+ * its controls only to those who manage it.
  */
 
 /**
@@ -28,13 +29,17 @@ export function ProcessPanel({
   processes,
   spaceSlug,
   appSlug,
+  canManage,
   logsHref,
   servesWeb,
 }: {
   processes: ProcessView[];
   spaceSlug: string;
   appSlug: string;
-  logsHref: string;
+  /** Whether to offer the switches, timetables and Run now. */
+  canManage: boolean;
+  /** Null for anyone who cannot read the app's logs. */
+  logsHref: string | null;
   /** Whether the app also has a web process, to list it for the whole picture. */
   servesWeb: boolean;
 }) {
@@ -73,12 +78,17 @@ export function ProcessPanel({
             process={process}
             spaceSlug={spaceSlug}
             appSlug={appSlug}
-            logsHref={`${logsHref}?process=${encodeURIComponent(process.name)}`}
+            canManage={canManage}
+            logsHref={
+              logsHref === null
+                ? null
+                : `${logsHref}?process=${encodeURIComponent(process.name)}`
+            }
           />
         ))}
       </ul>
 
-      {anyWorker ? (
+      {anyWorker && canManage ? (
         <p className="mt-2 text-[11.5px] text-ink-subtle">
           A worker runs all the time, and costs {WORKER_MONTHLY} while it is on.
         </p>
@@ -91,12 +101,14 @@ function Row({
   process,
   spaceSlug,
   appSlug,
+  canManage,
   logsHref,
 }: {
   process: ProcessView;
   spaceSlug: string;
   appSlug: string;
-  logsHref: string;
+  canManage: boolean;
+  logsHref: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -135,9 +147,11 @@ function Row({
             <Kind kind={process.kind} />
             <span className="font-mono text-[12.5px] text-ink">{process.name}</span>
           </span>
-          <span className="mt-1 block truncate font-mono text-[11.5px] text-ink-subtle">
-            {process.command}
-          </span>
+          {process.command !== null ? (
+            <span className="mt-1 block truncate font-mono text-[11.5px] text-ink-subtle">
+              {process.command}
+            </span>
+          ) : null}
           <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-muted">
             <Status process={process} missing={missing} />
             {process.kind === "scheduled" ? (
@@ -156,49 +170,51 @@ function Row({
               )
             ) : null}
             <span className="text-ink-subtle">from {process.source}</span>
-            {process.kind === "worker" && !missing ? (
+            {process.kind === "worker" && !missing && logsHref !== null ? (
               <SectionLink href={logsHref}>Logs</SectionLink>
             ) : null}
           </span>
         </span>
 
-        <span className="flex items-center gap-1.5 sm:shrink-0">
-          {process.kind === "scheduled" ? (
-            <>
-              <button
-                type="button"
-                disabled={pending || missing}
-                onClick={() =>
-                  act(() => runProcessNow(spaceSlug, appSlug, process.name), "Started.")
-                }
-                className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
-              >
-                Run now
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  setEditing((open) => !open);
-                  setError(null);
-                }}
-                aria-expanded={editing}
-                className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
-              >
-                {noTimetable ? "Set a timetable" : "Edit"}
-              </button>
-            </>
-          ) : null}
-          <Switch
-            on={process.enabled}
-            disabled={pending || missing || (noTimetable && !process.enabled)}
-            label={`${process.enabled ? "Turn off" : "Turn on"} ${process.name}`}
-            title={noTimetable ? "Give it a timetable first" : undefined}
-            onChange={(on) =>
-              act(() => switchProcess(spaceSlug, appSlug, process.name, on))
-            }
-          />
-        </span>
+        {canManage ? (
+          <span className="flex items-center gap-1.5 sm:shrink-0">
+            {process.kind === "scheduled" ? (
+              <>
+                <button
+                  type="button"
+                  disabled={pending || missing}
+                  onClick={() =>
+                    act(() => runProcessNow(spaceSlug, appSlug, process.name), "Started.")
+                  }
+                  className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
+                >
+                  Run now
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setEditing((open) => !open);
+                    setError(null);
+                  }}
+                  aria-expanded={editing}
+                  className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
+                >
+                  {noTimetable ? "Set a timetable" : "Edit"}
+                </button>
+              </>
+            ) : null}
+            <Switch
+              on={process.enabled}
+              disabled={pending || missing || (noTimetable && !process.enabled)}
+              label={`${process.enabled ? "Turn off" : "Turn on"} ${process.name}`}
+              title={noTimetable ? "Give it a timetable first" : undefined}
+              onChange={(on) =>
+                act(() => switchProcess(spaceSlug, appSlug, process.name, on))
+              }
+            />
+          </span>
+        ) : null}
       </div>
 
       {error !== null ? (
@@ -227,15 +243,18 @@ function Row({
       {process.state?.kind === "scheduled" && process.state.runs.length > 0 ? (
         <ol className="mt-3 border-t border-line pt-2">
           {process.state.runs.map((run) => (
-            <li key={run.id} className="flex items-center gap-3 py-1 text-[12px]">
+            <li
+              key={run.id}
+              className="flex items-center gap-2 py-1 text-[12px] sm:gap-3"
+            >
               <time
                 dateTime={new Date(run.startedAt).toISOString()}
-                className="tabular w-[128px] shrink-0 text-ink-subtle"
+                className="tabular w-[82px] shrink-0 text-ink-subtle sm:w-[128px]"
               >
                 {when(new Date(run.startedAt))}
               </time>
               <span
-                className={`w-[76px] shrink-0 ${
+                className={`w-[64px] shrink-0 sm:w-[76px] ${
                   run.outcome === "succeeded"
                     ? "text-live"
                     : run.outcome === "failed"
@@ -245,19 +264,25 @@ function Row({
               >
                 {OUTCOME[run.outcome]}
               </span>
-              <span className="tabular min-w-0 flex-1 text-ink-subtle">
+              <span className="tabular min-w-0 flex-1 truncate whitespace-nowrap text-ink-subtle">
                 {run.finishedAt === null
                   ? ""
                   : took(new Date(run.startedAt), new Date(run.finishedAt))}
               </span>
-              <SectionLink
-                href={`${logsHref}&around=${encodeURIComponent(new Date(run.startedAt).toISOString())}`}
-              >
-                Logs
-              </SectionLink>
+              {logsHref !== null ? (
+                <SectionLink
+                  href={`${logsHref}&around=${encodeURIComponent(new Date(run.startedAt).toISOString())}`}
+                >
+                  Logs
+                </SectionLink>
+              ) : null}
             </li>
           ))}
         </ol>
+      ) : process.kind === "scheduled" && process.state === null && !missing ? (
+        <p className="mt-2 text-[12px] text-ink-subtle">
+          Could not check its recent runs just now.
+        </p>
       ) : null}
     </li>
   );
@@ -270,6 +295,9 @@ function Status({ process, missing }: { process: ProcessView; missing: boolean }
   if (!process.enabled) return <span className="text-ink-subtle">Off</span>;
   if (process.kind === "worker") {
     const health = process.state?.kind === "worker" ? process.state.health : null;
+    if (health === null) {
+      return <span className="text-ink-muted">On · could not check just now</span>;
+    }
     if (health === "failed") return <span className="text-failed">Failed to start</span>;
     if (health === "starting") return <span className="text-pending">Starting</span>;
     return <span className="text-live">Running</span>;
@@ -457,8 +485,8 @@ function when(at: Date): string {
 
 function took(from: Date, to: Date): string {
   const seconds = Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000));
-  if (seconds < 60) return `${seconds} s`;
-  return `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function ahead(at: Date): string {
