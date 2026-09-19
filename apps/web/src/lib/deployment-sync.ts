@@ -1,10 +1,12 @@
 import "server-only";
 
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, ne, notInArray } from "drizzle-orm";
 import { apps, db, deployments } from "@cira/db";
-import type { Deployment } from "@cira/core";
+import type { Deployment, DeploymentStatus } from "@cira/core";
 import { deploymentProvider, isTerminal } from "@cira/deploy";
 import { checkStaleness } from "@/lib/deployment-staleness";
+import { deployFailedMessage } from "@/lib/messages";
+import { notifyManagers } from "@/lib/notify";
 
 /**
  * Bring a deployment record back in line with what actually happened.
@@ -17,19 +19,8 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
   const verdict = checkStaleness(deployment);
   if (verdict.action === "settled") return deployment;
 
-  const database = db();
-
   if (verdict.action === "declare-failed") {
-    await database
-      .update(deployments)
-      .set({ status: "failed", updatedAt: new Date() })
-      .where(eq(deployments.id, deployment.id));
-    await database
-      .update(apps)
-      .set({ status: "failed", updatedAt: new Date() })
-      .where(eq(apps.id, deployment.appId));
-
-    return { ...deployment, status: "failed" };
+    return recordDeploymentStatus(deployment, { status: "failed", url: deployment.url });
   }
 
   let live;
@@ -44,22 +35,71 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
     return deployment;
   }
 
-  await database
-    .update(deployments)
-    .set({ status: live.status, url: live.url, updatedAt: new Date() })
-    .where(eq(deployments.id, deployment.id));
+  return recordDeploymentStatus(deployment, live);
+}
 
-  if (isTerminal(live.status)) {
+/**
+ * Write down what a deploy in flight has become, and the app's status with it.
+ *
+ * The one place a deploy's status changes after it starts, reached from the
+ * CLI polling it, from someone opening the app, from the gallery settling
+ * abandoned ones and from the watcher. Only a deploy still in flight is
+ * changed - the condition is in the write itself, so when two of those arrive
+ * at once exactly one of them moves it - and the one that moves it to failed
+ * tells the app's managers.
+ */
+export async function recordDeploymentStatus(
+  deployment: Deployment,
+  next: { status: DeploymentStatus; url: string | null },
+): Promise<Deployment> {
+  const database = db();
+  const now = new Date();
+
+  const moved = await database
+    .update(deployments)
+    .set({ status: next.status, url: next.url, updatedAt: now })
+    .where(
+      and(
+        eq(deployments.id, deployment.id),
+        notInArray(deployments.status, ["live", "failed", "removed"]),
+      ),
+    )
+    .returning({ id: deployments.id });
+  if (moved.length === 0) return deployment;
+
+  if (isTerminal(next.status)) {
     await database
       .update(apps)
-      .set({
-        status: live.status === "live" ? "live" : "failed",
-        updatedAt: new Date(),
-      })
+      .set({ status: next.status === "live" ? "live" : "failed", updatedAt: now })
       .where(eq(apps.id, deployment.appId));
   }
 
-  return { ...deployment, status: live.status, url: live.url };
+  if (next.status === "failed") {
+    const [earlier] = await database
+      .select({ id: deployments.id })
+      .from(deployments)
+      .where(
+        and(
+          eq(deployments.appId, deployment.appId),
+          eq(deployments.status, "live"),
+          ne(deployments.id, deployment.id),
+        ),
+      )
+      .limit(1);
+    await notifyManagers({
+      appId: deployment.appId,
+      kind: "deploy-failed",
+      subject: deployment.id,
+      compose: (app) =>
+        deployFailedMessage({
+          app,
+          startedAt: deployment.createdAt,
+          stillRunningEarlier: earlier !== undefined,
+        }),
+    });
+  }
+
+  return { ...deployment, status: next.status, url: next.url };
 }
 
 /**
@@ -88,14 +128,9 @@ export async function settleAbandonedDeploys(spaceId: string): Promise<void> {
 
   for (const row of stuck) {
     if (checkStaleness(row.deployment, now).action !== "declare-failed") continue;
-
-    await database
-      .update(deployments)
-      .set({ status: "failed", updatedAt: now })
-      .where(eq(deployments.id, row.deployment.id));
-    await database
-      .update(apps)
-      .set({ status: "failed", updatedAt: now })
-      .where(eq(apps.id, row.appId));
+    await recordDeploymentStatus(row.deployment as Deployment, {
+      status: "failed",
+      url: row.deployment.url,
+    });
   }
 }

@@ -780,3 +780,62 @@ export const processes = pgTable(
     index("processes_space_idx").on(t.spaceId),
   ],
 );
+
+/**
+ * Everything Cira has told people about by email, one row per event.
+ *
+ * The row is written before the email is sent, under a unique key naming the
+ * event - this deploy failed, this run failed, this capability was refused,
+ * this spell of not answering - so whichever of several paths notices it
+ * first sends it, and every other finds the row and sends nothing. What was
+ * said is not kept; only that it was, to whom many, and whether it went.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    /** deploy-failed, app-down, app-back, run-failed or capability-refused. */
+    kind: text("kind").notNull(),
+    /** Which one: a deployment id, a run id, a capability, a spell's start. */
+    subject: text("subject").notNull(),
+    recipients: integer("recipients").notNull().default(0),
+    /** Set once the email provider accepted it. */
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    /** Why it did not go, in Cira's words. Never the provider's. */
+    failure: text("failure"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("notifications_event_idx").on(t.appId, t.kind, t.subject),
+    index("notifications_space_idx").on(t.spaceId),
+  ],
+);
+
+/**
+ * What the watcher last saw of each thing it watches on an app: its web
+ * address, and each worker. Kept so that one missed answer is a blip and two
+ * in a row are an outage, and so an outage is reported once when it starts
+ * and once when it ends.
+ */
+export const appWatch = pgTable(
+  "app_watch",
+  {
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    /** "web", or "worker:<name>". */
+    target: text("target").notNull(),
+    /** Checks in a row that found it not answering. */
+    failures: integer("failures").notNull().default(0),
+    /** When the current outage began; null while it is fine. */
+    downSince: timestamp("down_since", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("app_watch_target_idx").on(t.appId, t.target)],
+);

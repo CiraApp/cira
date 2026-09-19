@@ -24,6 +24,9 @@ import {
   type User,
 } from "@cira/core";
 import type { AnalyzedCapability } from "@/lib/capability-grounding";
+import { humanize } from "@/lib/ask/words";
+import { refusedMessage } from "@/lib/messages";
+import { notifyManagers } from "@/lib/notify";
 import { principalFor } from "@/lib/principal";
 
 /**
@@ -269,6 +272,17 @@ export async function recordVerification(args: {
   const mine = (names: readonly string[]) =>
     and(eq(capabilities.appId, args.appId), inArray(capabilities.name, [...names]));
 
+  // Anything that worked under an earlier build and is refused by this one
+  // stopped working, which is news to whoever manages the app. One refused
+  // from the start is shown on the page and is not.
+  const lost =
+    args.refused.length === 0
+      ? []
+      : await database
+          .select({ id: capabilities.id, name: capabilities.name })
+          .from(capabilities)
+          .where(and(mine(args.refused), eq(capabilities.reach, "callable")));
+
   // One answer from the app, so one write. Splitting it would allow a state
   // where the absent ones are gone but the confirmed ones are still waiting to
   // be confirmed, which is no app's actual answer.
@@ -303,6 +317,25 @@ export async function recordVerification(args: {
         ]
       : []),
   ]);
+
+  for (const capability of lost) {
+    await tellRefused(args.appId, capability, args.deploymentId);
+  }
+}
+
+/** Tell an app's managers that one of its capabilities stopped letting Cira in. */
+async function tellRefused(
+  appId: string,
+  capability: { id: string; name: string },
+  deploymentId: string,
+): Promise<void> {
+  await notifyManagers({
+    appId,
+    kind: "capability-refused",
+    // Per build: refused again after a later build let it in is news again.
+    subject: `${capability.id}:${deploymentId}`,
+    compose: (app) => refusedMessage({ app, operation: humanize(capability.name) }),
+  });
 }
 
 /**
@@ -319,7 +352,7 @@ export async function recordRefusal(args: {
   deploymentId: string;
 }): Promise<void> {
   const stamped = new Date();
-  await db()
+  const demoted = await db()
     .update(capabilities)
     .set({
       reach: "refused",
@@ -329,7 +362,17 @@ export async function recordRefusal(args: {
     })
     .where(
       and(eq(capabilities.id, args.capabilityId), eq(capabilities.reach, "callable")),
+    )
+    .returning({ appId: capabilities.appId, name: capabilities.name });
+
+  const capability = demoted[0];
+  if (capability !== undefined) {
+    await tellRefused(
+      capability.appId,
+      { id: args.capabilityId, name: capability.name },
+      args.deploymentId,
     );
+  }
 }
 
 /** Every capability on an app, for the app's own page. */

@@ -5,6 +5,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { InviteDialog } from "@/components/invite-dialog";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
+import { emailConfigured } from "@/lib/email";
 
 const ROLE_NOTE: Record<string, string> = {
   owner: "Full control of this space",
@@ -95,7 +96,11 @@ export default async function MembersPage({
             } in ${ctx.space.name}`}
           />
         }
-        actions={canInvite ? <InviteDialog spaceSlug={spaceSlug} /> : null}
+        actions={
+          canInvite ? (
+            <InviteDialog spaceSlug={spaceSlug} emailing={emailConfigured()} />
+          ) : null
+        }
       >
         <div className="max-w-[760px]">
           {teamsByName.length > 0 ? (

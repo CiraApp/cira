@@ -9,6 +9,8 @@ import type { Role } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
 import { ForbiddenError, requireInviteRights } from "@/lib/authz";
 import { checkInvite, inviteExpiry } from "@/lib/invite-rules";
+import { appOrigin, sendEmail } from "@/lib/email";
+import { inviteMessage } from "@/lib/messages";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -22,18 +24,23 @@ const createInput = z.object({
   role: z.enum(["member", "admin"]),
 });
 
+export interface CreatedInvite {
+  url: string;
+  email: string;
+  /** Whether the invitation went out by email; the link works either way. */
+  emailed: boolean;
+}
+
 /**
- * Invite someone to a space, returning a link the inviter sends themselves.
- *
- * Cira does not send the mail in V1: an inviter who can reach a colleague
- * already has a channel, and adding a mail provider buys nothing the link does
- * not. The invite still names one address, so the link cannot be forwarded
- * into the space by someone else.
+ * Invite someone to a space: email them the link, and hand it to the inviter
+ * too, since an email can land in spam and a link can be sent another way.
+ * The invite names one address, so the link cannot be forwarded into the
+ * space by someone else.
  */
 export async function createInvite(
-  _previous: ActionResult<{ url: string; email: string }> | null,
+  _previous: ActionResult<CreatedInvite> | null,
   formData: FormData,
-): Promise<ActionResult<{ url: string; email: string }>> {
+): Promise<ActionResult<CreatedInvite>> {
   const parsed = createInput.safeParse({
     spaceSlug: formData.get("spaceSlug"),
     email: formData.get("email"),
@@ -98,18 +105,32 @@ export async function createInvite(
     );
 
   const token = newInviteToken();
+  const expiresAt = inviteExpiry();
   await database.insert(invites).values({
     id: newId("invite"),
     spaceId: ctx.space.id,
     email,
     role: role as Role,
-    // The link is returned once, below, and only its hash is kept.
+    // The link is sent and returned once, below, and only its hash is kept.
     tokenHash: hashToken(token),
     invitedByUserId: ctx.user.id,
-    expiresAt: inviteExpiry(),
+    expiresAt,
   });
 
-  return { ok: true, data: { url: `/invite/${token}`, email } };
+  const path = `/invite/${token}`;
+  const sent = await sendEmail({
+    to: email,
+    ...inviteMessage({
+      inviter: ctx.user.name,
+      spaceName: ctx.space.name,
+      role,
+      email,
+      url: `${appOrigin()}${path}`,
+      expiresAt,
+    }),
+  });
+
+  return { ok: true, data: { url: path, email, emailed: sent.sent } };
 }
 
 export async function revokeInvite(

@@ -1,21 +1,33 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { createInvite, type ActionResult } from "@/lib/invite-actions";
+import {
+  createInvite,
+  type ActionResult,
+  type CreatedInvite,
+} from "@/lib/invite-actions";
 import { CopyableCommand } from "./copyable-command";
 import { Portal } from "./ui/portal";
 
 /**
  * Inviting is a rare, deliberate act, so it lives behind one button rather
- * than occupying the gallery. The result is a link the inviter sends however
- * they already talk to the person.
+ * than occupying the gallery. The invitation is emailed when this Cira can
+ * send email, and the link is shown either way, for the inviter to send
+ * however they already talk to the person.
  */
-export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
+export function InviteDialog({
+  spaceSlug,
+  emailing,
+}: {
+  spaceSlug: string;
+  /** Whether invitations go out by email here, so the dialog promises only that. */
+  emailing: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const [state, action, pending] = useActionState<
-    ActionResult<{ url: string; email: string }> | null,
+    ActionResult<CreatedInvite> | null,
     FormData
   >(createInvite, null);
 
@@ -84,8 +96,9 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
               {inviteUrl === null ? (
                 <>
                   <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
-                    We&rsquo;ll give you a link to send them. Only the address you enter
-                    can use it.
+                    {emailing
+                      ? "We\u2019ll email them an invitation. Only the address you enter can accept it."
+                      : "We\u2019ll give you a link to send them. Only the address you enter can use it."}
                   </p>
 
                   <form action={action} className="mt-5 flex flex-col gap-3">
@@ -136,7 +149,13 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
                         disabled={pending}
                         className="btn btn-primary"
                       >
-                        {pending ? "Creating..." : "Create invite"}
+                        {emailing
+                          ? pending
+                            ? "Sending..."
+                            : "Send invite"
+                          : pending
+                            ? "Creating..."
+                            : "Create invite"}
                       </button>
                     </div>
                   </form>
@@ -144,8 +163,9 @@ export function InviteDialog({ spaceSlug }: { spaceSlug: string }) {
               ) : (
                 <>
                   <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
-                    Send this to {state?.ok === true ? state.data.email : "them"}. It
-                    works once, for that address only, and lapses in a week.
+                    {state?.ok === true && state.data.emailed
+                      ? `Invitation sent to ${state.data.email}. It works once, for that address only, and lapses in a week. If it does not arrive, send them this link yourself.`
+                      : `Send this to ${state?.ok === true ? state.data.email : "them"}. It works once, for that address only, and lapses in a week.`}
                   </p>
 
                   <div className="mt-5">

@@ -24,6 +24,8 @@ export const ID_PREFIXES = {
   invocation: "run",
   /** A worker or scheduled run an app declares. */
   process: "prc",
+  /** One event people were emailed about, claimed once so it is sent once. */
+  notification: "ntf",
   /** A CLI's long-lived credential, kept as a hash. */
   cliToken: "tok",
   /** One `cira login` in progress. */

@@ -622,6 +622,27 @@ Two endpoints exist for an uptime monitor to ask every minute. Both answer
 | `/api/health`       | the app is serving and its database answers                                      |
 | `/api/health/proxy` | the app proxy turns a stranger away in its own words, so the Worker itself is up |
 
+### Telling people when something breaks
+
+Whoever manages an app - its owner and the space's admins - is emailed when a
+deploy of it fails, when it stops answering, when a worker keeps stopping,
+when a scheduled run fails, and when a capability that worked stops letting
+Cira in. And when an app or worker that stopped is back. Invitations to a
+space are emailed too, with the link still shown to the inviter.
+
+Each event is claimed in `notifications` under a key naming it before any
+email goes (`lib/notify.ts`), so the CLI, a page and the watcher noticing the
+same failure at once send it once, and nothing is ever sent twice. Email goes
+through Resend (`lib/email.ts`) and only when `RESEND_API_KEY` is set;
+without it, events are still recorded and nothing is sent.
+
+Most of Cira finds things out when someone looks. The watcher
+(`lib/watch.ts`) looks without being asked, every five minutes on Vercel Cron
+(`/api/cron/watch`, `vercel.json`): it settles deploys nobody stayed to
+watch, asks each running app for `/` (any answer short of a server error
+counts, and two misses in a row are an outage, so a slow cold start is not),
+and reads each app's workers and scheduled runs.
+
 ### The app proxy
 
 The worker is **not** deployed by CI. Pushing a change to it does nothing, and
@@ -651,6 +672,9 @@ None of this is recreated by a deploy.
 | GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                          |
 | GitHub         | secret `SENTRY_AUTH_TOKEN`, an organization token that uploads source maps during the production build       |
 | Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                         |
+| Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                       |
+| Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                   |
+| Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted |
 | Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email  |
 | Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
 | Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { apps, db, deployments, memberships } from "@cira/db";
+import type { Deployment } from "@cira/core";
 import { deploymentProvider, isTerminal } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
+import { recordDeploymentStatus } from "@/lib/deployment-sync";
 
 /**
  * How is a deploy going?
@@ -60,20 +62,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ status: row.deployment.status, url: row.deployment.url });
   }
 
-  await database
-    .update(deployments)
-    .set({ status: live.status, url: live.url, updatedAt: new Date() })
-    .where(eq(deployments.id, row.deployment.id));
-
-  if (isTerminal(live.status)) {
-    await database
-      .update(apps)
-      .set({
-        status: live.status === "live" ? "live" : "failed",
-        updatedAt: new Date(),
-      })
-      .where(eq(apps.id, row.app.id));
-  }
+  await recordDeploymentStatus(row.deployment as Deployment, live);
 
   return NextResponse.json({ status: live.status, url: live.url });
 }

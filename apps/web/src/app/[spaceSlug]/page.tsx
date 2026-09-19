@@ -12,6 +12,7 @@ import {
   requireSpaceMember,
 } from "@/lib/authz";
 import { recentlyOpened } from "@/lib/queries";
+import { emailConfigured } from "@/lib/email";
 
 export default async function SpacePage({
   params,
@@ -54,7 +55,11 @@ export default async function SpacePage({
             detail={`${apps.length} ${apps.length === 1 ? "app" : "apps"} you can open`}
           />
         }
-        actions={canInvite ? <InviteDialog spaceSlug={spaceSlug} /> : null}
+        actions={
+          canInvite ? (
+            <InviteDialog spaceSlug={spaceSlug} emailing={emailConfigured()} />
+          ) : null
+        }
       >
         {apps.length === 0 ? (
           <EmptyGallery />
