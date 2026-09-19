@@ -3,6 +3,8 @@ packages:
   - "packages/*"
   - "workers/*"
 
-# vitest's bundler needs its postinstall to place the native binary.
+# vitest's bundler needs its postinstall to place the native binary, and so
+# does Sentry's CLI, which uploads source maps at the end of a build.
 allowBuilds:
+  "@sentry/cli": true
   esbuild: true

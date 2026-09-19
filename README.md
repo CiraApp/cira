@@ -601,6 +601,27 @@ briefly serves against the new schema. Every migration therefore has to be
 additive: expand first, and contract in a later deploy once nothing reads the
 old shape.
 
+### Watching Cira itself
+
+Errors in the web app, on the server and in the browser, go to Sentry
+(project `cira-web` in the `cira` organization). Only production reports:
+it is the only environment given `NEXT_PUBLIC_SENTRY_DSN`. A report carries
+where a request went and what broke, never what the request carried - body,
+cookies, query and all headers but the browser's name are removed before it
+leaves (`lib/sentry-options.ts`), because a deploy request holds an app's
+secrets. No session replay, for the same reason. Reports from the browser go
+through `/monitoring` on Cira's own domain so ad blockers do not drop them,
+and source maps are uploaded at the end of the production build, then deleted
+rather than served.
+
+Two endpoints exist for an uptime monitor to ask every minute. Both answer
+200 or 503 and say nothing else:
+
+| Endpoint            | Up when                                                                          |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `/api/health`       | the app is serving and its database answers                                      |
+| `/api/health/proxy` | the app proxy turns a stranger away in its own words, so the Worker itself is up |
+
 ### The app proxy
 
 The worker is **not** deployed by CI. Pushing a change to it does nothing, and
@@ -628,6 +649,9 @@ None of this is recreated by a deploy.
 | Cloudflare     | route `*.cira.dev/*` to `cira-app-proxy`                                                                     |
 | Vercel         | environment variables, including `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`                                  |
 | GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                          |
+| GitHub         | secret `SENTRY_AUTH_TOKEN`, an organization token that uploads source maps during the production build       |
+| Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                         |
+| Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email  |
 | Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
 | Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |
 | Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs     |

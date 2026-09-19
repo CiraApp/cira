@@ -14,6 +14,7 @@
     "@cira/db": "workspace:*",
     "@cira/deploy": "workspace:*",
     "@clerk/nextjs": "^7.9.2",
+    "@sentry/nextjs": "^10.75.0",
     "drizzle-orm": "^0.45.2",
     "next": "^16.3.5",
     "react": "^19.3.0",

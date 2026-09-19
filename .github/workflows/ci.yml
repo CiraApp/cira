@@ -155,6 +155,10 @@ jobs:
 
       - name: Build
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          # Uploads source maps to Sentry at the end of the build. Absent, the
+          # build still succeeds and simply skips the upload.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Deploy
         run: |
