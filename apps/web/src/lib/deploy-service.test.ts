@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { newId, type User } from "@cira/core";
+import { DEFAULT_LIMITS, newId, type User } from "@cira/core";
 import type * as CiraDb from "@cira/db";
 import type * as CiraDeploy from "@cira/deploy";
 import { migratedTestDatabase } from "../../../../packages/db/src/test-database.js";
@@ -210,5 +210,111 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       .from(appAccess)
       .where(eq(appAccess.appId, app?.id ?? ""));
     expect(grants).toHaveLength(1);
+  });
+  /**
+   * The two limits a space meets when deploying, each in its own space so the
+   * numbers are exact. Both refuse before anything is written or built.
+   */
+  describe("within a space's limits", () => {
+    const { appsPerSpace, deploysPerSpacePerHour } = DEFAULT_LIMITS;
+
+    const spaceWith = async (slug: string) => {
+      const { spaces, memberships } = await import("@cira/db");
+      const id = newId("space");
+      await database.insert(spaces).values({ id, name: slug, slug });
+      await database.insert(memberships).values({
+        id: newId("membership"),
+        userId: deployer.id,
+        spaceId: id,
+        role: "owner",
+      });
+      return id;
+    };
+
+    const deployTo = async (spaceSlug: string, appName: string, appId: string | null) => {
+      const { deployToSpace } = await import("./deploy-service");
+      return deployToSpace({
+        user: deployer,
+        spaceSlug,
+        appName,
+        appId,
+        sourceId: "src_1",
+        framework: "unknown",
+        container: null,
+      });
+    };
+
+    it("refuses a new app past the space's allowance, and still redeploys one", async () => {
+      const { apps } = await import("@cira/db");
+      const id = await spaceWith("crowded");
+      const held = Array.from({ length: appsPerSpace }, (_, n) => ({
+        id: newId("app"),
+        spaceId: id,
+        name: `App ${n}`,
+        slug: `app-${n}`,
+        status: "live" as const,
+        ownerUserId: deployer.id,
+      }));
+      await database.insert(apps).values(held);
+
+      const refused = await deployTo("crowded", "One Too Many", null);
+      expect(refused).toMatchObject({ ok: false, limited: true });
+      expect(!refused.ok && refused.error).toContain(`already has ${appsPerSpace} apps`);
+      expect(await database.select().from(apps).where(eq(apps.spaceId, id))).toHaveLength(
+        appsPerSpace,
+      );
+
+      // A fix to an app the space already has is never what the limit stops.
+      const redeploy = await deployTo("crowded", "App 0", held[0]!.id);
+      expect(redeploy.ok).toBe(true);
+    });
+
+    it("refuses a deploy past the hourly allowance, and says when to try again", async () => {
+      const { apps, deployments } = await import("@cira/db");
+      const id = await spaceWith("busy");
+      const appId = newId("app");
+      await database.insert(apps).values({
+        id: appId,
+        spaceId: id,
+        name: "Busy",
+        slug: "busy",
+        status: "live",
+        ownerUserId: deployer.id,
+      });
+      // One started just over an hour ago, which no longer counts, and a full
+      // hour's worth after it.
+      await database.insert(deployments).values([
+        {
+          id: newId("deployment"),
+          appId,
+          provider: "cloudrun",
+          providerDeploymentId: "old",
+          status: "live",
+          createdAt: new Date(Date.now() - 61 * 60_000),
+        },
+        ...Array.from({ length: deploysPerSpacePerHour }, (_, n) => ({
+          id: newId("deployment"),
+          appId,
+          provider: "cloudrun",
+          providerDeploymentId: `d${n}`,
+          status: "live" as const,
+          createdAt: new Date(Date.now() - (50 - n) * 60_000),
+        })),
+      ]);
+
+      const refused = await deployTo("busy", "Busy", appId);
+      expect(refused).toMatchObject({ ok: false, limited: true });
+      expect(!refused.ok && refused.error).toMatch(/Try again in \d+ minutes?\./);
+
+      // Nothing was started: no new deployment row, and the app is not left
+      // marked as deploying.
+      const rows = await database
+        .select()
+        .from(deployments)
+        .where(eq(deployments.appId, appId));
+      expect(rows).toHaveLength(deploysPerSpacePerHour + 1);
+      const [app] = await database.select().from(apps).where(eq(apps.id, appId));
+      expect(app?.status).toBe("live");
+    });
   });
 });

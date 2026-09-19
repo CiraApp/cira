@@ -4,7 +4,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { listMySpaces } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
-import { canManageApp } from "@cira/core";
+import { DEFAULT_LIMITS, canManageApp, describeAppAllowance } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
 import { appSlugMovedTo, deploymentHistory, listServicesForApp } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
@@ -232,8 +232,13 @@ export default async function AppPage({
             </Fact>
             {/* Only a provider's own name is capitalised; the fallback is a
                 sentence, and "Not Deployed" is not how anyone writes it. */}
-            <Fact label="Provider" capitalize={deployment !== null}>
-              {deployment === null ? "Not deployed" : deployment.provider}
+            <Fact label="Provider">
+              {deployment === null ? "Not deployed" : providerName(deployment.provider)}
+            </Fact>
+            {/* What Cloud Run gives it, from the same record the provider
+                applies, so this cannot claim more room than the app has. */}
+            <Fact label="Capacity">
+              {describeAppAllowance(DEFAULT_LIMITS, services.length > 1)}
             </Fact>
           </dl>
 
@@ -311,25 +316,26 @@ export default async function AppPage({
  * a gap in a coloured parent, so a row that wraps to two lines does not leave
  * a stripe hanging in the empty half.
  */
-function Fact({
-  label,
-  capitalize = false,
-  children,
-}: {
-  label: string;
-  /** Only for values that arrive lowercased, like a provider's name. A
-      relative time capitalised word by word reads as "2 Hours Ago". */
-  capitalize?: boolean;
-  children: React.ReactNode;
-}) {
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="border-l border-line px-4 py-3.5 first:border-l-0">
       <dt className="eyebrow">{label}</dt>
-      <dd className={`mt-1.5 text-[13px] text-ink ${capitalize ? "capitalize" : ""}`}>
-        {children}
-      </dd>
+      <dd className="mt-1.5 text-[13px] text-ink">{children}</dd>
     </div>
   );
+}
+
+/**
+ * A provider as its maker writes it. Capitalising the stored id gave
+ * "Cloudrun", which is nobody's name for it.
+ */
+function providerName(provider: string): string {
+  const names: Record<string, string> = {
+    cloudrun: "Cloud Run",
+    vercel: "Vercel",
+    demo: "Demo",
+  };
+  return names[provider] ?? provider;
 }
 
 /** Coarse on purpose: "5 minutes ago" is what the spec asks for, not a timestamp. */

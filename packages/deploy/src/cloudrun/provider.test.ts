@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RuntimeLogsError, type AppDeploymentInput } from "@cira/core";
+import { DEFAULT_LIMITS, RuntimeLogsError, type AppDeploymentInput } from "@cira/core";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
 import { CloudRunProvider } from "./provider.js";
@@ -939,8 +939,37 @@ describe("an app that is two halves", () => {
 
     for (const container of service) {
       expect(container.resources.cpuIdle).toBe(false);
-      expect(container.resources.limits.memory).toBe("1Gi");
+      expect(container.resources.limits.memory).toBe("1024Mi");
     }
+  });
+
+  /**
+   * The ceiling every app is given, from the same record the app page reads,
+   * so what the page promises is what Cloud Run enforces.
+   */
+  it("gives every app the ceiling in the limits record", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+    await provider().deploy(input);
+
+    const template = (
+      calls.find((c) => c.method === "PATCH")?.body as {
+        template: {
+          scaling: { maxInstanceCount: number };
+          timeout: string;
+          containers: Array<{ resources: { limits: { cpu: string; memory: string } } }>;
+        };
+      }
+    ).template;
+
+    expect(template.scaling.maxInstanceCount).toBe(DEFAULT_LIMITS.app.maxInstances);
+    expect(template.timeout).toBe(`${DEFAULT_LIMITS.app.requestTimeoutSeconds}s`);
+    expect(template.containers[0]?.resources.limits).toEqual({
+      cpu: String(DEFAULT_LIMITS.app.cpu),
+      memory: `${DEFAULT_LIMITS.app.memoryMiB}Mi`,
+    });
   });
 
   it("leaves an ordinary single app exactly as it was", async () => {

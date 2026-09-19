@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, gt, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
@@ -12,7 +12,14 @@ import {
   services,
   spaces,
 } from "@cira/db";
-import { newId, slugify, canManageApp } from "@cira/core";
+import {
+  DEFAULT_LIMITS,
+  canManageApp,
+  checkDeployRate,
+  checkNewApp,
+  newId,
+  slugify,
+} from "@cira/core";
 import type { DeployableService } from "@cira/core";
 import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
@@ -20,7 +27,12 @@ import { recordEnvVars } from "@/lib/env-vars";
 
 export type DeployOutcome =
   | { ok: true; appId: string; appSlug: string; spaceSlug: string; deploymentId: string }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** Refused by a limit rather than by anything wrong with the request. */
+      limited?: true;
+    };
 
 /**
  * Deploy a folder into a space on someone's behalf.
@@ -81,6 +93,27 @@ export async function deployToSpace(args: {
     return { ok: false, error: "That space does not exist." };
   }
 
+  // Every deploy is a paid build in a project every company shares, so a
+  // space may only start so many an hour. Checked before anything is written
+  // or built, so a refused deploy leaves no trace and costs nothing.
+  const now = new Date();
+  const recent = await database
+    .select({ createdAt: deployments.createdAt })
+    .from(deployments)
+    .innerJoin(apps, eq(apps.id, deployments.appId))
+    .where(
+      and(
+        eq(apps.spaceId, space.id),
+        gt(deployments.createdAt, new Date(now.getTime() - 3_600_000)),
+      ),
+    );
+  const rate = checkDeployRate(
+    recent.map((r) => r.createdAt),
+    now,
+    DEFAULT_LIMITS,
+  );
+  if (!rate.ok) return { ok: false, error: rate.message, limited: true };
+
   // Redeploy an existing app when the folder is already linked, otherwise
   // create one. Relinking is by id, so renaming a folder does not fork the app.
   let app = null;
@@ -94,6 +127,15 @@ export async function deployToSpace(args: {
   }
 
   if (app === null) {
+    // Only a new app counts against the space's allowance. Redeploying one it
+    // already has is never refused, so a limit cannot stand in front of a fix.
+    const [held] = await database
+      .select({ n: count() })
+      .from(apps)
+      .where(eq(apps.spaceId, space.id));
+    const room = checkNewApp(held?.n ?? 0, DEFAULT_LIMITS);
+    if (!room.ok) return { ok: false, error: room.message, limited: true };
+
     const slug = await freeSlug(space.id, slugify(appName));
     const appId = newId("app");
 

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_LIMITS,
   RuntimeLogsError,
   type AppDeploymentInput,
   type DeployableService,
@@ -677,7 +678,13 @@ export class CloudRunProvider implements DeploymentProvider {
           // keeping an instance warm around the clock for an app nobody is
           // using at three in the morning.
           annotations: { "run.googleapis.com/startup-cpu-boost": "true" },
-          scaling: { minInstanceCount: 0, maxInstanceCount: 10 },
+          // Every app's ceiling comes from the one limits record, which is also
+          // what the app page shows, so the page cannot promise more than this.
+          scaling: {
+            minInstanceCount: 0,
+            maxInstanceCount: DEFAULT_LIMITS.app.maxInstances,
+          },
+          timeout: `${DEFAULT_LIMITS.app.requestTimeoutSeconds}s`,
           containers: spec.containers.map((container) => ({
             // Named only when there is more than one, because naming the sole
             // container of an existing service would replace it rather than
@@ -783,9 +790,13 @@ function resourcesFor(several: boolean): {
   limits: { cpu: string; memory: string };
   cpuIdle: boolean;
 } {
+  const { cpu, memoryMiB, memoryMiBWithSidecars } = DEFAULT_LIMITS.app;
   return several
-    ? { limits: { cpu: "1", memory: "1Gi" }, cpuIdle: false }
-    : { limits: { cpu: "1", memory: "512Mi" }, cpuIdle: true };
+    ? {
+        limits: { cpu: String(cpu), memory: `${memoryMiBWithSidecars}Mi` },
+        cpuIdle: false,
+      }
+    : { limits: { cpu: String(cpu), memory: `${memoryMiB}Mi` }, cpuIdle: true };
 }
 
 /**

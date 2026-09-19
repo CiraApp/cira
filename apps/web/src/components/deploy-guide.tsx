@@ -1,3 +1,4 @@
+import type { Limits } from "@cira/core";
 import { CopyableCommand } from "./copyable-command";
 
 /**
@@ -7,7 +8,16 @@ import { CopyableCommand } from "./copyable-command";
  * task, so this page is allowed to look like a terminal; it is not allowed to
  * assume you already know the sequence.
  */
-export function DeployGuide({ spaceSlug }: { spaceSlug: string }) {
+export function DeployGuide({
+  spaceSlug,
+  appCount,
+  limits,
+}: {
+  spaceSlug: string;
+  /** Apps this space holds now, against its allowance. */
+  appCount: number;
+  limits: Limits;
+}) {
   const steps = [
     {
       title: "Install the CLI",
@@ -21,7 +31,7 @@ export function DeployGuide({ spaceSlug }: { spaceSlug: string }) {
     },
     {
       title: "Ship it",
-      note: "From the folder holding your Next.js app.",
+      note: "From the folder holding your app, in any language, with or without a Dockerfile.",
       // Always named, even for someone with a single space. The command is
       // copied into a script or a README as often as it is run here, and one
       // that stops working the day its author joins a second company is worse
@@ -68,7 +78,7 @@ export function DeployGuide({ spaceSlug }: { spaceSlug: string }) {
           {[
             [
               "Your folder is packaged",
-              "Dependencies, build output and any .env stay on your machine.",
+              "Dependencies and build output stay on your machine. Values from .env go to the running app, never into the upload.",
             ],
             ["Cira builds and hosts it", "You never touch the cloud account underneath."],
             [
@@ -90,6 +100,33 @@ export function DeployGuide({ spaceSlug }: { spaceSlug: string }) {
             </li>
           ))}
         </ul>
+
+        {/*
+          The allowance, stated where deploying starts rather than first met as
+          a refusal from the CLI. Read from the same record the server enforces.
+        */}
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="eyebrow">Limits</p>
+          <dl className="mt-2.5 flex flex-col gap-1.5 text-[12px]">
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-subtle">Apps in this space</dt>
+              <dd className="tabular text-ink">
+                {appCount} of {limits.appsPerSpace}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-subtle">Deploys an hour</dt>
+              <dd className="tabular text-ink">{limits.deploysPerSpacePerHour}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-subtle">Each app</dt>
+              <dd className="text-right text-ink">
+                {limits.app.maxInstances} instances, {limits.app.cpu} CPU,{" "}
+                {limits.app.memoryMiB} MB
+              </dd>
+            </div>
+          </dl>
+        </div>
       </aside>
     </div>
   );

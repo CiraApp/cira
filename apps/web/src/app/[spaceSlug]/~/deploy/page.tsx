@@ -1,4 +1,7 @@
 import { notFound } from "next/navigation";
+import { count, eq } from "drizzle-orm";
+import { apps, db } from "@cira/db";
+import { DEFAULT_LIMITS } from "@cira/core";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { DeployGuide } from "@/components/deploy-guide";
@@ -13,7 +16,10 @@ export default async function DeployPage({
 
   try {
     const ctx = await requireSpaceMember(spaceSlug);
-    const spaces = await listMySpaces();
+    const [spaces, [held]] = await Promise.all([
+      listMySpaces(),
+      db().select({ n: count() }).from(apps).where(eq(apps.spaceId, ctx.space.id)),
+    ]);
 
     return (
       <AppShell
@@ -21,7 +27,11 @@ export default async function DeployPage({
         spaces={spaces}
         title={<PageTitle title="Deploy" detail={`Ship an app into ${ctx.space.name}`} />}
       >
-        <DeployGuide spaceSlug={spaceSlug} />
+        <DeployGuide
+          spaceSlug={spaceSlug}
+          appCount={held?.n ?? 0}
+          limits={DEFAULT_LIMITS}
+        />
       </AppShell>
     );
   } catch (error) {

@@ -89,7 +89,12 @@ export async function POST(request: Request) {
   });
 
   if (!outcome.ok) {
-    return NextResponse.json({ error: outcome.error }, { status: 400 });
+    // A limit is not a malformed request, and saying so lets a client tell
+    // "wait" from "fix what you sent".
+    return NextResponse.json(
+      { error: outcome.error },
+      { status: outcome.limited === true ? 429 : 400 },
+    );
   }
 
   return NextResponse.json(outcome);

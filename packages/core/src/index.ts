@@ -9,3 +9,4 @@ export * from "./app-homepage.js";
 export * from "./app-image.js";
 export * from "./capability-console.js";
 export * from "./runtime-logs.js";
+export * from "./limits.js";
