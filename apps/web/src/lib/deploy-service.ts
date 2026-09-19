@@ -24,6 +24,7 @@ import type { DeployableService, DeployedProcess } from "@cira/core";
 import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
 import { recordEnvVars } from "@/lib/env-vars";
+import { planForSpace } from "@/lib/plan";
 import { recordProcesses, specsFor } from "@/lib/processes";
 
 export type DeployOutcome =
@@ -142,7 +143,7 @@ export async function deployToSpace(args: {
       .select({ n: count() })
       .from(apps)
       .where(eq(apps.spaceId, space.id));
-    const room = checkNewApp(held?.n ?? 0, DEFAULT_LIMITS);
+    const room = checkNewApp(held?.n ?? 0, (await planForSpace(space.id)).limits);
     if (!room.ok) return { ok: false, error: room.message, limited: true };
 
     const slug = await freeSlug(space.id, slugify(appName));

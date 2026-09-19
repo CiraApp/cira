@@ -85,15 +85,20 @@ use its apps, and Cira would know if anything broke for them.
 Exit when a company can pay, knows what it is agreeing to, and is billed for
 what it uses.
 
-- [ ] **2.1 Pricing.** What a plan includes and costs, in terms of the limits
-      from 1.2. _You decide; Claude writes it into the product._
+- [x] **2.1 Pricing.** Placeholders in core's `plans.ts`, set from measured
+      costs (2.3): Trial, free for 14 days with one worker; Team, $12 per
+      person a month with five minimum, plus $75 a month for each worker -
+      above the ~$52 a worker costs. A space's plan is a column, read where
+      limits are enforced. Revisit with a real customer in front of you.
 - [ ] **2.2 Billing.** Stripe checkout and customer portal, plans enforced
       through the limits from 1.2, and what happens when a payment fails.
       Depends on 2.1. _You create the Stripe account._
-- [ ] **2.3 Usage and cost per company.** Label every Cloud Run service with
-      its space, export Google billing, and show each company what it used.
-      Needed to price sensibly and to spot a customer who costs more than
-      they pay.
+- [x] **2.3 Usage and cost per company.** Cloud Monitoring is asked what each
+      service, job and worker pool ran for, attributed to apps by Cira's own
+      records, priced by `pricing.ts`, and shown to admins at
+      `/{space}/~/usage` with deploys, capability runs and questions asked
+      (2026-09-19). Measured against the real project: under a dollar a month
+      so far, all of it Wave.
 - [ ] **2.4 Legal.** Terms of service, privacy policy, a data processing
       agreement, a list of subprocessors (Google, Vercel, Neon, Clerk,
       Anthropic, Cloudflare), and a security page. _You, with a lawyer or a

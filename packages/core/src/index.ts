@@ -11,5 +11,6 @@ export * from "./capability-console.js";
 export * from "./runtime-logs.js";
 export * from "./limits.js";
 export * from "./schedule.js";
+export * from "./plans.js";
 export * from "./pricing.js";
 export * from "./processes.js";

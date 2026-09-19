@@ -190,6 +190,13 @@
       "when": 1789823905431,
       "tag": "0026_tell_people_when_something_breaks",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789857016577,
+      "tag": "0027_give_a_space_its_plan",
+      "breakpoints": true
     }
   ]
 }

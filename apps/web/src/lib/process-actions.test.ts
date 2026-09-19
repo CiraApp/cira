@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { DEFAULT_LIMITS, newId, type ProcessSpec, type User } from "@cira/core";
+import { newId, type ProcessSpec, type User } from "@cira/core";
 import type * as CiraDb from "@cira/db";
 import type * as CiraDeploy from "@cira/deploy";
 import { migratedTestDatabase } from "../../../../packages/db/src/test-database.js";
@@ -114,10 +114,11 @@ describe.skipIf(!hasDatabase)("process actions", () => {
   });
 
   beforeEach(async () => {
-    const { processes } = await import("@cira/db");
+    const { processes, spaces } = await import("@cira/db");
     told.length = 0;
     googleRefuses = false;
     signedIn = owner;
+    await database.update(spaces).set({ plan: "trial" }).where(eq(spaces.id, spaceId));
     await database.delete(processes);
     const row = (
       name: string,
@@ -187,11 +188,22 @@ describe.skipIf(!hasDatabase)("process actions", () => {
     expect(told).toHaveLength(0);
   });
 
-  it("keeps a space to its allowance of workers", async () => {
+  it("keeps a space to the workers its plan allows, which a trial limits to one", async () => {
     const { switchProcess } = await import("./process-actions");
-    const { workersPerSpace } = DEFAULT_LIMITS.processes;
-    const names = ["worker-a", "worker-b", "worker-c"].slice(0, workersPerSpace + 1);
+    const { PLANS } = await import("@cira/core");
 
+    // The space was created without a plan, so it is on a trial: one worker.
+    expect(await switchProcess("p", "sync", "worker-a", true)).toEqual({ ok: true });
+    const second = await switchProcess("p", "sync", "worker-b", true);
+    expect(second.ok === false && second.error).toContain("Workers run all the time");
+    expect(PLANS.trial.limits.processes.workersPerSpace).toBe(1);
+
+    // On a paid plan the standard allowance applies.
+    const { spaces } = await import("@cira/db");
+    await database.update(spaces).set({ plan: "team" }).where(eq(spaces.id, spaceId));
+    told.length = 0;
+    const { workersPerSpace } = PLANS.team.limits.processes;
+    const names = ["worker-a", "worker-b", "worker-c"].slice(0, workersPerSpace + 1);
     for (const name of names.slice(0, workersPerSpace)) {
       expect(await switchProcess("p", "sync", name, true)).toEqual({ ok: true });
     }

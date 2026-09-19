@@ -12,6 +12,7 @@ import {
 } from "@cira/core";
 import { ProcessError, deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import { planForSpace } from "@/lib/plan";
 import { listProcesses, specsFor } from "@/lib/processes";
 import { latestDeployment } from "@/lib/queries";
 
@@ -52,7 +53,8 @@ export async function switchProcess(
             ne(processes.id, process.id),
           ),
         );
-      const room = checkProcessOn(process.kind, row?.n ?? 0, DEFAULT_LIMITS);
+      const plan = await planForSpace(spaceId);
+      const room = checkProcessOn(process.kind, row?.n ?? 0, plan.limits);
       if (!room.ok) return room.message;
     }
     return { ...process, enabled: on };

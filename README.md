@@ -622,6 +622,24 @@ uptime monitor watches it, since Sentry's free plan has one, and keeps the
 body of a failed check, so its alert says which part broke.
 `/api/health/proxy` asks about the proxy alone.
 
+### What a company pays
+
+Placeholders, set from what Cira measured of its own costs rather than from a
+market (`plans.ts`). An app that scales to zero costs cents a month; a worker
+that never scales down costs about $52; the fixed bill is tens of dollars
+whatever anyone deploys. So the price is per person, where the value is, and
+a worker is charged for on its own, because it is the one thing a customer
+can switch on that costs money every hour.
+
+| Plan  | Costs                                                        | Allows                                    |
+| ----- | ------------------------------------------------------------ | ----------------------------------------- |
+| Trial | free for 14 days                                             | one worker, otherwise the standard limits |
+| Team  | $12 per person a month, 5 minimum, plus $75 a worker a month | the standard limits from `limits.ts`      |
+
+A space's plan is a column on `spaces`, read where a limit is enforced - one
+more app, one more worker - so a plan allows exactly what its page promises.
+Nothing charges yet; Stripe is 2.2.
+
 ### What a company costs to run
 
 Every company's apps run in one Google project on one bill, so nothing in

@@ -125,6 +125,11 @@ export const spaces = pgTable(
      * company Slack works. Null for spaces created from a personal address.
      */
     domain: text("domain"),
+    /**
+     * Which plan it is on: `trial` until somebody pays. What each allows and
+     * costs lives in core's plans.ts, not here.
+     */
+    plan: text("plan").notNull().default("trial"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

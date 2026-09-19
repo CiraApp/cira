@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
-import { describeDollars, describeInstanceTime, roleAtLeast } from "@cira/core";
+import {
+  describeDollars,
+  describeInstanceTime,
+  describePlan,
+  roleAtLeast,
+} from "@cira/core";
+import { planSummary } from "@/lib/plan";
 import { monthSoFar, spaceUsage } from "@/lib/usage";
 
 /**
@@ -24,9 +30,10 @@ export default async function UsagePage({
     const ctx = await requireSpaceMember(spaceSlug);
     if (!roleAtLeast(ctx.role, "admin")) notFound();
 
-    const [spaces, outcome] = await Promise.all([
+    const [spaces, outcome, plan] = await Promise.all([
       listMySpaces(),
       spaceUsage(ctx.space.id, monthSoFar()),
+      planSummary(ctx.space.id),
     ]);
 
     const month = new Date().toLocaleDateString("en-US", {
@@ -42,6 +49,29 @@ export default async function UsagePage({
           <PageTitle title="Usage" detail={`What ${ctx.space.name} has run this month`} />
         }
       >
+        <section className="enter-up mb-7 max-w-[720px] rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+            <p className="text-[13px] text-ink">
+              {plan.plan.name}
+              <span className="text-ink-subtle"> · {describePlan(plan.plan)}</span>
+            </p>
+            <p className="tabular text-[13px] text-ink">
+              {plan.bill.dollars === 0
+                ? "No charge yet"
+                : `${describeDollars(plan.bill.dollars)} a month`}
+            </p>
+          </div>
+          <p className="mt-1 text-[12px] text-ink-subtle">
+            {plan.people} {plan.people === 1 ? "person" : "people"}
+            {plan.bill.seats > plan.people ? ` (billed as ${plan.bill.seats})` : ""},{" "}
+            {plan.workers} {plan.workers === 1 ? "worker" : "workers"} switched on
+            {plan.trialEndsAt === null
+              ? ""
+              : `. Trial runs to ${plan.trialEndsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`}
+            .
+          </p>
+        </section>
+
         {!outcome.ok ? (
           <p className="enter-up max-w-[620px] text-[13px] leading-relaxed text-ink-muted">
             {WHY[outcome.reason]}
