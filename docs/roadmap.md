@@ -31,15 +31,16 @@ Small things already known to be outstanding.
 Exit when a company Cira has never met can sign up, invite its team, deploy,
 use its apps, and Cira would know if anything broke for them.
 
-- [ ] **1.1 Production sign-in.** Move off Clerk's development instance
-      (`pk_test`) to a production one on cira.dev.
-  - _You:_ create the production instance, add its DNS records, create Google
-    OAuth credentials for it.
-  - _Claude:_ switch the keys in Vercel, and re-link existing users by
-    verified email on their first production sign-in, since a new instance
-    gives everyone a new Clerk id and `users.external_id` is keyed on it.
-  - Done when you can sign in on production keys and land in Paradym with
-    every app and grant intact.
+- [x] **1.1 Production sign-in.** Live on Clerk's production instance at
+      clerk.cira.dev since 2026-09-19. Existing people are re-linked to their
+      Cira account by verified email on first sign-in (`lib/identity.ts`).
+      Sign-in is by email code, as it was in development.
+  - [ ] _You:_ replace the production secret key, which passed through a chat
+        while being set up: create a new one in Clerk, paste it into Vercel's
+        Production `CLERK_SECRET_KEY`, run `gh workflow run ci --ref prod`,
+        then delete the old key. Optional.
+  - [ ] Sign in with Google, if wanted: custom OAuth credentials in Clerk's
+        SSO connections. Not needed for parity; development never had it.
 - [ ] **1.2 Resource limits and quotas.** Today one runaway app can exhaust
       the shared Google project and the bill has no ceiling.
   - Per app: maximum instances, CPU, memory and request timeout on the Cloud
