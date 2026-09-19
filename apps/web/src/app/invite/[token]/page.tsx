@@ -6,6 +6,7 @@ import { isInviteToken } from "@cira/core";
 import { getCurrentUser } from "@/lib/identity";
 import { checkInvite } from "@/lib/invite-rules";
 import { AcceptInvite } from "@/components/accept-invite";
+import { SwitchAccount } from "@/components/switch-account";
 import { EntryFrame } from "@/components/entry-frame";
 import { hashToken } from "@/lib/token-hash";
 
@@ -53,14 +54,39 @@ export default async function InvitePage({
   });
 
   if (!verdict.ok) {
+    // Signed in as somebody else - often the same person's other address.
+    // Saying which account this is, and offering the way out, is the whole
+    // difference between a dead end and one more click.
+    const wrongAccount = verdict.code === "wrong-account";
     return (
-      <EntryFrame title={`Join ${row.space.name} on Cira`} subtitle={verdict.message}>
-        <Link
-          href="/"
-          className="text-[14px] text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
-        >
-          Go to Cira
-        </Link>
+      <EntryFrame
+        title={`Join ${row.space.name} on Cira`}
+        subtitle={
+          wrongAccount
+            ? `${verdict.message} You are signed in as ${user.email}.`
+            : verdict.message
+        }
+        footer={
+          wrongAccount ? (
+            <Link
+              href="/"
+              className="text-[13px] text-ink-subtle underline-offset-4 transition-colors hover:text-ink hover:underline"
+            >
+              Stay signed in as {user.email}
+            </Link>
+          ) : undefined
+        }
+      >
+        {wrongAccount ? (
+          <SwitchAccount backTo={`/invite/${token}`} email={row.invite.email} />
+        ) : (
+          <Link
+            href="/"
+            className="text-[14px] text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
+          >
+            Go to Cira
+          </Link>
+        )}
       </EntryFrame>
     );
   }
