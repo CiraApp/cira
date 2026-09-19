@@ -393,20 +393,36 @@ export class CloudRunProvider implements DeploymentProvider {
     }
 
     // Google's error text names the project and the account, so it is turned
-    // into a reason rather than passed on.
-    if (response.status === 403 || response.status === 401) {
-      throw new RuntimeLogsError(
-        "Cira is not allowed to read this project's logs.",
-        "not-allowed",
-      );
-    }
-    if (response.status === 429) {
-      throw new RuntimeLogsError("Google is limiting log reads right now.", "busy");
-    }
+    // into a reason rather than passed on. Its reason code is kept, for whoever
+    // runs Cira: a 403 means two very different things, and without the code
+    // the only way to tell them apart is to guess.
     if (!response.ok) {
+      const code = await googleReason(response);
+      if (code === "SERVICE_DISABLED") {
+        throw new RuntimeLogsError(
+          "Cloud Logging is turned off for this project.",
+          "disabled",
+          code,
+        );
+      }
+      if (response.status === 403 || response.status === 401) {
+        throw new RuntimeLogsError(
+          "Cira is not allowed to read this project's logs.",
+          "not-allowed",
+          code,
+        );
+      }
+      if (response.status === 429) {
+        throw new RuntimeLogsError(
+          "Google is limiting log reads right now.",
+          "busy",
+          code,
+        );
+      }
       throw new RuntimeLogsError(
         `Google would not return the logs (${response.status}).`,
         "unavailable",
+        code,
       );
     }
 
@@ -837,4 +853,24 @@ function envOf(service: RunService): Record<string, string> {
     }
   }
   return env;
+}
+
+/**
+ * Google's own name for an error: the most specific reason in its details when
+ * there is one (`SERVICE_DISABLED`, `IAM_PERMISSION_DENIED`), else its status
+ * (`PERMISSION_DENIED`), else the HTTP status. Nothing else of the body is
+ * read, because the rest names accounts and projects.
+ */
+async function googleReason(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as {
+      error?: { status?: unknown; details?: Array<{ reason?: unknown }> };
+    };
+    const detail = body.error?.details?.find((d) => typeof d.reason === "string")?.reason;
+    if (typeof detail === "string") return detail;
+    if (typeof body.error?.status === "string") return body.error.status;
+  } catch {
+    // Not JSON; the status is all there is.
+  }
+  return String(response.status);
 }

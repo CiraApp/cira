@@ -57,6 +57,7 @@ export type RuntimeLogsResult =
       ok: false;
       reason:
         | "not-allowed"
+        | "disabled"
         | "busy"
         | "unavailable"
         | "not-deployed"
@@ -141,6 +142,11 @@ export async function fetchRuntimeLogs(
     };
   } catch (error) {
     if (error instanceof RuntimeLogsError) {
+      // Cira's own log, for whoever operates it: which app, and Google's code
+      // for the refusal. Never anything the app logged.
+      console.warn(
+        `runtime logs refused for app ${appId}: ${error.code ?? error.reason}`,
+      );
       return { ok: false, reason: error.reason, error: sentenceFor(error.reason) };
     }
     return {
@@ -156,6 +162,8 @@ function sentenceFor(reason: RuntimeLogsError["reason"]): string {
   switch (reason) {
     case "not-allowed":
       return "Cira is not allowed to read this app's logs yet. Google needs to let Cira's service account read Cloud Logging, which is one grant on the project.";
+    case "disabled":
+      return "Cloud Logging is turned off for this Google Cloud project, so there are no logs to read. It is switched on from the project's APIs page in the Google Cloud console.";
     case "busy":
       return "Google is limiting how often logs can be read. Trying again shortly.";
     case "unavailable":

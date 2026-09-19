@@ -516,6 +516,39 @@ describe("getRuntimeLogs", () => {
     }
   });
 
+  /**
+   * Google answers 403 both when the account lacks permission and when the
+   * Logging API is switched off. They are fixed in different places, so they
+   * must not read the same; Google's reason code is what tells them apart.
+   */
+  it("tells a switched-off Logging API apart from a missing permission", async () => {
+    const refusal = (reason: string) =>
+      new Response(
+        JSON.stringify({
+          error: {
+            status: "PERMISSION_DENIED",
+            details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason }],
+          },
+        }),
+        { status: 403 },
+      );
+
+    serve([[/logging\.googleapis/, () => refusal("SERVICE_DISABLED")]]);
+    const off = await provider()
+      .getRuntimeLogs(`b-1:${SERVICE}:${TAG}`, query)
+      .catch((error: unknown) => error as RuntimeLogsError);
+    expect(off).toMatchObject({ reason: "disabled", code: "SERVICE_DISABLED" });
+
+    serve([[/logging\.googleapis/, () => refusal("IAM_PERMISSION_DENIED")]]);
+    const denied = await provider()
+      .getRuntimeLogs(`b-1:${SERVICE}:${TAG}`, query)
+      .catch((error: unknown) => error as RuntimeLogsError);
+    expect(denied).toMatchObject({
+      reason: "not-allowed",
+      code: "IAM_PERMISSION_DENIED",
+    });
+  });
+
   it("refuses a deployment Cloud Run did not make", async () => {
     await expect(provider().getRuntimeLogs("dpl_vercel123", query)).rejects.toThrow(
       "not made by Cloud Run",

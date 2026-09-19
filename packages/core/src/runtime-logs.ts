@@ -64,13 +64,19 @@ export interface RuntimeLogQuery {
  * Why logs could not be read, in terms a page can act on.
  *
  * `not-allowed` is the provider refusing Cira itself - a missing grant, and
- * the same for every app. `busy` is a rate limit, and passes. `unavailable`
- * is anything else.
+ * the same for every app. `disabled` is the provider's logging service being
+ * switched off for the whole project, which looks the same from outside and is
+ * fixed somewhere else. `busy` is a rate limit, and passes. `unavailable` is
+ * anything else.
+ *
+ * `code` is the provider's own name for what went wrong, for whoever operates
+ * Cira. It is never shown on a page.
  */
 export class RuntimeLogsError extends Error {
   constructor(
     message: string,
-    readonly reason: "not-allowed" | "busy" | "unavailable",
+    readonly reason: "not-allowed" | "disabled" | "busy" | "unavailable",
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = "RuntimeLogsError";

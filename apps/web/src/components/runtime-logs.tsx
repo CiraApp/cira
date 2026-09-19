@@ -564,7 +564,8 @@ function Marker({ label, at }: { label: string | null; at: Date }) {
 
 /** Why there is nothing to show, said once, in place of the list. */
 function FailureNotice({ failure }: { failure: Failure }) {
-  const waiting = failure.reason === "not-allowed";
+  // Yellow while it waits on somebody in Google Cloud; grey otherwise.
+  const waiting = failure.reason === "not-allowed" || failure.reason === "disabled";
   return (
     <div className="flex items-start gap-2.5 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5 text-[13px] leading-relaxed text-ink-muted">
       <span
