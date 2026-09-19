@@ -68,6 +68,25 @@ ids is ordinary; that verification cannot tell a missing resource from a
 missing route is a limit of verification, recorded here so it is not mistaken
 for this fixture misbehaving.
 
+## What a deploy of it showed
+
+Deployed with `cira deploy` (CLI 0.5.0) into a real space on 2026-09-19:
+
+- **No front door.** The root answered JSON, so the app came up with no web
+  interface, and its **Open** button leads to the capability console.
+- **The table held, row for row.** Seven capabilities, named `listOrders`,
+  `lookupOrder`, `getRevenue`, `getTopCustomers`, `getAudit`, `refundOrder` and
+  `regenerateReport`. The four reads were confirmed and switched on, `getAudit`
+  landed in `refused`, and both writes were confirmed by `OPTIONS` and left off.
+  `report` came through as an enum.
+- **`/orders/lookup` survived.** The analyzer's example used a seeded id, so
+  verification got a 200 rather than the 404 the caveat above warns about.
+- **Neither `/health` nor `/__reset` was proposed.**
+- **The CLI flagged `QUIET` as missing.** The environment scan treats any read
+  without a fallback as something the app needs, and `os.environ.get("QUIET")`
+  has none. The service runs fine without it; the warning is the scan being
+  cautious, not the fixture being wrong.
+
 ## Running it
 
 ```sh
