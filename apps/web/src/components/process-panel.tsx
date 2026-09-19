@@ -285,6 +285,12 @@ function Kind({ kind }: { kind: "web" | "worker" | "scheduled" }) {
   );
 }
 
+/**
+ * On is green, off is a plain track with the same white knob. Off has to read
+ * as "can be switched on", not as locked: a grey knob on a grey track is how
+ * a disabled control looks, and was mistaken for one. Only a switch that
+ * really cannot be used - a scheduled run with no timetable - is faded.
+ */
 function Switch({
   on,
   disabled,
@@ -307,14 +313,16 @@ function Switch({
       title={title}
       disabled={disabled}
       onClick={() => onChange(!on)}
-      className={`relative h-[18px] w-[32px] sm:ml-1 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-40 ${
-        on ? "bg-live/70" : "bg-line-strong"
+      className={`group relative h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 sm:ml-1 ${
+        on
+          ? "bg-live"
+          : "bg-line-strong shadow-[inset_0_0_0_1px_var(--color-line-strong)] enabled:hover:bg-ink-subtle/60"
       }`}
     >
       <span
         aria-hidden="true"
-        className={`absolute top-[2px] h-[14px] w-[14px] rounded-full transition-[left] duration-200 ease-[var(--ease-spring)] ${
-          on ? "left-[16px] bg-white" : "left-[2px] bg-ink-subtle"
+        className={`absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.35)] transition-[left] duration-200 ease-[var(--ease-spring)] ${
+          on ? "left-[18px]" : "left-[2px]"
         }`}
       />
     </button>

@@ -58,12 +58,11 @@ use its apps, and Cira would know if anything broke for them.
       today are links the inviter sends by hand. Done when an invite arrives
       by email and can be accepted from it. _You create the account and verify
       the domain, Claude builds._
-- [ ] **1.6 Scheduled jobs.** Work that runs on a timer - a nightly sync, a
-      Monday report - on Cloud Run Jobs and Cloud Scheduler. How a schedule is
-      declared, a page to see and change it, run history through the runtime
-      logs page, and a failed run treated as a failure. Design doc first.
-      Done when a script that runs and exits deploys, runs on its schedule,
-      and its runs and their logs are visible.
+- [x] **1.6 Scheduled jobs and workers.** Found in a repository's Procfile,
+      fly.toml or scheduled GitHub Actions workflows; scheduled runs on Cloud
+      Run Jobs started by Cloud Scheduler, workers on Cloud Run worker pools;
+      switched on, timed and run from the app page. Verified end to end with
+      `fixtures/background-app` on 2026-09-19.
 - [ ] **1.7 Notifications.** Email when a deploy fails, an app stops
       answering, a scheduled run fails, or a capability becomes refused.
       Depends on 1.5 and 1.6. Done when each of those four reaches whoever
