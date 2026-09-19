@@ -7,3 +7,4 @@ export * from "./deployment-provider.js";
 export * from "./id.js";
 export * from "./app-homepage.js";
 export * from "./app-image.js";
+export * from "./capability-console.js";
