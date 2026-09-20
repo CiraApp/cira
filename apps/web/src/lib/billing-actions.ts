@@ -20,7 +20,7 @@ async function billingRights(spaceSlug: string) {
 export async function startCheckout(spaceSlug: string): Promise<BillingOutcome> {
   try {
     const ctx = await billingRights(spaceSlug);
-    return await checkoutFor(ctx.space);
+    return await checkoutFor(ctx.space, ctx.user.email);
   } catch (error) {
     if (error instanceof NotFoundError || error instanceof ForbiddenError) {
       return { ok: false, error: "No such space, or you do not manage its billing." };

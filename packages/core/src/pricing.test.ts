@@ -37,7 +37,9 @@ describe("pricing", () => {
     expect(describeDollars(0)).toBe("$0");
     expect(describeDollars(0.004)).toBe("under a cent");
     expect(describeDollars(0.62)).toBe("$0.62");
-    expect(describeDollars(18.42)).toBe("$18.4");
+    expect(describeDollars(18.42)).toBe("$18.42");
+    // A plan's price is a price, not a measurement.
+    expect(describeDollars(60)).toBe("$60");
     expect(describeDollars(412.6)).toBe("$413");
     expect(describeInstanceTime(42)).toBe("42 s");
     expect(describeInstanceTime(3600 * 8.72)).toBe("8.7 h");

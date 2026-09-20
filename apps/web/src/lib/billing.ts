@@ -44,7 +44,7 @@ export type BillingOutcome = { ok: true; url: string } | { ok: false; error: str
  * the seats this space has and one for each worker it runs, so the first
  * invoice matches what the usage page said it would be.
  */
-export async function checkoutFor(space: Space): Promise<BillingOutcome> {
+export async function checkoutFor(space: Space, billTo: string): Promise<BillingOutcome> {
   if (!billingConfigured()) {
     return { ok: false, error: "Paying is not switched on for this Cira yet." };
   }
@@ -54,7 +54,7 @@ export async function checkoutFor(space: Space): Promise<BillingOutcome> {
       seats: summary.people,
       workers: summary.workers,
     });
-    const customer = await customerFor(space);
+    const customer = await customerFor(space, billTo);
     const back = `${appOrigin()}/${space.slug}/~/usage`;
 
     const form: Record<string, string> = {
@@ -100,13 +100,28 @@ export async function portalFor(space: Space): Promise<BillingOutcome> {
   }
 }
 
-/** The customer Stripe knows this company as, made once and remembered. */
-async function customerFor(space: Space): Promise<string> {
+/**
+ * The customer Stripe knows this company as, made once and remembered, with
+ * the address of whoever is paying on it: Stripe fills the checkout in from
+ * it, and sends receipts and failed-payment notices to it, which are no use
+ * addressed to nobody. An existing customer that has none is given one.
+ */
+async function customerFor(space: Space, billTo: string): Promise<string> {
   if (space.stripeCustomerId !== null && space.stripeCustomerId !== "") {
+    const known = await stripe<{ email?: string | null }>(
+      `customers/${space.stripeCustomerId}`,
+      "GET",
+    ).catch(() => ({ email: "kept" }) as { email?: string | null });
+    if (known.email === null || known.email === undefined || known.email === "") {
+      await stripe(`customers/${space.stripeCustomerId}`, "POST", {
+        email: billTo,
+      }).catch(() => undefined);
+    }
     return space.stripeCustomerId;
   }
   const customer = await stripe<{ id: string }>("customers", "POST", {
     name: space.name,
+    email: billTo,
     "metadata[spaceId]": space.id,
     "metadata[spaceSlug]": space.slug,
   });

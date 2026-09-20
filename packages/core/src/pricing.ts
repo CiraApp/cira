@@ -66,8 +66,10 @@ export function monthlyCost(
 export function describeDollars(dollars: number): string {
   if (dollars <= 0) return "$0";
   if (dollars < 0.01) return "under a cent";
-  if (dollars < 10) return `$${dollars.toFixed(2)}`;
-  if (dollars < 100) return `$${dollars.toFixed(1)}`;
+  // A price is usually a whole number of dollars, and "$60.0" reads like a
+  // measurement rather than a price.
+  if (Number.isInteger(dollars)) return `$${dollars}`;
+  if (dollars < 100) return `$${dollars.toFixed(2)}`;
   return `$${Math.round(dollars)}`;
 }
 
