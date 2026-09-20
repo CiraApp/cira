@@ -601,6 +601,16 @@ briefly serves against the new schema. Every migration therefore has to be
 additive: expand first, and contract in a later deploy once nothing reads the
 old shape.
 
+### The public side
+
+Signed out, `/` is a landing page rather than a redirect to sign-in, with
+`/pricing`, `/docs` and `/legal/*` beside it (`components/site/`). Pricing is
+rendered from `plans.ts` and `limits.ts` - the same record the server
+enforces - so the page cannot promise an allowance the product refuses. The
+legal pages say what Cira actually does, including what it does not hold and
+what is not built, and carry a notice that they are drafts until a lawyer has
+read them.
+
 ### Watching Cira itself
 
 Errors in the web app, on the server and in the browser, go to Sentry

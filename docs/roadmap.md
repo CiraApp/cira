@@ -105,22 +105,29 @@ what it uses.
       `/{space}/~/usage` with deploys, capability runs and questions asked
       (2026-09-19). Measured against the real project: under a dollar a month
       so far, all of it Wave.
-- [ ] **2.4 Legal.** Terms of service, privacy policy, a data processing
-      agreement, a list of subprocessors (Google, Vercel, Neon, Clerk,
-      Anthropic, Cloudflare), and a security page. _You, with a lawyer or a
-      reputable template; Claude publishes them._
+- [x] **2.4 Legal.** Terms, privacy, subprocessors and a security page are
+      published at `/legal/*`, written to describe what Cira actually does -
+      including what it does not hold and what is not built. They carry a
+      visible notice that they are drafts (2026-09-20).
+  - [ ] _You:_ have terms and privacy reviewed by a lawyer before taking
+        money from a customer outside your own company, and decide the legal
+        entity and governing law they name. A data processing agreement is
+        offered by email rather than published; a template needs choosing.
 - [x] **2.5 Leaving and deleting.** Any admin can export everything Cira
       holds about their company as one JSON file (never a variable's value);
       an owner can delete the space with its name typed back, which tells
       Google app by app before forgetting anything and refuses while a
       subscription is still running (2026-09-20).
-- [ ] **2.6 Front door.** A marketing site with pricing, and public docs for
-      the CLI, MCP and the console.
-- [ ] **2.7 Apps with their own sign-in.** Today their capabilities show as
-      refused. Calling them on behalf of the signed-in person is the largest
-      unlock for real internal tools, and it deliberately changes the
-      headers allow-list in `invoke-capability.ts`. Design doc and a security
-      review first.
+- [x] **2.6 Front door.** A public landing page, pricing read from the same
+      record the product enforces, and docs covering deploying, opening apps
+      and pointing an assistant at them, all at cira.dev while signed out
+      (2026-09-20).
+- [ ] **2.7 Apps with their own sign-in.** Design written:
+      `docs/apps-with-their-own-sign-in.md` - Cira signs a 60-second assertion
+      about the person calling, the app verifies it against published keys,
+      and it is off until an app's managers turn it on. Not built: it changes
+      the headers allow-list, so the security questions in that document are
+      answered first.
 - [x] **2.8 Faster first request.** An app's managers can keep one instance
       running from its settings, on a paid plan, billed as its own line at $75
       a month against about $50 of cost. It survives deploys (2026-09-20).
