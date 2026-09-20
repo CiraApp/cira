@@ -1,7 +1,7 @@
 import "server-only";
 
-import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
-import { appWatch, db, deployments } from "@cira/db";
+import { and, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import { appWatch, db, deployments, spaces } from "@cira/db";
 import {
   nextRuns,
   parseSchedule,
@@ -10,6 +10,7 @@ import {
   type StoredProcess,
 } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
+import { syncQuantities } from "@/lib/billing";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import {
   answeringAgainMessage,
@@ -44,6 +45,8 @@ export interface WatchReport {
   deploysSettled: number;
   appsChecked: number;
   problems: number;
+  /** Subscriptions whose seat or worker count was brought up to date. */
+  billingSynced: number;
 }
 
 /** Apps checked at once: enough to finish quickly, few enough to be polite. */
@@ -52,7 +55,12 @@ const AT_ONCE = 4;
 const ANSWER_TIMEOUT_MS = 25_000;
 
 export async function watchEverything(now = new Date()): Promise<WatchReport> {
-  const report: WatchReport = { deploysSettled: 0, appsChecked: 0, problems: 0 };
+  const report: WatchReport = {
+    deploysSettled: 0,
+    appsChecked: 0,
+    problems: 0,
+    billingSynced: 0,
+  };
 
   // Deploys still in flight that nobody is polling: the CLI was closed, the
   // laptop went to sleep. Settling them is what notices a build that failed.
@@ -74,6 +82,17 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
     );
     report.appsChecked += batch.length;
     report.problems += problems.reduce((a, b) => a + b, 0);
+  }
+
+  // What a company is billed for should follow what it has, without anyone
+  // remembering to change it: people who joined or left, workers switched on.
+  const paying = await db()
+    .select({ id: spaces.id })
+    .from(spaces)
+    .where(isNotNull(spaces.stripeSubscriptionId));
+  for (const space of paying) {
+    const synced = await syncQuantities(space.id).catch(() => "skipped" as const);
+    if (synced === "changed") report.billingSynced += 1;
   }
 
   return report;

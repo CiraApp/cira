@@ -9,6 +9,8 @@ import {
   describePlan,
   roleAtLeast,
 } from "@cira/core";
+import { BillingButton } from "@/components/billing-button";
+import { noticeFor } from "@/lib/billing-rules";
 import { planSummary } from "@/lib/plan";
 import { monthSoFar, spaceUsage } from "@/lib/usage";
 
@@ -36,6 +38,7 @@ export default async function UsagePage({
       planSummary(ctx.space.id),
     ]);
 
+    const notice = noticeFor(plan.status);
     const month = new Date().toLocaleDateString("en-US", {
       month: "long",
       timeZone: "UTC",
@@ -61,7 +64,11 @@ export default async function UsagePage({
                 : `${describeDollars(plan.bill.dollars)} a month`}
             </p>
           </div>
-          <p className="mt-1 text-[12px] text-ink-subtle">
+          <div className="mt-3">
+            <BillingButton spaceSlug={spaceSlug} subscribed={plan.subscribed} />
+          </div>
+
+          <p className="mt-3 text-[12px] text-ink-subtle">
             {plan.people} {plan.people === 1 ? "person" : "people"}
             {plan.bill.seats > plan.people ? ` (billed as ${plan.bill.seats})` : ""},{" "}
             {plan.workers} {plan.workers === 1 ? "worker" : "workers"} switched on
@@ -71,6 +78,19 @@ export default async function UsagePage({
             .
           </p>
         </section>
+
+        {notice !== null ? (
+          <p
+            role="status"
+            className={`enter-up mb-5 max-w-[720px] rounded-[var(--radius-edge)] border px-4 py-3 text-[12.5px] leading-relaxed ${
+              notice.tone === "stop"
+                ? "border-failed/40 bg-failed/5 text-failed"
+                : "border-pending/40 bg-pending/5 text-pending"
+            }`}
+          >
+            {notice.message}
+          </p>
+        ) : null}
 
         {!outcome.ok ? (
           <p className="enter-up max-w-[620px] text-[13px] leading-relaxed text-ink-muted">

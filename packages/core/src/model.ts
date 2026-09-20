@@ -34,6 +34,13 @@ export interface Space {
    * space created from a personal address.
    */
   domain: string | null;
+  /** Which plan it is on; what each allows and costs is in plans.ts. */
+  plan: string;
+  /** What Stripe knows it as, and how its subscription is doing. Null until it pays. */
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  subscriptionStatus: string | null;
+  paidUntil: Date | null;
   createdAt: Date;
 }
 

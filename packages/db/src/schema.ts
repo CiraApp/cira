@@ -130,6 +130,13 @@ export const spaces = pgTable(
      * costs lives in core's plans.ts, not here.
      */
     plan: text("plan").notNull().default("trial"),
+    /** The customer Stripe knows this company as. Null until it first pays. */
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    /** Stripe's own word for how the subscription is doing. */
+    subscriptionStatus: text("subscription_status"),
+    /** What the subscription is paid up to, for a page to say so. */
+    paidUntil: timestamp("paid_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

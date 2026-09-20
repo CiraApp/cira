@@ -90,9 +90,15 @@ what it uses.
       person a month with five minimum, plus $75 a month for each worker -
       above the ~$52 a worker costs. A space's plan is a column, read where
       limits are enforced. Revisit with a real customer in front of you.
-- [ ] **2.2 Billing.** Stripe checkout and customer portal, plans enforced
-      through the limits from 1.2, and what happens when a payment fails.
-      Depends on 2.1. _You create the Stripe account._
+- [x] **2.2 Billing.** Stripe checkout and billing portal, hosted by Stripe so
+      Cira never sees a card; subscriptions applied by signed webhook, plans
+      enforced through 1.2's limits, seats and workers kept in step by the
+      watcher. A failed payment warns and changes nothing; a cancelled one
+      falls back to a trial's allowance (2026-09-19). In test mode.
+  - [ ] _You:_ switch Stripe to live mode when there is a customer: create the
+        same two prices with the lookup keys `cira_team_seat` and
+        `cira_team_worker`, a live webhook to `/api/stripe/webhook`, and
+        replace the two Vercel secrets.
 - [x] **2.3 Usage and cost per company.** Cloud Monitoring is asked what each
       service, job and worker pool ran for, attributed to apps by Cira's own
       records, priced by `pricing.ts`, and shown to admins at

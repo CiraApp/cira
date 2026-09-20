@@ -640,6 +640,25 @@ A space's plan is a column on `spaces`, read where a limit is enforced - one
 more app, one more worker - so a plan allows exactly what its page promises.
 Nothing charges yet; Stripe is 2.2.
 
+### Taking money
+
+Stripe, over its REST API rather than its SDK: a few calls and a signature
+check are not worth a dependency in every server bundle (`lib/billing.ts`).
+Cira never sees a card. An admin is sent to Stripe's hosted checkout with a
+line for the space's seats and one for each worker, and comes back to the
+usage page; afterwards they change cards and read invoices in Stripe's own
+billing portal.
+
+What a subscription _means_ arrives only by webhook at `/api/stripe/webhook`,
+whose signature is checked before the body is read as anything (a redirect can
+be faked, and a person can close the tab). It sets the space's plan through
+one rule in `lib/billing-rules.ts`: a late payment changes nothing but the
+banner, because Cira is where a company's software lives and switching it off
+over an expired card would hurt them more than the unpaid month hurts Cira; a
+subscription that is actually over falls back to what a trial allows, and
+deletes nothing. The watcher keeps the seat and worker counts in step with
+what the space really has.
+
 ### What a company costs to run
 
 Every company's apps run in one Google project on one bill, so nothing in
@@ -707,6 +726,8 @@ None of this is recreated by a deploy.
 | Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                         |
 | Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                       |
 | Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                   |
+| Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                             |
+| Stripe         | products and prices with the lookup keys `cira_team_seat` and `cira_team_worker`, and the webhook endpoint   |
 | Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted |
 | Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email  |
 | Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
