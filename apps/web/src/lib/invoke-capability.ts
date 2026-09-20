@@ -18,6 +18,7 @@ import {
   NO_SUCH_CAPABILITY,
   type CapabilityWithApp,
 } from "@/lib/capabilities";
+import { assertIdentity, IDENTITY_HEADER } from "@/lib/identity-assertion";
 import { latestDeployment } from "@/lib/queries";
 import { validateInput } from "@/lib/json-schema";
 import { demoAnswer } from "@/lib/demo/answers";
@@ -88,7 +89,10 @@ export async function invokeCapability(args: {
   const limit = checkInvocationRate(await runsInLastMinute(args.user.id), DEFAULT_LIMITS);
   if (!limit.ok) return { ok: false, error: limit.message };
 
-  const { result, outcome } = await attempt(capability, args.input);
+  const { result, outcome } = await attempt(capability, args.input, {
+    user: args.user,
+    via: args.via,
+  });
   await record({ capability, user: args.user, via: args.via, outcome, result });
   return result;
 }
@@ -97,6 +101,8 @@ export async function invokeCapability(args: {
 async function attempt(
   capability: CapabilityWithApp,
   input: unknown,
+  /** Who is asking, for an app that has asked to be told. */
+  caller: { user: User; via: InvocationVia },
 ): Promise<{ result: InvocationResult; outcome: Outcome }> {
   // Asked before `enabled`, because `enabled` is false for both of these and
   // the sentence it offers - go and ask an admin - is only true for one of
@@ -187,7 +193,7 @@ async function attempt(
     };
   }
 
-  const result = await call(target, capability, validation.value, filled);
+  const result = await call(target, capability, validation.value, filled, caller);
   // Past the checks, the only way not to have the app's answer is not to have
   // reached it: a timeout, no connection, a token that could not be minted.
   return { result, outcome: result.answer !== undefined ? "ran" : "unreachable" };
@@ -297,6 +303,7 @@ async function call(
   input: Record<string, unknown>,
   /** The path with the input's values in it, already checked. */
   filled: { path: string; used: readonly string[] },
+  caller: { user: User; via: InvocationVia },
 ): Promise<InvocationResult> {
   const url = new URL(target.url);
   let body: string | undefined;
@@ -329,9 +336,21 @@ async function call(
     return { ok: false, error: `Could not reach ${capability.appName}.` };
   }
 
+  // Who is asking, signed, and only for an app whose managers asked to be
+  // told. Every other app is called exactly as before: as nobody.
+  const identity = capability.appTellsWhoIsCalling
+    ? assertIdentity({
+        user: caller.user,
+        spaceSlug: capability.spaceSlug,
+        audience: url.origin,
+        via: caller.via,
+      })
+    : null;
+
   const headers: Record<string, string> = {
     accept: "application/json",
     "content-type": "application/json",
+    ...(identity === null ? {} : { [IDENTITY_HEADER]: identity }),
     // Not `authorization`: Cloud Run consumes this one and passes the
     // app's own `authorization` header through untouched, which matters
     // because the app was not written for Cira and may well use it.

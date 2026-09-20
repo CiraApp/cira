@@ -61,6 +61,8 @@ export interface CapabilityWithApp extends Capability {
   appName: string;
   appSlug: string;
   spaceSlug: string;
+  /** Whether this app is told who is calling; see identity-assertion.ts. */
+  appTellsWhoIsCalling: boolean;
 }
 
 /** Everything the signed-in user may see, across every space they are in. */
@@ -498,6 +500,7 @@ async function visibleCapabilities(user: User): Promise<{ rows: CapabilityWithAp
       ...toCapability(row.capability, serving.get(row.app.id) ?? null),
       appName: row.app.name,
       appSlug: row.app.slug,
+      appTellsWhoIsCalling: row.app.tellsWhoIsCalling,
       spaceSlug: slugs.get(row.app.spaceId) ?? "",
     }));
 
@@ -562,6 +565,7 @@ export function toApp(row: typeof apps.$inferSelect): App {
     homepageUrl: row.homepageUrl,
     hasWebUi: row.hasWebUi,
     minInstances: row.minInstances,
+    tellsWhoIsCalling: row.tellsWhoIsCalling,
     capabilitiesAnalyzedAt: row.capabilitiesAnalyzedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

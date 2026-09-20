@@ -69,6 +69,33 @@ export default function DocsPage() {
         </p>
       </Section>
 
+      <Section title="If your app signs its own users in">
+        <p>
+          Most internal software has its own login, and a call that says only &ldquo;Cira
+          is calling&rdquo; is no use to it. Turn on <em>Tell this app who is calling</em>{" "}
+          in the app&rsquo;s settings and Cira sends a signed statement naming the person
+          behind each request:
+        </p>
+        <pre className="overflow-x-auto rounded-[var(--radius-edge)] border border-line bg-sunken/60 p-4 font-mono text-[12px] leading-relaxed text-ink-muted">
+          {`# Python, with any JWT library
+claims = jwt.decode(
+    request.headers["x-cira-identity"],
+    key=cira_keys(),                    # https://cira.dev/.well-known/cira-jwks.json
+    algorithms=["ES256"],
+    audience="https://your-app.example",  # your own address
+    issuer="https://cira.dev",
+)
+user = find_user_by_email(claims["email"])`}
+        </pre>
+        <p>
+          It carries who they are - id, name, verified email - which company, and whether
+          a person or their assistant is asking (<code>via</code>). It carries nothing
+          anyone could be signed in with, it names your app as its audience, and it lasts
+          sixty seconds. Verify it; never trust the header unchecked, because anyone who
+          can reach your app can set a header.
+        </p>
+      </Section>
+
       <Section title="Keep an eye on it">
         <p>
           Each app has its runtime logs, its recent runs, and a record of who ran what.

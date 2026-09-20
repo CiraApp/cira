@@ -10,6 +10,8 @@ function app(
   extra: Partial<Pick<App, "homepageUrl" | "hasWebUi">> = {},
 ): App {
   return {
+    minInstances: 0,
+    tellsWhoIsCalling: false,
     id: "app_1",
     spaceId: "spc_1",
     name: "Revenue",
@@ -21,7 +23,6 @@ function app(
     ownerUserId: "usr_1",
     homepageUrl: null,
     hasWebUi: null,
-    minInstances: 0,
     capabilitiesAnalyzedAt: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),

@@ -669,6 +669,31 @@ subscription that is actually over falls back to what a trial allows, and
 deletes nothing. The watcher keeps the seat and worker counts in step with
 what the space really has.
 
+### Apps that sign their own users in
+
+Cira calls an app as nobody: an identity token for that app and a strict
+allow-list of headers, which is why an app with its own login answers 401 and
+its capabilities are recorded as refused.
+
+An app's managers can now turn on _Tell this app who is calling_. Cira then
+sends `x-cira-identity`: an ES256-signed assertion naming the person - id,
+name, verified email, their company, and whether a person or an agent is
+asking - with the app's own origin as its audience and a sixty-second life
+(`lib/identity-assertion.ts`). Apps verify it against
+`/.well-known/cira-jwks.json`, which carries the current key and the one
+before it so a rotation breaks nobody. Signing keys live in the environment,
+never in the database.
+
+Signed rather than merely sent, because an app is reachable through Cira's
+browser proxy too, where the person controls their own headers. Off by
+default, per app: an app not expecting a claim about a person never receives
+one. Turning it on clears the refusals collected while Cira called as nobody
+and asks the app again, as the person who turned it on.
+
+The guard that made this safe was already there: `speaksForNobody` is an
+allow-list, so the new header stops a 401 being recorded as a refusal against
+everybody - a 401 now means that one person was turned away.
+
 ### Keeping an app warm
 
 An app scales to zero, so the first request after a quiet spell waits for a

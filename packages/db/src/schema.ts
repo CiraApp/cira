@@ -273,6 +273,12 @@ export const apps = pgTable(
      * every hour, so it is off unless a paid plan turns it on.
      */
     minInstances: integer("min_instances").notNull().default(0),
+    /**
+     * Whether Cira tells this app who is calling, as a signed assertion it can
+     * verify. Off unless the app's managers turned it on: an app that is not
+     * expecting one should never start receiving claims about people.
+     */
+    tellsWhoIsCalling: boolean("tells_who_is_calling").notNull().default(false),
     hasWebUi: boolean("has_web_ui"),
     /**
      * When the analyzer last read this app's source and finished.

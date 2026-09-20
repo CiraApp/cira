@@ -91,6 +91,8 @@ export interface App {
   hasWebUi: boolean | null;
   /** Instances kept warm for it. Zero unless a paid plan turned it on. */
   minInstances: number;
+  /** Whether Cira tells it who is calling, signed, for it to verify. */
+  tellsWhoIsCalling: boolean;
   /** When the analyzer last finished. Null means nobody has read this code. */
   capabilitiesAnalyzedAt: Date | null;
   createdAt: Date;

@@ -122,12 +122,12 @@ what it uses.
       record the product enforces, and docs covering deploying, opening apps
       and pointing an assistant at them, all at cira.dev while signed out
       (2026-09-20).
-- [ ] **2.7 Apps with their own sign-in.** Design written:
-      `docs/apps-with-their-own-sign-in.md` - Cira signs a 60-second assertion
-      about the person calling, the app verifies it against published keys,
-      and it is off until an app's managers turn it on. Not built: it changes
-      the headers allow-list, so the security questions in that document are
-      answered first.
+- [x] **2.7 Apps with their own sign-in.** Cira signs a sixty-second
+      assertion naming the person behind a call, bound to the app's own
+      origin; apps verify it against `/.well-known/cira-jwks.json`. Off per
+      app until its managers turn it on, which also clears the refusals
+      collected while Cira called as nobody. Design and the answers to its
+      security questions: `docs/apps-with-their-own-sign-in.md` (2026-09-20).
 - [x] **2.8 Faster first request.** An app's managers can keep one instance
       running from its settings, on a paid plan, billed as its own line at $75
       a month against about $50 of cost. It survives deploys (2026-09-20).

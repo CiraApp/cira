@@ -13,6 +13,7 @@ import { DeploymentHistory } from "@/components/deployment-history";
 import { RunHistory } from "@/components/run-history";
 import { ProcessPanel } from "@/components/process-panel";
 import { monthlyCost } from "@cira/core";
+import { assertionsConfigured } from "@/lib/identity-assertion";
 import { planForSpace } from "@/lib/plan";
 import { processesForPage } from "@/lib/processes";
 import { recentRuns } from "@/lib/invocations";
@@ -328,6 +329,8 @@ export default async function AppPage({
               // app has nothing for a first request to arrive at.
               keepWarm={deployment?.servesWeb === true ? app.minInstances > 0 : null}
               canKeepWarm={plan.id === "team"}
+              tellsWhoIsCalling={app.tellsWhoIsCalling}
+              canTellWhoIsCalling={assertionsConfigured()}
               warmMonthly={Math.round(monthlyCost({ cpu: 1, memoryMiB: 512 }))}
             />
           ) : null}

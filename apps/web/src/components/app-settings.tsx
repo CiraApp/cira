@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteApp, setKeepWarm, updateAppDetails } from "@/lib/app-settings-actions";
+import {
+  deleteApp,
+  setKeepWarm,
+  setTellsWhoIsCalling,
+  updateAppDetails,
+} from "@/lib/app-settings-actions";
 
 /**
  * Settings sit behind a disclosure because they are rare and one of them is
@@ -21,6 +26,8 @@ export function AppSettings({
   keepWarm,
   canKeepWarm,
   warmMonthly,
+  tellsWhoIsCalling,
+  canTellWhoIsCalling,
 }: {
   spaceSlug: string;
   appSlug: string;
@@ -32,11 +39,16 @@ export function AppSettings({
   /** False on a plan that does not include it, so the switch explains itself. */
   canKeepWarm: boolean;
   warmMonthly: number;
+  /** Whether Cira tells this app who is calling. */
+  tellsWhoIsCalling: boolean;
+  /** False when this Cira has no signing key, so the switch explains itself. */
+  canTellWhoIsCalling: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [warm, setWarm] = useState(keepWarm === true);
+  const [tells, setTells] = useState(tellsWhoIsCalling);
   const [confirmName, setConfirmName] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -186,6 +198,60 @@ export function AppSettings({
             </div>
           </div>
         ) : null}
+
+        <div className="border-t border-line pt-5">
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-[12.5px] font-medium text-ink">
+                Tell this app who is calling
+              </p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
+                For an app that signs its own users in. Cira sends a signed statement
+                naming the person behind each call, which the app checks against{" "}
+                <a
+                  href="/.well-known/cira-jwks.json"
+                  className="underline underline-offset-4 hover:text-ink"
+                >
+                  Cira&rsquo;s published keys
+                </a>
+                . It says who they are and nothing they could be signed in with, and it
+                lasts a minute.
+                {canTellWhoIsCalling
+                  ? ""
+                  : " This Cira has no signing key yet, so it cannot vouch for anyone."}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={tells}
+              aria-label={`${tells ? "Stop telling" : "Tell"} ${appName} who is calling`}
+              disabled={pending || (!canTellWhoIsCalling && !tells)}
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  const result = await setTellsWhoIsCalling(spaceSlug, appSlug, !tells);
+                  if (result.ok) {
+                    setTells(result.data.tell);
+                    router.refresh();
+                  } else setError(result.error);
+                });
+              }}
+              className={`group relative h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 ${
+                tells
+                  ? "bg-live"
+                  : "bg-line-strong shadow-[inset_0_0_0_1px_var(--color-line-strong)] enabled:hover:bg-ink-subtle/60"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.35)] transition-[left] duration-200 ease-[var(--ease-spring)] ${
+                  tells ? "left-[18px]" : "left-[2px]"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
 
         <div className="border-t border-line pt-5">
           <p className="text-[12.5px] font-medium text-ink">Delete this app</p>

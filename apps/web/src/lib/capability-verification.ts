@@ -2,11 +2,12 @@ import "server-only";
 
 import { and, eq, inArray } from "drizzle-orm";
 import { apps, capabilities, db } from "@cira/db";
-import { currentReach } from "@cira/core";
+import { currentReach, type User } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
 import { probeWebUi } from "@/lib/browser-ui";
 import { recordVerification } from "@/lib/capabilities";
 import { verifyCapabilities } from "@/lib/capability-verify";
+import { assertIdentity } from "@/lib/identity-assertion";
 import { latestDeployment } from "@/lib/queries";
 import { demoAnswers } from "@/lib/demo/answers";
 
@@ -40,7 +41,11 @@ const SETTLED = {
   inconclusive: false,
 } as const;
 
-export async function verifyAppCapabilities(appId: string): Promise<VerificationOutcome> {
+export async function verifyAppCapabilities(
+  appId: string,
+  /** Who this is being checked for, when an app is told who is calling. */
+  actor?: { user: User; spaceSlug: string },
+): Promise<VerificationOutcome> {
   const database = db();
 
   const newest = await latestDeployment(appId);
@@ -132,9 +137,28 @@ export async function verifyAppCapabilities(appId: string): Promise<Verification
 
   if (pending.length === 0) return SETTLED;
 
+  // Only for an app whose managers asked to be told, and only when a person
+  // is behind the check; a background run speaks for nobody, as before.
+  const [told] = await database
+    .select({ tellsWhoIsCalling: apps.tellsWhoIsCalling })
+    .from(apps)
+    .where(eq(apps.id, appId))
+    .limit(1);
+
+  const identity =
+    told?.tellsWhoIsCalling === true && actor !== undefined
+      ? (assertIdentity({
+          user: actor.user,
+          spaceSlug: actor.spaceSlug,
+          audience: new URL(origin).origin,
+          via: "console",
+        }) ?? undefined)
+      : undefined;
+
   const outcome = await verifyCapabilities({
     origin,
     token,
+    identity,
     capabilities: pending.map((row) => ({
       name: row.name,
       method: row.method,

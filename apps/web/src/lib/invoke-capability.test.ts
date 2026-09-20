@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { speaksForNobody } from "./invoke-capability";
+import { IDENTITY_HEADER } from "./identity-assertion";
 
 /**
  * The guard on recording a refusal from a real call. A 401 only says the app
@@ -35,5 +36,15 @@ describe("speaksForNobody", () => {
    */
   it("stops at a header nobody has decided about yet", () => {
     expect(speaksForNobody({ ...anonymous, "x-cira-user": "usr_123" })).toBe(false);
+  });
+
+  /**
+   * And the change that did it. An assertion is exactly the header that was
+   * being guarded against: once it is on the request, a 401 is about the
+   * person it names, so it must not be recorded against the capability for
+   * everybody. Nothing in the allow-list was relaxed to let it through.
+   */
+  it("stops at the identity Cira now signs for apps that asked for it", () => {
+    expect(speaksForNobody({ ...anonymous, [IDENTITY_HEADER]: "ey.J.x" })).toBe(false);
   });
 });

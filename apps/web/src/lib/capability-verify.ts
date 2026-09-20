@@ -79,6 +79,14 @@ export async function verifyCapabilities(args: {
   /** Opens the app. Cira mints this per app; see cloudrun/auth.ts. */
   token: string;
   capabilities: readonly ProbeTarget[];
+  /**
+   * A signed statement about the person this check is being run for, for an
+   * app that asked to be told who is calling. Without it, an app that signs
+   * its own users in refuses a probe the same way it refuses a call - which
+   * is the right answer for an app that has not opted in, and the wrong one
+   * for an app that has.
+   */
+  identity?: string | undefined;
   fetcher?: Fetcher;
 }): Promise<Verification> {
   const fetcher = args.fetcher ?? ((url, init) => fetch(url, init));
@@ -139,7 +147,7 @@ export async function verifyCapabilities(args: {
  */
 async function reachOf(
   fetcher: Fetcher,
-  args: { origin: string; token: string },
+  args: { origin: string; token: string; identity?: string | undefined },
   capability: ProbeTarget,
 ): Promise<Reach> {
   const path = fill(capability.path, capability.probe);
@@ -217,7 +225,7 @@ function shut(status: number): boolean {
 
 async function ask(
   fetcher: Fetcher,
-  args: { origin: string; token: string },
+  args: { origin: string; token: string; identity?: string | undefined },
   request: { method: string; path: string },
 ): Promise<number | null> {
   const controller = new AbortController();
@@ -232,6 +240,7 @@ async function ask(
         "x-serverless-authorization": `Bearer ${args.token}`,
         "x-cira-probe": "1",
         accept: "application/json",
+        ...(args.identity === undefined ? {} : { "x-cira-identity": args.identity }),
       },
       redirect: "manual",
       signal: controller.signal,

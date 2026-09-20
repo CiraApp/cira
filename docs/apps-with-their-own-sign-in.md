@@ -1,8 +1,7 @@
 # Apps with their own sign-in
 
-Status: design, not built. Roadmap 2.7. Needs a security review before any of
-it ships, because it deliberately changes the one rule that has kept Cira's
-calls safe so far.
+Status: built, 2026-09-20. Roadmap 2.7. The design below is what shipped; the
+answers reached on the security questions are at the end.
 
 ## The problem
 
@@ -121,6 +120,33 @@ An app that does nothing keeps behaving exactly as it does today.
   identity provider, and the answer is the same: short expiry, rotation, and
   the key never leaving the environment. It should still be written down
   before shipping, not after.
+
+## What the security questions were answered with
+
+- **Inbound header injection.** Cira never forwards an inbound header to an
+  app: every outbound call builds its headers from scratch, and
+  `speaksForNobody` is an allow-list over exactly that set. A header arriving
+  at Cira called `x-cira-identity` reaches nothing. Through the browser proxy
+  an app can be sent any header by the person at the keyboard, which is
+  precisely why the assertion is signed and why the docs say to verify it
+  rather than trust it.
+- **Audience binding.** The app's own origin, which is stable across deploys
+  and changes when the app is rebuilt somewhere else - in which case old
+  assertions stop verifying, which is the safe direction.
+- **Agent calls.** Sent, carrying `via`, so an app can hold an agent to a
+  different standard than a person. Cira's own gate still stops an unapproved
+  write before any of this.
+- **Key handling.** Current and previous keys are published; only the current
+  one signs. Rotation is two environment variables and a deploy.
+- **Opt-in integrity.** A manager turning it on is enough. A handshake proving
+  the app verifies was considered and left out: an app that ignores the header
+  is exactly as safe as it is today, because the header alone changes nothing
+  the app does.
+- **Blast radius.** A leaked signing key would let someone assert any identity
+  to any app that trusts Cira, which is the standing risk of any identity
+  provider. Mitigated by the sixty-second life, by rotation, and by the key
+  living only in the environment. Worth revisiting if Cira ever holds a key
+  for more than one company.
 
 ## Alternatives considered
 

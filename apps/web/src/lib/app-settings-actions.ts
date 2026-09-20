@@ -2,11 +2,13 @@
 
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
-import { apps, appSlugHistory, db } from "@cira/db";
+import { apps, appSlugHistory, capabilities, db } from "@cira/db";
 import { newId, normalizeAppImage, normalizeHomepageUrl, slugify } from "@cira/core";
 import { revalidatePath } from "next/cache";
 import { deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import { assertionsConfigured } from "@/lib/identity-assertion";
+import { verifyAppCapabilities } from "@/lib/capability-verification";
 import { planForSpace } from "@/lib/plan";
 import { latestDeployment } from "@/lib/queries";
 import { tearDownApp } from "@/lib/app-teardown";
@@ -320,4 +322,62 @@ export async function setKeepWarm(
 
   revalidatePath(`/${spaceSlug}/${appSlug}`);
   return { ok: true, data: { warm } };
+}
+
+/**
+ * Tell this app who is calling, or stop telling it.
+ *
+ * Off by default and per app, because an app that is not expecting a claim
+ * about a person should never start receiving one. Turning it on clears every
+ * refusal this app collected while Cira was calling as nobody: they were
+ * answers to a different question, and leaving them would hide the very
+ * capabilities the setting exists to unlock. They are asked again, as the
+ * person who turned it on.
+ */
+export async function setTellsWhoIsCalling(
+  spaceSlug: string,
+  appSlug: string,
+  tell: boolean,
+): Promise<ActionResult<{ tell: boolean }>> {
+  let ctx;
+  try {
+    ctx = await requireAppManage(spaceSlug, appSlug);
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof ForbiddenError) {
+      return { ok: false, error: "No such app, or you do not manage it." };
+    }
+    throw error;
+  }
+
+  if (tell && !assertionsConfigured()) {
+    return {
+      ok: false,
+      error: "This Cira has no signing key yet, so it cannot vouch for anyone.",
+    };
+  }
+
+  const database = db();
+  await database
+    .update(apps)
+    .set({ tellsWhoIsCalling: tell, updatedAt: new Date() })
+    .where(eq(apps.id, ctx.app.id));
+
+  if (tell) {
+    await database
+      .update(capabilities)
+      .set({
+        reach: "pending",
+        answeredBy: null,
+        verifiedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(capabilities.appId, ctx.app.id), eq(capabilities.reach, "refused")));
+    await verifyAppCapabilities(ctx.app.id, {
+      user: ctx.user,
+      spaceSlug,
+    }).catch(() => undefined);
+  }
+
+  revalidatePath(`/${spaceSlug}/${appSlug}`);
+  return { ok: true, data: { tell } };
 }
