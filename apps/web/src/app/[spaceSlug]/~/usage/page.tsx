@@ -49,7 +49,10 @@ export default async function UsagePage({
         spaceSlug={spaceSlug}
         spaces={spaces}
         title={
-          <PageTitle title="Usage" detail={`What ${ctx.space.name} has run this month`} />
+          <PageTitle
+            title="Billing"
+            detail={`What ${ctx.space.name} pays, and what it has run`}
+          />
         }
       >
         <section className="enter-up mb-7 max-w-[720px] rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5">

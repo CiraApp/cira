@@ -9,7 +9,7 @@ export interface NavItem {
   label: string;
   /** Typed so a nav entry cannot point at a route that does not exist. */
   href: Route;
-  icon: "apps" | "recent" | "deploy" | "members" | "settings" | "profile";
+  icon: "apps" | "recent" | "deploy" | "members" | "billing" | "settings" | "profile";
 }
 
 /**
@@ -161,6 +161,16 @@ export function NavIcon({
         <circle cx="6.9" cy="6.3" r="2.8" />
         <path d="M2.3 15c0-2.5 2.1-4.2 4.6-4.2s4.6 1.7 4.6 4.2" />
         <path d="M12.2 4.1a2.6 2.6 0 0 1 0 4.8M13.4 10.9c1.4.5 2.4 1.8 2.4 3.5" />
+      </>
+    ),
+    // A card, because that is what paying looks like, with the stripe a card
+    // carries. Not a dollar sign: what is behind it is a month's usage as
+    // much as an amount.
+    billing: (
+      <>
+        <rect x="1.8" y="4" width="14.4" height="10" rx="1.6" />
+        <path d="M1.8 7.6h14.4" />
+        <path d="M4.6 11.2h3.2" />
       </>
     ),
     // Drawn in the mark's vocabulary rather than a stock cog: every edge is

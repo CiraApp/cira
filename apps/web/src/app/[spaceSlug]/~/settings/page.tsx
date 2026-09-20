@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
+import { count, eq } from "drizzle-orm";
+import { apps, db } from "@cira/db";
 import { roleAtLeast } from "@cira/core";
+import { LeaveCira } from "@/components/leave-cira";
 
 export default async function SettingsPage({
   params,
@@ -14,7 +17,11 @@ export default async function SettingsPage({
 
   try {
     const ctx = await requireSpaceMember(spaceSlug);
-    const spaces = await listMySpaces();
+    const [spaces, [counted]] = await Promise.all([
+      listMySpaces(),
+      db().select({ n: count() }).from(apps).where(eq(apps.spaceId, ctx.space.id)),
+    ]);
+    const appCount = counted?.n ?? 0;
 
     // `capitalize` is per fact, not on the whole list: a slug is an address and
     // a sentence is a sentence, and title-casing either turns a true statement
@@ -65,7 +72,7 @@ export default async function SettingsPage({
                 href={`/${spaceSlug}/~/usage`}
                 className="text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
               >
-                What this space has run this month
+                Billing, and what this space has run this month
               </Link>
             </p>
           ) : null}
@@ -74,6 +81,13 @@ export default async function SettingsPage({
             Renaming a space and changing who may join are not built yet. An app&rsquo;s
             own settings live on its page.
           </p>
+
+          <LeaveCira
+            spaceSlug={spaceSlug}
+            spaceName={ctx.space.name}
+            apps={appCount}
+            canDelete={roleAtLeast(ctx.role, "owner")}
+          />
         </div>
       </AppShell>
     );

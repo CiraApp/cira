@@ -1,5 +1,5 @@
 import type { Route } from "next";
-import type { Role, Space } from "@cira/core";
+import { roleAtLeast, type Role, type Space } from "@cira/core";
 import { AmbientField } from "@/components/ambient-field";
 import { AskButton } from "@/components/ask/ask-button";
 import { CommandPalette } from "@/components/command-palette";
@@ -52,6 +52,18 @@ export async function AppShell({
     { label: "Deploy", href: `/${spaceSlug}/~/deploy` as Route, icon: "deploy" },
     { label: "Members", href: `/${spaceSlug}/~/members` as Route, icon: "members" },
   ];
+
+  // Whoever the invoice reaches should not have to hunt for it, and everyone
+  // else should not be shown a page about money they cannot act on. The role
+  // is already here, in the list of spaces this person is in.
+  const role = spaces.find((space) => space.slug === spaceSlug)?.role;
+  if (role !== undefined && roleAtLeast(role, "admin")) {
+    items.push({
+      label: "Billing",
+      href: `/${spaceSlug}/~/usage` as Route,
+      icon: "billing",
+    });
+  }
 
   // Out of the list and onto the foot, as a glyph beside the brand. It stays in
   // the palette, because that is where you look for a place by name.
