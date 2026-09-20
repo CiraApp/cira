@@ -561,6 +561,7 @@ export function toApp(row: typeof apps.$inferSelect): App {
     ownerUserId: row.ownerUserId,
     homepageUrl: row.homepageUrl,
     hasWebUi: row.hasWebUi,
+    minInstances: row.minInstances,
     capabilitiesAnalyzedAt: row.capabilitiesAnalyzedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

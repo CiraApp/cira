@@ -4,7 +4,11 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { apps, appSlugHistory, db } from "@cira/db";
 import { newId, normalizeAppImage, normalizeHomepageUrl, slugify } from "@cira/core";
+import { revalidatePath } from "next/cache";
+import { deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import { planForSpace } from "@/lib/plan";
+import { latestDeployment } from "@/lib/queries";
 import { tearDownApp } from "@/lib/app-teardown";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -255,4 +259,65 @@ export async function updateAppImage(
   } catch (error) {
     return asError(error);
   }
+}
+
+/**
+ * Keep one instance of an app running, so the first request after a quiet
+ * spell does not wait for a container to start.
+ *
+ * A paid plan's option, because Cloud Run charges for that instance every
+ * hour it exists - about what a worker costs - and it is billed as its own
+ * line rather than buried in the seat price.
+ */
+export async function setKeepWarm(
+  spaceSlug: string,
+  appSlug: string,
+  warm: boolean,
+): Promise<ActionResult<{ warm: boolean }>> {
+  let ctx;
+  try {
+    ctx = await requireAppManage(spaceSlug, appSlug);
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof ForbiddenError) {
+      return { ok: false, error: "No such app, or you do not manage it." };
+    }
+    throw error;
+  }
+
+  const plan = await planForSpace(ctx.space.id);
+  if (warm && plan.id !== "team") {
+    return {
+      ok: false,
+      error: "Keeping an app warm costs money every hour, so it needs a paid plan.",
+    };
+  }
+
+  const deployment = await latestDeployment(ctx.app.id);
+  if (
+    deployment === null ||
+    deployment.provider !== "cloudrun" ||
+    !deployment.servesWeb
+  ) {
+    return {
+      ok: false,
+      error: "This app has no web address to keep warm.",
+    };
+  }
+
+  try {
+    await deploymentProvider().setMinInstances(
+      deployment.providerDeploymentId,
+      warm ? 1 : 0,
+    );
+  } catch {
+    return { ok: false, error: "Google would not make that change right now." };
+  }
+
+  await db()
+    .update(apps)
+    .set({ minInstances: warm ? 1 : 0, updatedAt: new Date() })
+    .where(eq(apps.id, ctx.app.id));
+
+  revalidatePath(`/${spaceSlug}/${appSlug}`);
+  return { ok: true, data: { warm } };
 }

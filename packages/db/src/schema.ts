@@ -267,6 +267,12 @@ export const apps = pgTable(
      * hiding the way into a working app is worse than offering a door that
      * turns out to be a 404.
      */
+    /**
+     * Instances kept running when nobody is asking, so the first request
+     * after a quiet spell does not wait for a container to start. Costs money
+     * every hour, so it is off unless a paid plan turns it on.
+     */
+    minInstances: integer("min_instances").notNull().default(0),
     hasWebUi: boolean("has_web_ui"),
     /**
      * When the analyzer last read this app's source and finished.

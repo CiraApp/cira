@@ -89,6 +89,8 @@ export interface AppDeploymentInput {
    * backend private without any of them needing an address of its own.
    */
   services: readonly DeployableService[];
+  /** Instances to keep running when nobody is asking. Zero unless paid for. */
+  minInstances?: number;
   /**
    * Build-time and run-time variables.
    *

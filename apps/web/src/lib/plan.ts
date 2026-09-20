@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, gt } from "drizzle-orm";
 import { apps, db, memberships, processes, spaces } from "@cira/db";
 import { monthlyBill, planOf, type Bill, type Plan } from "@cira/core";
 import { readStatus, type SubscriptionStatus } from "@/lib/billing-rules";
@@ -28,6 +28,8 @@ export interface PlanSummary {
   people: number;
   /** Workers switched on, which are what a plan charges for beyond seats. */
   workers: number;
+  /** Apps kept warm, each holding an instance open and charged for. */
+  alwaysOn: number;
   bill: Bill;
   /** When a trial runs out; null on a paid plan. */
   trialEndsAt: Date | null;
@@ -41,7 +43,7 @@ export interface PlanSummary {
 /** What this space is on, what it is using of it, and what that would cost. */
 export async function planSummary(spaceId: string): Promise<PlanSummary> {
   const database = db();
-  const [[space], [people], [workers]] = await Promise.all([
+  const [[space], [people], [workers], [warm]] = await Promise.all([
     database
       .select({
         plan: spaces.plan,
@@ -68,14 +70,23 @@ export async function planSummary(spaceId: string): Promise<PlanSummary> {
           eq(processes.enabled, true),
         ),
       ),
+    database
+      .select({ n: count() })
+      .from(apps)
+      .where(and(eq(apps.spaceId, spaceId), gt(apps.minInstances, 0))),
   ]);
 
   const plan = planOf(space?.plan);
-  const use = { seats: people?.n ?? 0, workers: workers?.n ?? 0 };
+  const use = {
+    seats: people?.n ?? 0,
+    workers: workers?.n ?? 0,
+    alwaysOn: warm?.n ?? 0,
+  };
   return {
     plan,
     people: use.seats,
     workers: use.workers,
+    alwaysOn: use.alwaysOn,
     bill: monthlyBill(plan, use),
     trialEndsAt:
       plan.trialDays === 0 || space === undefined

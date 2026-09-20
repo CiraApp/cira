@@ -117,7 +117,11 @@ interface RunService {
   latestReadyRevision?: string;
   latestCreatedRevision?: string;
   terminalCondition?: { type?: string; state?: string; message?: string };
-  template?: { labels?: Record<string, string>; containers?: RunContainer[] };
+  template?: {
+    labels?: Record<string, string>;
+    containers?: RunContainer[];
+    scaling?: { minInstanceCount?: number; maxInstanceCount?: number };
+  };
 }
 
 interface Build {
@@ -150,6 +154,8 @@ interface ServiceSpec {
   containers: ContainerPlan[];
   env: Readonly<Record<string, string>>;
   labels: Record<string, string>;
+  /** Instances kept running when nobody is asking. Zero unless paid for. */
+  minInstances?: number;
 }
 
 export class CloudRunProvider implements DeploymentProvider {
@@ -253,6 +259,7 @@ export class CloudRunProvider implements DeploymentProvider {
     const running = new Map(serving.map((c) => [c.name ?? "", c.image]));
 
     await this.putService(service, {
+      minInstances: app.minInstances ?? 0,
       containers: planned.map((part) => ({
         name: part.slug,
         image: (several ? running.get(part.slug) : serving[0]?.image) ?? part.image,
@@ -339,6 +346,9 @@ export class CloudRunProvider implements DeploymentProvider {
         containers,
         env: envOf(current),
         labels: { ...current.template?.labels, [BUILD_LABEL]: buildId },
+        // Read back rather than remembered, like the environment above: a
+        // warm app must not go cold because its build finished.
+        minInstances: current.template?.scaling?.minInstanceCount ?? 0,
       });
 
       // Changing the template starts a new revision. Its readiness is the next
@@ -546,6 +556,38 @@ export class CloudRunProvider implements DeploymentProvider {
     processes: readonly Pick<ProcessSpec, "name" | "kind">[],
   ): Promise<ProcessState[]> {
     return this.processes.states(parseHandle(deploymentId).service, processes);
+  }
+
+  /**
+   * Keep an instance running, or stop keeping one.
+   *
+   * The service is read and written back with only its scaling changed, so
+   * this can be turned on between deploys without knowing anything about the
+   * app - the same bargain switching a worker on makes. Cloud Run charges for
+   * the instance from the moment it exists, which is why this is a decision
+   * somebody makes rather than a default.
+   */
+  async setMinInstances(deploymentId: string, instances: number): Promise<void> {
+    const { service } = parseHandle(deploymentId);
+    const current = await this.request<{
+      template?: Record<string, unknown>;
+      labels?: Record<string, string>;
+      ingress?: string;
+    }>(this.serviceUrl(service), { method: "GET" });
+
+    const template = current.template ?? {};
+    const scaling = (template["scaling"] ?? {}) as Record<string, unknown>;
+    await this.request(this.serviceUrl(service), {
+      method: "PATCH",
+      body: JSON.stringify({
+        labels: current.labels,
+        ingress: current.ingress,
+        template: {
+          ...template,
+          scaling: { ...scaling, minInstanceCount: Math.max(0, instances) },
+        },
+      }),
+    });
   }
 
   /**
@@ -793,7 +835,7 @@ export class CloudRunProvider implements DeploymentProvider {
           // Every app's ceiling comes from the one limits record, which is also
           // what the app page shows, so the page cannot promise more than this.
           scaling: {
-            minInstanceCount: 0,
+            minInstanceCount: Math.max(0, spec.minInstances ?? 0),
             maxInstanceCount: DEFAULT_LIMITS.app.maxInstances,
           },
           timeout: `${DEFAULT_LIMITS.app.requestTimeoutSeconds}s`,

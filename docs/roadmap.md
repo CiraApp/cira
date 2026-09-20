@@ -109,9 +109,11 @@ what it uses.
       agreement, a list of subprocessors (Google, Vercel, Neon, Clerk,
       Anthropic, Cloudflare), and a security page. _You, with a lawyer or a
       reputable template; Claude publishes them._
-- [ ] **2.5 Leaving and deleting.** A company can export what Cira holds
-      about it and delete its space, which tears down its apps, services and
-      data. Required by the privacy policy.
+- [x] **2.5 Leaving and deleting.** Any admin can export everything Cira
+      holds about their company as one JSON file (never a variable's value);
+      an owner can delete the space with its name typed back, which tells
+      Google app by app before forgetting anything and refuses while a
+      subscription is still running (2026-09-20).
 - [ ] **2.6 Front door.** A marketing site with pricing, and public docs for
       the CLI, MCP and the console.
 - [ ] **2.7 Apps with their own sign-in.** Today their capabilities show as
@@ -119,9 +121,9 @@ what it uses.
       unlock for real internal tools, and it deliberately changes the
       headers allow-list in `invoke-capability.ts`. Design doc and a security
       review first.
-- [ ] **2.8 Faster first request.** Apps scale to zero, so the first request
-      after a quiet spell waits. A minimum-instances option, as a paid
-      feature, since it costs money every hour.
+- [x] **2.8 Faster first request.** An app's managers can keep one instance
+      running from its settings, on a paid plan, billed as its own line at $75
+      a month against about $50 of cost. It survives deploys (2026-09-20).
 
 ## Phase 3 - Larger companies
 

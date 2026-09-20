@@ -204,6 +204,13 @@
       "when": 1789874186226,
       "tag": "0028_remember_who_is_paying",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789876837077,
+      "tag": "0029_keep_an_app_warm",
+      "breakpoints": true
     }
   ]
 }

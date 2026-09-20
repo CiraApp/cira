@@ -304,6 +304,8 @@ export async function deployToSpace(args: {
       source: { uri: archiveUri(source), size: source.size },
       services: parts,
       env,
+      // A warm app stays warm across a deploy; it is paid for either way.
+      minInstances: app.minInstances,
       processes: specsFor(stored),
     });
   } catch (error) {

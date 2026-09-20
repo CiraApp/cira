@@ -12,6 +12,8 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { RunHistory } from "@/components/run-history";
 import { ProcessPanel } from "@/components/process-panel";
+import { monthlyCost } from "@cira/core";
+import { planForSpace } from "@/lib/plan";
 import { processesForPage } from "@/lib/processes";
 import { recentRuns } from "@/lib/invocations";
 import { AccessPanel } from "@/components/access-panel";
@@ -72,6 +74,7 @@ export default async function AppPage({
       memberships: ctx.memberships,
     });
     const access = manages ? await loadAccess(spaceSlug, appSlug) : null;
+    const plan = await planForSpace(ctx.space.id);
     // Only to whoever can manage the app: what it is configured with is part of
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
@@ -321,6 +324,11 @@ export default async function AppPage({
               appSlug={appSlug}
               appName={app.name}
               appHomepageUrl={app.homepageUrl}
+              // Only an app with an address can be kept warm; a worker-only
+              // app has nothing for a first request to arrive at.
+              keepWarm={deployment?.servesWeb === true ? app.minInstances > 0 : null}
+              canKeepWarm={plan.id === "team"}
+              warmMonthly={Math.round(monthlyCost({ cpu: 1, memoryMiB: 512 }))}
             />
           ) : null}
         </div>

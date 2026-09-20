@@ -30,6 +30,8 @@ export interface Plan {
   /** Dollars a month for each worker switched on, over what the plan includes. */
   workerMonthly: number;
   includedWorkers: number;
+  /** Dollars a month for each app kept warm. The same instance, always on. */
+  alwaysOnMonthly: number;
   /** Days before a trial has to become a plan. Zero for a paid plan. */
   trialDays: number;
   /** What it allows. One record, so a page cannot promise what the server refuses. */
@@ -53,6 +55,7 @@ export const PLANS: Record<PlanId, Plan> = {
     minimumSeats: 0,
     workerMonthly: 0,
     includedWorkers: 1,
+    alwaysOnMonthly: 0,
     trialDays: 14,
     limits: TRIAL_LIMITS,
   },
@@ -65,6 +68,8 @@ export const PLANS: Record<PlanId, Plan> = {
     // thing a customer can leave running never loses money.
     workerMonthly: 75,
     includedWorkers: 0,
+    // The same always-running instance a worker is, so the same price.
+    alwaysOnMonthly: 75,
     trialDays: 0,
     limits: DEFAULT_LIMITS,
   },
@@ -81,12 +86,15 @@ export interface BillableUse {
   seats: number;
   /** Workers switched on. Scheduled runs are not charged for; they end. */
   workers: number;
+  /** Apps kept warm, each holding an instance open. */
+  alwaysOn?: number;
 }
 
 export interface Bill {
   seats: number;
   seatDollars: number;
   workerDollars: number;
+  alwaysOnDollars: number;
   dollars: number;
 }
 
@@ -96,7 +104,15 @@ export function monthlyBill(plan: Plan, use: BillableUse): Bill {
   const seatDollars = seats * plan.perSeatMonthly;
   const extraWorkers = Math.max(0, Math.trunc(use.workers) - plan.includedWorkers);
   const workerDollars = extraWorkers * plan.workerMonthly;
-  return { seats, seatDollars, workerDollars, dollars: seatDollars + workerDollars };
+  const alwaysOnDollars =
+    Math.max(0, Math.trunc(use.alwaysOn ?? 0)) * plan.alwaysOnMonthly;
+  return {
+    seats,
+    seatDollars,
+    workerDollars,
+    alwaysOnDollars,
+    dollars: seatDollars + workerDollars + alwaysOnDollars,
+  };
 }
 
 /**

@@ -47,6 +47,7 @@ vi.mock("@/lib/browser-ui", () => ({
 }));
 
 const app = (hasWebUi: boolean | null): App => ({
+  minInstances: 0,
   id: "app_1",
   spaceId: "spc_1",
   name: "Wave API",

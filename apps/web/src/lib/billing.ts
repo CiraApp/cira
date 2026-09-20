@@ -29,6 +29,7 @@ const STRIPE_VERSION = "2025-08-27.basil";
 /** The prices in Stripe, found by the keys Cira gave them when they were made. */
 const SEAT_PRICE = "cira_team_seat";
 const WORKER_PRICE = "cira_team_worker";
+const ALWAYS_ON_PRICE = "cira_team_always_on";
 
 export function billingConfigured(
   env: Record<string, string | undefined> = process.env,
@@ -53,6 +54,7 @@ export async function checkoutFor(space: Space, billTo: string): Promise<Billing
     const bill = monthlyBill(PLANS.team, {
       seats: summary.people,
       workers: summary.workers,
+      alwaysOn: summary.alwaysOn,
     });
     const customer = await customerFor(space, billTo);
     const back = `${appOrigin()}/${space.slug}/~/usage`;
@@ -68,9 +70,15 @@ export async function checkoutFor(space: Space, billTo: string): Promise<Billing
       "subscription_data[metadata][spaceId]": space.id,
       "subscription_data[metadata][spaceSlug]": space.slug,
     };
+    let line = 1;
     if (summary.workers > 0) {
-      form["line_items[1][price]"] = await priceId(WORKER_PRICE);
-      form["line_items[1][quantity]"] = String(summary.workers);
+      form[`line_items[${line}][price]`] = await priceId(WORKER_PRICE);
+      form[`line_items[${line}][quantity]`] = String(summary.workers);
+      line += 1;
+    }
+    if (summary.alwaysOn > 0) {
+      form[`line_items[${line}][price]`] = await priceId(ALWAYS_ON_PRICE);
+      form[`line_items[${line}][quantity]`] = String(summary.alwaysOn);
     }
 
     const session = await stripe<{ url?: string }>("checkout/sessions", "POST", form);
@@ -197,6 +205,7 @@ export async function syncQuantities(
   const wanted = monthlyBill(PLANS.team, {
     seats: summary.people,
     workers: summary.workers,
+    alwaysOn: summary.alwaysOn,
   });
 
   const subscription = await stripe<{
@@ -210,9 +219,13 @@ export async function syncQuantities(
   let index = 0;
   let changed = false;
 
+  const quantities: Record<string, number> = {
+    [SEAT_PRICE]: wanted.seats,
+    [WORKER_PRICE]: summary.workers,
+    [ALWAYS_ON_PRICE]: summary.alwaysOn,
+  };
   for (const item of items) {
-    const isSeat = item.price?.lookup_key === SEAT_PRICE;
-    const quantity = isSeat ? wanted.seats : summary.workers;
+    const quantity = quantities[item.price?.lookup_key ?? ""] ?? item.quantity ?? 0;
     if ((item.quantity ?? 0) === quantity) continue;
     changes[`items[${index}][id]`] = item.id;
     changes[`items[${index}][quantity]`] = String(quantity);

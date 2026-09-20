@@ -13,6 +13,7 @@ describe("plans", () => {
       seats: 20,
       seatDollars: 240,
       workerDollars: 0,
+      alwaysOnDollars: 0,
       dollars: 240,
     });
     // A two-person pilot pays the floor, not $24.
@@ -26,6 +27,13 @@ describe("plans", () => {
     expect(bill.dollars).toBe(270);
     // Two always-on workers with the default memory cost Cira about $104.
     expect(workerCost(2, 1024)).toBeLessThan(bill.workerDollars);
+  });
+
+  it("charges for an app kept warm, which is an always-running instance too", () => {
+    expect(monthlyBill(PLANS.team, { seats: 5, workers: 0, alwaysOn: 2 })).toMatchObject({
+      alwaysOnDollars: 150,
+      dollars: 210,
+    });
   });
 
   it("lets a trial run one worker, free, and says so", () => {

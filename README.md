@@ -659,6 +659,15 @@ subscription that is actually over falls back to what a trial allows, and
 deletes nothing. The watcher keeps the seat and worker counts in step with
 what the space really has.
 
+### Keeping an app warm
+
+An app scales to zero, so the first request after a quiet spell waits for a
+container to start. Its managers can keep one instance running from the app's
+settings, which removes the wait and costs about $50 a month, all the time -
+so it is a paid plan's option, billed as its own line rather than hidden in
+the seat price. It survives a deploy: the count is read back off the service
+when the new build rolls out, the same way the environment is.
+
 ### What a company costs to run
 
 Every company's apps run in one Google project on one bill, so nothing in

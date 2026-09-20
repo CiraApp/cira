@@ -21,6 +21,7 @@ function app(
     ownerUserId: "usr_1",
     homepageUrl: null,
     hasWebUi: null,
+    minInstances: 0,
     capabilitiesAnalyzedAt: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
