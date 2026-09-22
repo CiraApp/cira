@@ -205,9 +205,11 @@ export function runFailedMessage(args: {
 }): Message {
   const { app } = args;
   return letter({
-    subject: `${app.name}: ${args.run} failed`,
+    // Quoted, since a run's name is often an ordinary word - "The scheduled
+    // run nightly of" read as a slip.
+    subject: `${app.name}: \u201c${args.run}\u201d failed`,
     paragraphs: [
-      `The scheduled run ${args.run} of ${app.name}, started ${utc(args.startedAt)}, failed${args.outOfMemory ? " because it ran out of memory" : ""}.`,
+      `The scheduled run \u201c${args.run}\u201d of ${app.name}, started ${utc(args.startedAt)}, failed${args.outOfMemory ? " because it ran out of memory" : ""}.`,
       args.outOfMemory
         ? "Giving it more memory on the app's page is the usual fix."
         : "Its logs from that run say what went wrong.",

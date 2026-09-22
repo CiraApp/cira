@@ -262,7 +262,7 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     await watchEverything(now);
     await watchEverything(new Date(now.getTime() + 5 * 60_000));
     expect(recipients()).toEqual(managers);
-    expect(sent[0]?.subject).toBe("Reports: weekly-report failed");
+    expect(sent[0]?.subject).toBe("Reports: \u201cweekly-report\u201d failed");
     expect(sent[0]?.text).toContain("because it ran out of memory");
   });
 

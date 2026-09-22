@@ -677,13 +677,18 @@ describe("getLogs", () => {
       [/cloudbuild/, () => built],
       [
         /storage\.googleapis/,
-        () => new Response("FETCHSOURCE\nBUILD\nDONE\n", { status: 200 }),
+        () =>
+          new Response(
+            "FETCHSOURCE\nBUILD\nStep #0: #5 [2/4] WORKDIR /app\nStep #0: #5 DONE 0.5s\nDONE\n",
+            { status: 200 },
+          ),
       ],
     ]);
 
     const lines = await provider().getLogs(`b-1:${SERVICE}:${TAG}`);
 
-    expect(lines.map((l) => l.message)).toEqual(["FETCHSOURCE", "BUILD", "DONE"]);
+    // Read as a person would: the step, without Cloud Build's wrapping.
+    expect(lines.map((l) => l.message)).toEqual(["[2/4] WORKDIR /app"]);
     expect(calls.at(-1)?.url).toContain("log-b-1.txt");
   });
 

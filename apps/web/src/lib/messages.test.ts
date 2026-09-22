@@ -52,7 +52,8 @@ describe("messages", () => {
       logs: "https://cira.dev/acme/revenue/logs?process=weekly-report",
     };
     const memory = runFailedMessage({ ...base, outOfMemory: true });
-    expect(memory.subject).toBe("Revenue <b>Board</b>: weekly-report failed");
+    expect(memory.subject).toBe("Revenue <b>Board</b>: \u201cweekly-report\u201d failed");
+    expect(memory.text).toContain("The scheduled run \u201cweekly-report\u201d of");
     expect(memory.text).toContain("ran out of memory");
     expect(memory.text).toContain(`Open Revenue <b>Board</b>: ${app.page}`);
     const other = runFailedMessage({ ...base, outOfMemory: false });

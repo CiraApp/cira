@@ -13,6 +13,7 @@ import {
   type RuntimeLogPage,
   type RuntimeLogQuery,
 } from "@cira/core";
+import { readableBuildLog } from "./build-log.js";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
 import {
@@ -540,10 +541,10 @@ export class CloudRunProvider implements DeploymentProvider {
     // times that look precise and are not.
     const at = new Date(build.startTime ?? build.createTime ?? Date.now());
 
-    return (await response.text())
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((message) => ({ timestamp: at, message }));
+    return readableBuildLog((await response.text()).split("\n")).map((message) => ({
+      timestamp: at,
+      message,
+    }));
   }
 
   /**

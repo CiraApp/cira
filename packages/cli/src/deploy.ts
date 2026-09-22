@@ -621,18 +621,30 @@ export async function deploy(argv: string[] = []): Promise<number> {
     }
 
     if (status.status === "failed" || status.status === "removed") {
-      info("");
-      fail(
-        status.reason === undefined || status.reason === null
-          ? "The deploy did not finish. Open the app in Cira to see why."
-          : `The deploy did not finish: ${status.reason}`,
-      );
       // The end of the build's own output, where the error is, rather than
       // only a link to a page that shows it.
-      const tail = await api<{ step?: "build" | "release"; lines: string[] }>(
-        `/api/cli/deploy/logs?id=${encodeURIComponent(started.deploymentId)}`,
-      ).catch(() => ({ step: "build" as const, lines: [] as string[] }));
-      if (status.status === "failed" && tail.lines.length > 0) {
+      const tail =
+        status.status === "failed"
+          ? await api<{ step?: "build" | "release"; lines: string[] }>(
+              `/api/cli/deploy/logs?id=${encodeURIComponent(started.deploymentId)}`,
+            ).catch(() => ({ step: "build" as const, lines: [] as string[] }))
+          : { step: "build" as const, lines: [] as string[] };
+      const shown = tail.lines.length > 0;
+      // The reason is written for the page and the email, which point at the
+      // logs; here they are printed right below it.
+      const reason =
+        status.reason === undefined || status.reason === null
+          ? null
+          : shown
+            ? status.reason.replace(/ Its logs, on the app's page, say where\.$/, "")
+            : status.reason;
+      info("");
+      fail(
+        reason === null
+          ? "The deploy did not finish. Open the app in Cira to see why."
+          : `The deploy did not finish: ${reason}`,
+      );
+      if (shown) {
         info("");
         info(
           dim(
