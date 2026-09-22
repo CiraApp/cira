@@ -92,6 +92,7 @@ vi.mock("@cira/deploy", async (importOriginal) => {
                 health: "ready",
                 memoryMiB: 1024,
                 outOfMemoryAt: null,
+                crashes: null,
               },
               {
                 kind: "scheduled",

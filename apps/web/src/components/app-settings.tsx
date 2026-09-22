@@ -152,7 +152,7 @@ export function AppSettings({
             type="url"
             inputMode="url"
             defaultValue={appHomepageUrl ?? ""}
-            placeholder="https://wav3.space"
+            placeholder="https://tools.example.com"
             className="field mt-1"
           />
 
@@ -224,7 +224,7 @@ export function AppSettings({
                 <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
                   An app sleeps when nobody is using it, so the first request after a
                   quiet spell waits for it to start. Keeping one instance running removes
-                  that wait and costs about ${warmMonthly} a month, all the time.
+                  that wait, and is billed at ${warmMonthly} a month while it is on.
                   {canKeepWarm ? "" : " It needs a paid plan."}
                 </p>
               </div>

@@ -161,6 +161,7 @@ describe.skipIf(!hasDatabase)("notifications", () => {
       health: "ready",
       memoryMiB: 1024,
       outOfMemoryAt: null,
+      crashes: null,
     },
     { kind: "scheduled", name: "weekly-report", exists: true, memoryMiB: 1024, runs: [] },
   ];
@@ -281,6 +282,29 @@ describe.skipIf(!hasDatabase)("notifications", () => {
       "Reports: the worker worker keeps stopping",
     ]);
     expect(sent[0]?.text).toContain("running out of memory");
+  });
+
+  // Measured on production: the pool calls itself ready throughout, and the
+  // only trace of a worker exiting every few seconds is Google's exit line.
+  it("tells them when a worker keeps exiting, with its exit code", async () => {
+    const { watchEverything } = await import("./watch");
+    // Well after any earlier test's trouble, and seen well first.
+    await watchEverything(new Date("2026-09-24T10:00:00Z"));
+    sent.length = 0;
+    const now = new Date("2026-09-24T11:00:00Z");
+    states = [
+      {
+        ...healthy()[0]!,
+        crashes: { count: 12, lastAt: new Date("2026-09-24T10:59:30Z"), exitCode: 3 },
+      } as ProcessState,
+      healthy()[1]!,
+    ];
+    await watchEverything(now);
+    expect(sent.map((e) => e.subject)).toEqual([
+      "Reports: the worker worker keeps stopping",
+      "Reports: the worker worker keeps stopping",
+    ]);
+    expect(sent[0]?.text).toContain("exited with code 3 12 times in the last hour");
   });
 
   it("records an event it could not send, and sends it once the provider is back", async () => {

@@ -69,6 +69,51 @@ function memoryOf(container: Container | undefined): number | null {
  */
 const OUT_OF_MEMORY_LOG = "Out-of-memory event detected in container";
 
+/**
+ * The line Cloud Run writes each time a worker's container exits on its own.
+ * Measured on a worker that exits with an error every few seconds: the pool
+ * keeps reporting itself ready, and this line, once per exit, is the only
+ * trace.
+ */
+const EXIT_LOG = "Container called exit(";
+
+/** How many exits in the last hour make a crash loop rather than a restart. */
+const CRASH_LOOP = 3;
+
+/**
+ * What a worker's recent log says is wrong with it: the newest out-of-memory
+ * kill, and whether it keeps exiting.
+ */
+export function readTrouble(
+  entries: ReadonlyArray<{ timestamp?: string; textPayload?: string }>,
+  now: number,
+): {
+  outOfMemoryAt: Date | null;
+  crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
+} {
+  const oom = entries.find((e) => e.textPayload?.includes(OUT_OF_MEMORY_LOG) === true);
+  const exits = entries.filter(
+    (e) =>
+      e.textPayload?.includes(EXIT_LOG) === true &&
+      e.timestamp !== undefined &&
+      now - Date.parse(e.timestamp) <= 3600_000,
+  );
+  const last = exits[0];
+  return {
+    outOfMemoryAt: oom?.timestamp === undefined ? null : new Date(oom.timestamp),
+    crashes:
+      exits.length < CRASH_LOOP || last === undefined
+        ? null
+        : {
+            count: exits.length,
+            lastAt: new Date(last.timestamp!),
+            exitCode: ((code) => (code === undefined ? null : Number(code)))(
+              /exit\((\d+)\)/.exec(last.textPayload ?? "")?.[1],
+            ),
+          },
+  };
+}
+
 /** How a failed run's condition says the same thing. */
 const OUT_OF_MEMORY_RUN = /memory limit was reached/i;
 
@@ -490,11 +535,11 @@ export class CloudRunProcesses {
                     ? "ready"
                     : "starting",
             memoryMiB: memoryOf(pool?.template?.containers?.[0]),
-            // Only a worker that is on can be running out of memory now.
-            outOfMemoryAt:
-              pool === null || instances === 0
-                ? null
-                : await this.lastOutOfMemory(name, pool.updateTime),
+            // Only a worker that is on can be in trouble now, and one read
+            // of its log answers both questions.
+            ...(pool === null || instances === 0
+              ? { outOfMemoryAt: null, crashes: null }
+              : await this.trouble(name, pool.updateTime)),
           };
         }
         const job = await this.read<JobResource>(this.jobUrl(name));
@@ -776,33 +821,40 @@ export class CloudRunProcesses {
    * its logs. A worker whose logs cannot be read is not called healthy or
    * unhealthy on their account - it just has no warning.
    */
-  private async lastOutOfMemory(
+  private async trouble(
     pool: string,
     updateTime: string | undefined,
-  ): Promise<Date | null> {
-    const dayAgo = Date.now() - 24 * 3600_000;
+  ): Promise<{
+    outOfMemoryAt: Date | null;
+    crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
+  }> {
+    const now = Date.now();
     const changed = updateTime === undefined ? 0 : Date.parse(updateTime);
-    const since = new Date(Math.max(dayAgo, Number.isNaN(changed) ? 0 : changed));
+    const since = new Date(
+      Math.max(now - 24 * 3600_000, Number.isNaN(changed) ? 0 : changed),
+    );
     const filter = [
       'resource.type="cloud_run_worker_pool"',
       `resource.labels.worker_pool_name="${pool}"`,
       `resource.labels.location="${this.config.region}"`,
-      `textPayload:"${OUT_OF_MEMORY_LOG}"`,
+      `(textPayload:"${OUT_OF_MEMORY_LOG}" OR textPayload:"${EXIT_LOG}")`,
       `timestamp>="${since.toISOString()}"`,
     ].join(" AND ");
+    const none = { outOfMemoryAt: null, crashes: null };
     try {
       const response = await this.fetch(`${LOGGING_API}/entries:list`, "POST", {
         resourceNames: [`projects/${this.config.projectId}`],
         filter,
         orderBy: "timestamp desc",
-        pageSize: 1,
+        pageSize: 100,
       });
-      if (!response.ok) return null;
-      const body = (await response.json()) as { entries?: Array<{ timestamp?: string }> };
-      const at = body.entries?.[0]?.timestamp;
-      return at === undefined ? null : new Date(at);
+      if (!response.ok) return none;
+      const body = (await response.json()) as {
+        entries?: Array<{ timestamp?: string; textPayload?: string }>;
+      };
+      return readTrouble(body.entries ?? [], now);
     } catch {
-      return null;
+      return none;
     }
   }
 

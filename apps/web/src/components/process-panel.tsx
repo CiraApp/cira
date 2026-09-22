@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LIMITS } from "@cira/core/limits";
-import { describeMemory, workerMonthlyDollars } from "@cira/core/processes";
+import { describeMemory } from "@cira/core/processes";
 import { describeSchedule, parseSchedule } from "@cira/core/schedule";
 import type { ProcessView } from "@/lib/processes";
 import {
@@ -13,6 +13,7 @@ import {
   switchProcess,
 } from "@/lib/process-actions";
 import { SectionLink } from "./section-link";
+import { LocalTime } from "@/components/local-time";
 
 /**
  * What an app runs besides serving requests: its workers and scheduled runs.
@@ -39,6 +40,7 @@ export function ProcessPanel({
   canManage,
   logsHref,
   servesWeb,
+  workerPrice,
 }: {
   processes: ProcessView[];
   spaceSlug: string;
@@ -49,15 +51,15 @@ export function ProcessPanel({
   logsHref: string | null;
   /** Whether the app also has a web process, to list it for the whole picture. */
   servesWeb: boolean;
+  /**
+   * What a worker is billed at a month on the Team plan, and how many this
+   * space's plan includes - never what one costs Cira to run, which is a
+   * different and smaller number.
+   */
+  workerPrice: { monthly: number; included: number };
 }) {
   if (processes.length === 0) return null;
-  const costs = [
-    ...new Set(
-      processes
-        .filter((p) => p.kind === "worker")
-        .map((p) => workerMonthlyDollars(p.memoryMiB)),
-    ),
-  ].sort((a, b) => a - b);
+  const workers = processes.filter((p) => p.kind === "worker").length;
 
   return (
     <section className="enter-up mt-10">
@@ -101,11 +103,11 @@ export function ProcessPanel({
         ))}
       </ul>
 
-      {costs.length > 0 && canManage ? (
+      {workers > 0 && canManage ? (
         <p className="mt-2 text-[11.5px] text-ink-subtle">
-          {costs.length === 1
-            ? `A worker runs all the time, and costs about $${costs[0]} a month while it is on.`
-            : `Workers run all the time, and cost about $${costs[0]} to $${costs.at(-1)} a month each while on.`}
+          {workerPrice.included > 0
+            ? `A worker runs all the time. The trial includes ${workerPrice.included === 1 ? "one" : workerPrice.included}; on the Team plan each is $${workerPrice.monthly} a month while it is on.`
+            : `A worker runs all the time, and is billed at $${workerPrice.monthly} a month while it is on, whatever its memory.`}
         </p>
       ) : null}
     </section>
@@ -179,7 +181,7 @@ function Row({
                   {process.enabled && process.nextRunAt !== null ? (
                     <span className="text-ink-subtle">
                       {" "}
-                      · next {ahead(process.nextRunAt)}
+                      · next <LocalTime at={process.nextRunAt} as="ahead" />
                     </span>
                   ) : null}
                 </span>
@@ -236,12 +238,30 @@ function Row({
         ) : null}
       </div>
 
+      {process.crashes !== null && process.enabled && !missing ? (
+        <p className="mt-2 text-[12px] text-failed">
+          Exited
+          {process.crashes.exitCode === null
+            ? ""
+            : ` with code ${process.crashes.exitCode}`}{" "}
+          {process.crashes.count} times in the last hour, last at{" "}
+          <LocalTime at={process.crashes.lastAt} />, and was started again each time.{" "}
+          <span className="text-ink-muted">
+            A worker should run for good; its logs say why it stops.
+          </span>
+        </p>
+      ) : null}
       {process.outOfMemoryAt !== null && !missing ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
           <p className="text-failed">
-            {process.kind === "worker"
-              ? `Ran out of memory ${when(new Date(process.outOfMemoryAt))} and was restarted.`
-              : "Its last run ran out of memory."}{" "}
+            {process.kind === "worker" ? (
+              <>
+                Ran out of memory <LocalTime at={process.outOfMemoryAt} /> and was
+                restarted.
+              </>
+            ) : (
+              "Its last run ran out of memory."
+            )}{" "}
             <span className="text-ink-muted">
               {more === null
                 ? `${describeMemory(process.memoryMiB)} is the most Cira gives; the work needs to use less.`
@@ -315,7 +335,7 @@ function Row({
                 dateTime={new Date(run.startedAt).toISOString()}
                 className="tabular w-[82px] shrink-0 text-ink-subtle sm:w-[128px]"
               >
-                {when(new Date(run.startedAt))}
+                <LocalTime at={run.startedAt} />
               </time>
               <span
                 title={run.outOfMemory ? "Ran out of memory" : undefined}
@@ -365,6 +385,10 @@ function Status({ process, missing }: { process: ProcessView; missing: boolean }
     }
     if (health === "failed") return <span className="text-failed">Failed to start</span>;
     if (health === "starting") return <span className="text-pending">Starting</span>;
+    // Exiting on its own and being started again, over and over.
+    if (process.crashes !== null) {
+      return <span className="text-failed">Keeps stopping</span>;
+    }
     // Up again now, but it has been killed for memory lately and will be again.
     if (process.outOfMemoryAt !== null) {
       return <span className="text-pending">Restarted</span>;
@@ -553,7 +577,7 @@ function ProcessEditor({
         <p className="mt-1.5 text-[11.5px] text-ink-subtle">
           {scheduled
             ? "Given to each run. It only costs anything while a run is going."
-            : `About $${workerMonthlyDollars(memoryMiB)} a month while it is on.`}
+            : "The worker's price is the same whatever memory it has."}
         </p>
       </fieldset>
 
@@ -584,27 +608,8 @@ const OUTCOME: Record<"running" | "succeeded" | "failed" | "cancelled", string> 
   cancelled: "Cancelled",
 };
 
-function when(at: Date): string {
-  return at.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 function took(from: Date, to: Date): string {
   const seconds = Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000));
   if (seconds < 60) return `${seconds}s`;
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
-
-function ahead(at: Date): string {
-  const minutes = Math.round((at.getTime() - Date.now()) / 60_000);
-  if (minutes < 1) return "in under a minute";
-  if (minutes < 60) return `in ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `in ${hours} h`;
-  return `in ${Math.round(hours / 24)} days`;
 }

@@ -140,6 +140,8 @@ export interface ProcessView {
    * for it. Null otherwise.
    */
   outOfMemoryAt: Date | null;
+  /** A worker that keeps exiting on its own: how often in the last hour, and how. */
+  crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
   /** What Google reports, or null when it could not be asked. */
   state: ProcessState | null;
 }
@@ -202,6 +204,7 @@ export async function processesForPage(
           : last?.outOfMemory === true
             ? last.startedAt
             : null,
+      crashes: state?.kind === "worker" ? state.crashes : null,
       state,
     };
   });

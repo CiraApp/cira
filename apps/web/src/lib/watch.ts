@@ -347,7 +347,8 @@ async function watchApp(deployment: Deployment, now: Date): Promise<number> {
         state.outOfMemoryAt !== null &&
         now.getTime() - new Date(state.outOfMemoryAt).getTime() <=
           WORKER_MEMORY_WINDOW_MS;
-      const failing = state.health === "failed" || outOfMemory;
+      const crashing = state.crashes !== null;
+      const failing = state.health === "failed" || outOfMemory || crashing;
       if (failing) problems += 1;
       await observe(
         deployment.appId,
@@ -356,7 +357,9 @@ async function watchApp(deployment: Deployment, now: Date): Promise<number> {
         1,
         outOfMemory
           ? "it keeps running out of memory and being restarted"
-          : "it failed to start",
+          : crashing
+            ? `it keeps stopping - it exited${state.crashes!.exitCode === null ? "" : ` with code ${state.crashes!.exitCode}`} ${state.crashes!.count} times in the last hour; its logs say why`
+            : "it failed to start",
         now,
       );
     } else {

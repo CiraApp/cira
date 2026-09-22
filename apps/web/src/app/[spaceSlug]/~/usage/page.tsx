@@ -21,7 +21,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ spaceSlug: string }>;
 }) {
-  return spaceTitle((await params).spaceSlug, "Usage");
+  return spaceTitle((await params).spaceSlug, "Billing");
 }
 
 /**

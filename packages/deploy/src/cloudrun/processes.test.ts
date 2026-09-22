@@ -69,7 +69,12 @@ class FakeGoogle {
       return json({
         entries:
           at !== undefined && filter.includes("Out-of-memory event detected")
-            ? [{ timestamp: at }]
+            ? [
+                {
+                  timestamp: at,
+                  textPayload: "Out-of-memory event detected in container",
+                },
+              ]
             : [],
       });
     }
@@ -738,5 +743,64 @@ describe("startCommand", () => {
       command: ["/bin/sh", "-c"],
       args: ["node worker.js"],
     });
+  });
+});
+
+/**
+ * What a worker's log says is wrong, from the lines Cloud Run really writes.
+ * Taken from a worker on production that exits with code 3 every few seconds.
+ */
+describe("readTrouble", () => {
+  const now = Date.parse("2026-09-22T08:30:00Z");
+  const exit = (at: string, code = 3) => ({
+    timestamp: at,
+    textPayload: `Container called exit(${code}).`,
+  });
+
+  it("calls three exits in an hour a crash loop, with the newest exit code", async () => {
+    const { readTrouble } = await import("./processes.js");
+    const trouble = readTrouble(
+      [
+        exit("2026-09-22T08:17:25Z", 1),
+        exit("2026-09-22T08:17:18Z"),
+        exit("2026-09-22T08:17:11Z"),
+      ],
+      now,
+    );
+    expect(trouble.crashes).toEqual({
+      count: 3,
+      lastAt: new Date("2026-09-22T08:17:25Z"),
+      exitCode: 1,
+    });
+    expect(trouble.outOfMemoryAt).toBeNull();
+  });
+
+  it("does not call a single restart, or an old spell, a crash loop", async () => {
+    const { readTrouble } = await import("./processes.js");
+    expect(readTrouble([exit("2026-09-22T08:17:25Z")], now).crashes).toBeNull();
+    expect(
+      readTrouble(
+        [
+          exit("2026-09-22T05:00:00Z"),
+          exit("2026-09-22T05:00:07Z"),
+          exit("2026-09-22T05:00:14Z"),
+        ],
+        now,
+      ).crashes,
+    ).toBeNull();
+  });
+
+  it("still finds an out-of-memory kill in the same lines", async () => {
+    const { readTrouble } = await import("./processes.js");
+    const trouble = readTrouble(
+      [
+        {
+          timestamp: "2026-09-22T08:00:00Z",
+          textPayload: "Out-of-memory event detected in container",
+        },
+      ],
+      now,
+    );
+    expect(trouble.outOfMemoryAt).toEqual(new Date("2026-09-22T08:00:00Z"));
   });
 });

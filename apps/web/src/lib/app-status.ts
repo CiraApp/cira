@@ -12,6 +12,7 @@ import {
   type ProcessRun,
   type RuntimeLogEntry,
   type User,
+  isProviderRecord,
 } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
 import { toApp } from "@/lib/capabilities";
@@ -369,6 +370,9 @@ function workerWords(p: ProcessView): string {
   if (health === null) return "on, but Cira could not reach Google Cloud to check it";
   if (health === "failed") return "failed to start";
   if (health === "starting") return "starting";
+  if (p.crashes !== null) {
+    return `keeps stopping: it exited${p.crashes.exitCode === null ? "" : ` with code ${p.crashes.exitCode}`} ${p.crashes.count} times in the last hour and was restarted each time`;
+  }
   if (p.outOfMemoryAt !== null) return "running, but it ran out of memory recently";
   return "running";
 }
@@ -409,8 +413,9 @@ async function latestLines(
       pageToken: null,
       limit: LOG_LINES,
     });
-    if (page.entries.length === 0) return "Nothing logged in that time.";
-    return page.entries.slice(0, LOG_LINES).reverse().map(line);
+    const said = page.entries.filter((entry) => !isProviderRecord(entry.message));
+    if (said.length === 0) return "Nothing logged in that time.";
+    return said.slice(0, LOG_LINES).reverse().map(line);
   } catch {
     return "Cira could not read the logs just now.";
   }

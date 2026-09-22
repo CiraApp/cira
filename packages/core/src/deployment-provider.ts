@@ -190,6 +190,13 @@ export type ProcessState =
        * only sign.
        */
       outOfMemoryAt: Date | null;
+      /**
+       * How often it has stopped on its own in the last hour, when that is
+       * often enough to be a crash loop: a worker is meant to run for good,
+       * and one that exits is restarted while its provider still calls it
+       * ready. Null when it is not stopping.
+       */
+      crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
     }
   | {
       kind: "scheduled";

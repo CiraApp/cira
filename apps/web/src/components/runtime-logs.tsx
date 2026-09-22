@@ -8,6 +8,7 @@ import {
   type RuntimeLogsRequest,
   type RuntimeLogsResult,
 } from "@/lib/runtime-log-actions";
+import { useHydrated } from "@/components/local-time";
 
 /**
  * An app's runtime logs: a terminal, not a dashboard.
@@ -73,6 +74,7 @@ export function RuntimeLogs({
   const router = useRouter();
   const [range, setRange] = useState<LogRange | null>(around === null ? "1h" : null);
   const [minimum, setMinimum] = useState<RuntimeLogMinimum>("all");
+  const hydrated = useHydrated();
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(false);
 
@@ -276,7 +278,7 @@ export function RuntimeLogs({
   const words =
     range !== null
       ? RANGES.find((r) => r.value === range)?.words
-      : `the two minutes around ${aroundAt === null ? "the run" : clock(aroundAt)}`;
+      : `the two minutes around ${aroundAt === null ? "the run" : hydrated ? clock(aroundAt) : TIME_PENDING}`;
 
   // Nothing here can be read, and nothing on the toolbar would change that:
   // a range, a level or Live would each only ask Google the same question and
@@ -314,7 +316,8 @@ export function RuntimeLogs({
         ) : null}
         {range === null && around !== null ? (
           <span className="inline-flex h-[30px] items-center gap-2 rounded-[var(--radius-edge)] border border-line bg-surface pr-1 pl-2.5 text-[12px] text-ink">
-            Around {around.label ?? "the run"} at {clock(new Date(around.at))}
+            Around {around.label ?? "the run"} at{" "}
+            {hydrated ? clock(new Date(around.at)) : TIME_PENDING}
             <button
               type="button"
               onClick={() => chooseRange("1h")}
@@ -512,6 +515,7 @@ function Line({
   open: boolean;
   onToggle: () => void;
 }) {
+  const hydrated = useHydrated();
   const at = new Date(entry.timestamp);
   const request = entry.request;
   const tone =
@@ -534,7 +538,7 @@ function Line({
         } ${entry.level === "error" ? "text-ink" : "text-ink-muted"}`}
       >
         <time dateTime={at.toISOString()} className="tabular text-ink-subtle">
-          {withDate ? `${day(at)} ${clock(at)}` : clock(at)}
+          {!hydrated ? TIME_PENDING : withDate ? `${day(at)} ${clock(at)}` : clock(at)}
           {/* Milliseconds only where there is room for them: on a phone the
               message needs the width more than the time needs the precision. */}
           <span className="hidden sm:inline">.{millis(at)}</span>
@@ -587,12 +591,13 @@ function Line({
 }
 
 function Marker({ label, at }: { label: string | null; at: Date }) {
+  const hydrated = useHydrated();
   return (
     <div className="my-1 flex items-center gap-2.5 border-y border-accent/30 bg-accent/[0.07] px-3.5 py-1.5 text-[11.5px]">
       <span className="font-medium text-ink">Your run</span>
       <span className="text-ink-subtle">
         {label !== null ? `${label} · ` : ""}
-        {clock(at)}
+        {hydrated ? clock(at) : TIME_PENDING}
       </span>
     </div>
   );
@@ -652,6 +657,14 @@ function asFilter(filter: { minimum: RuntimeLogMinimum; search: string }): {
 function unreachable(): Failure {
   return { ok: false, reason: "unavailable", error: "Could not reach Cira. Try again." };
 }
+
+/**
+ * Times are shown in the reader's own zone, which the server does not know:
+ * formatted there they came out in UTC and then changed in the browser,
+ * which React reports as a mismatch and a person sees as every time jumping.
+ * So until the page has hydrated a time is a placeholder of the same width.
+ */
+const TIME_PENDING = "--:--:--";
 
 function clock(at: Date): string {
   return at.toLocaleTimeString([], {

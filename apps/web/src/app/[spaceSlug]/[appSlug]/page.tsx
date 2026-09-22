@@ -12,7 +12,7 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { RunHistory } from "@/components/run-history";
 import { ProcessPanel } from "@/components/process-panel";
-import { appMemory, monthlyCost } from "@cira/core";
+import { appMemory, PLANS } from "@cira/core";
 import { assertionsConfigured } from "@/lib/identity-assertion";
 import { planForSpace } from "@/lib/plan";
 import { processesForPage } from "@/lib/processes";
@@ -293,6 +293,10 @@ export default async function AppPage({
             canManage={manages}
             logsHref={manages ? `/${spaceSlug}/${appSlug}/logs` : null}
             servesWeb={deployment?.servesWeb ?? true}
+            workerPrice={{
+              monthly: PLANS.team.workerMonthly,
+              included: plan.includedWorkers,
+            }}
           />
 
           {/* Only where capabilities can be run: an app that is only workers
@@ -344,13 +348,8 @@ export default async function AppPage({
               canKeepWarm={plan.canKeepWarm}
               tellsWhoIsCalling={app.tellsWhoIsCalling}
               canTellWhoIsCalling={assertionsConfigured()}
-              warmMonthly={Math.round(
-                monthlyCost({
-                  cpu: 1,
-                  memoryMiB:
-                    appMemory(app, services.length > 1) * Math.max(1, services.length),
-                }),
-              )}
+              // What the company is billed for it, not what it costs Cira.
+              warmMonthly={PLANS.team.alwaysOnMonthly}
               memory={
                 deployment?.servesWeb === true
                   ? {

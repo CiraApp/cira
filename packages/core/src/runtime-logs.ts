@@ -134,3 +134,14 @@ export function logWindow(
     until: new Date(Math.min(at + AROUND_MS, now.getTime())),
   };
 }
+
+/**
+ * Google's own records of changing a resource - "google.cloud.run.v2.Jobs.UpdateJob",
+ * "/WorkerPools.UpdateWorkerPool: Ready condition status changed..." - which
+ * share a process's log with what the process printed, and say nothing about
+ * why it failed. What the platform says about the container itself ("Container
+ * called exit(1).") is kept: that is often the reason.
+ */
+export function isProviderRecord(message: string): boolean {
+  return /^google\.cloud\.[\w.]+$|^\/(Jobs|WorkerPools|Services)\.\w+:/.test(message);
+}
