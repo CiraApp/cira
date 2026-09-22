@@ -72,13 +72,13 @@ use its apps, and Cira would know if anything broke for them.
       Run Jobs started by Cloud Scheduler, workers on Cloud Run worker pools;
       switched on, timed and run from the app page. Verified end to end with
       `fixtures/background-app` on 2026-09-19.
-- [ ] **1.7 Notifications.** Built: an app's managers are emailed when a
-      deploy fails, it stops answering (two checks in a row) or comes back, a
-      worker keeps stopping, a scheduled run fails, or a working capability
-      starts refusing Cira. Each event is claimed once in `notifications`; the
-      watcher runs every five minutes on Vercel Cron. Every path is tested,
-      and a sample reached the inbox. Done when a real one of each reaches a
-      manager, which happens as they occur.
+- [x] **1.7 Notifications.** An app's managers are emailed when a deploy
+      fails, it stops answering (two checks in a row) or comes back, a worker
+      keeps stopping, a scheduled run fails, or a working capability starts
+      refusing Cira. Each event is claimed once in `notifications`; the watcher
+      runs every five minutes on Vercel Cron. A real one of each reached the
+      inbox on 2026-09-22, from `crash-e2e` and `notify-e2e` on production; the
+      page and `app_status` now say the same things the emails do.
 
 ## Phase 2 - Ready to charge
 
