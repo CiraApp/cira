@@ -50,11 +50,16 @@ export function AuthFrame({
   );
 }
 
-/** Clerk's card, fitted into the frame instead of floating on its own. */
+/**
+ * Clerk's card, fitted into the frame instead of floating on its own. Its
+ * own heading goes: the frame already says what this is, and two headings
+ * one above the other read as two different screens.
+ */
 export const AUTH_APPEARANCE = {
   elements: {
     rootBox: "w-full",
     cardBox: "w-full shadow-none",
     card: "w-full shadow-none",
+    header: "hidden",
   },
 } as const;

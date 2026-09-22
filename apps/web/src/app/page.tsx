@@ -24,7 +24,7 @@ export default async function Home() {
 
   return (
     <SiteFrame>
-      <h1 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em] text-ink sm:text-[42px]">
+      <h1 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em] text-balance text-ink sm:text-[42px]">
         Your company&rsquo;s software, in one place.
       </h1>
       <p className="mt-4 max-w-[560px] text-[15px] leading-relaxed text-ink-muted">
@@ -47,7 +47,14 @@ export default async function Home() {
         {[
           {
             title: "Deploy what you already wrote",
-            body: "Run cira deploy in the repository. Cira reads it as it is - its framework, its parts, the variables it needs, the workers and scheduled runs it declares - and puts it online.",
+            body: (
+              <>
+                Run <code className="font-mono text-[12.5px] text-ink">cira deploy</code>{" "}
+                in the repository. Cira reads it as it is - its framework, its parts, the
+                variables it needs, the workers and scheduled runs it declares - and puts
+                it online.
+              </>
+            ),
           },
           {
             title: "One shelf for everyone",

@@ -164,7 +164,10 @@ and a person reads it before enabling anything.
   can be described" means the operation is describable, not that a schema
   already exists. An operation whose input you cannot describe at all is
   \`{ "type": "object", "properties": {}, "required": [] }\`; do not invent
-  properties to fill it.
+  properties to fill it. For an operation that is not GET, HEAD or DELETE,
+  mark each parameter the handler reads from the query string rather than the
+  body with \`"x-cira-in": "query"\` on that property; everything else is sent
+  as the JSON body.
 - \`probe\`: for a \`read\` only, an example input safe to send, used to check the
   operation exists. Give path parameters syntactically valid values that will
   not match real data. Omit for a write - writes are never called to test them.

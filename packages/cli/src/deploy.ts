@@ -51,6 +51,8 @@ interface StatusResponse {
   reason?: string | null;
   /** What went wrong without stopping it. */
   warning?: string | null;
+  /** The release command is running, between the build and the rollout. */
+  releasing?: boolean;
 }
 
 interface CapabilitiesResponse {
@@ -575,9 +577,11 @@ export async function deploy(argv: string[] = []): Promise<number> {
       continue;
     }
 
-    if (status.status !== last) {
-      info(dim(`  ${status.status}...`));
-      last = status.status;
+    const phase =
+      status.releasing === true ? "running the release command" : status.status;
+    if (phase !== last) {
+      info(dim(`  ${phase}...`));
+      last = phase;
     }
 
     if (status.status === "live") {
@@ -625,12 +629,18 @@ export async function deploy(argv: string[] = []): Promise<number> {
       );
       // The end of the build's own output, where the error is, rather than
       // only a link to a page that shows it.
-      const tail = await api<{ lines: string[] }>(
+      const tail = await api<{ step?: "build" | "release"; lines: string[] }>(
         `/api/cli/deploy/logs?id=${encodeURIComponent(started.deploymentId)}`,
-      ).catch(() => ({ lines: [] as string[] }));
+      ).catch(() => ({ step: "build" as const, lines: [] as string[] }));
       if (status.status === "failed" && tail.lines.length > 0) {
         info("");
-        info(dim("  The end of the build log:"));
+        info(
+          dim(
+            tail.step === "release"
+              ? "  What the release command printed:"
+              : "  The end of the build log:",
+          ),
+        );
         for (const line of tail.lines) info(dim(`    ${line}`));
       }
       info("");

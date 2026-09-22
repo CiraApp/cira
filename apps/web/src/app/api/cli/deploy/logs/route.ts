@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { apps, db, deployments } from "@cira/db";
 import { canAccessApp } from "@cira/core";
-import { deploymentProvider } from "@cira/deploy";
+import type { Deployment } from "@cira/core";
+import { deployOutput } from "@/lib/deploy-output";
 import { grantsFor } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { principalFor } from "@/lib/principal";
@@ -48,9 +49,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const lines = await deploymentProvider().getLogs(row.deployment.providerDeploymentId);
-    return NextResponse.json({ lines: lines.slice(-TAIL).map((line) => line.message) });
+    const output = await deployOutput(row.deployment as Deployment);
+    return NextResponse.json({
+      step: output.step,
+      lines: output.lines.slice(-TAIL).map((line) => line.message),
+    });
   } catch {
-    return NextResponse.json({ lines: [] });
+    return NextResponse.json({ step: "build", lines: [] });
   }
 }

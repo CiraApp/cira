@@ -32,6 +32,11 @@ export function EntryFrame({
   return (
     <>
       <AmbientField />
+      {/* Quieter where the words are, so no line runs through a sentence. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-[9] bg-[radial-gradient(ellipse_40%_60%_at_50%_45%,var(--color-base)_40%,transparent_100%)] opacity-80"
+      />
 
       <main className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col justify-center px-6 py-16">
         <Mark kind={mark} />

@@ -57,5 +57,10 @@ export async function GET(request: Request) {
     url: settled.url,
     reason: settled.failureReason,
     warning: settled.warning,
+    // Between the build and the rollout, while the migration runs.
+    releasing:
+      settled.releaseStartedAt !== null &&
+      settled.releaseDoneAt === null &&
+      (settled.status === "deploying" || settled.status === "building"),
   });
 }

@@ -2,7 +2,8 @@
 
 import { and, eq } from "drizzle-orm";
 import { db, deployments } from "@cira/db";
-import { deploymentProvider } from "@cira/deploy";
+import type { Deployment } from "@cira/core";
+import { deployOutput } from "@/lib/deploy-output";
 import { requireAppAccess } from "@/lib/authz";
 
 export type LogsResult =
@@ -33,7 +34,7 @@ export async function fetchBuildLogs(
   if (row === undefined) return { ok: false, error: "No such deploy." };
 
   try {
-    const lines = await deploymentProvider().getLogs(row.providerDeploymentId);
+    const { lines } = await deployOutput(row as Deployment);
     if (lines.length === 0) {
       return { ok: false, error: "The provider kept no logs for this deploy." };
     }

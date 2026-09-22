@@ -96,8 +96,9 @@ export default function PricingPage() {
         </h2>
         <p className="mt-2">
           Nothing stops. Your company&rsquo;s software keeps running and Cira tells you
-          the card needs attention. A subscription that ends goes back to the trial
-          allowance, and nothing is deleted.
+          the card needs attention. When a subscription ends, its apps keep answering, but
+          their workers and scheduled runs stop and nothing new can be deployed until it
+          is paid again. Nothing is deleted.
         </p>
         <h2 className="mt-6 text-[13.5px] font-semibold text-ink">Leaving</h2>
         <p className="mt-2">

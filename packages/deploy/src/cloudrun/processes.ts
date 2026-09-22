@@ -682,7 +682,7 @@ export class CloudRunProcesses {
         state: "failed",
         reason: OUT_OF_MEMORY_RUN.test(said)
           ? "The release command ran out of memory."
-          : `The release command failed${code === undefined ? "" : ` (exit code ${code})`}. Its output is in the app's logs.`,
+          : `The release command failed${code === undefined ? "" : ` (exit code ${code})`}. Its output is with this deploy.`,
       };
     }
     return { state: "succeeded" };

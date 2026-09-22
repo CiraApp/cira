@@ -76,7 +76,7 @@ the test lives. When one is deliberately left alone, it says why.
 | DEPLOY-16 | medium   | The deploy route has a 60 second limit. Many processes can exceed it and leave an app stuck in "deploying".                                                    | fixed  |
 | DEPLOY-17 | medium   | Removing `web:` from a Procfile leaves the old web service serving.                                                                                            | fixed  |
 | DEPLOY-18 | medium   | Monorepos in the default Turborepo layout are refused, or build without their workspace packages.                                                              | fixed  |
-| DEPLOY-19 | medium   | Static sites and SPAs with no server are deployed anyway, and then fail to build or start.                                                                     | open   |
+| DEPLOY-19 | medium   | Static sites and SPAs with no server are deployed anyway, and then fail to build or start.                                                                     | fixed  |
 | DEPLOY-20 | low      | A Procfile `release:` line (migrations) is dropped without telling anyone.                                                                                     | fixed  |
 | DEPLOY-21 | low      | The dotenv parser mangles multiline values and inline comments. `--env-file=path` is ignored.                                                                  | fixed  |
 | DEPLOY-22 | low      | `cira remove --yes` behaves differently from `cira deploy --yes`.                                                                                              | fixed  |
@@ -100,7 +100,7 @@ the test lives. When one is deliberately left alone, it says why.
 | CAP-11 | medium | A write body with non-ASCII characters sends a wrong `content-length` and fails.                                                                      | fixed  |
 | CAP-12 | medium | Ask Cira reads capabilities from every space a person is in, not only the one it was opened in.                                                       | fixed  |
 | CAP-13 | medium | Discovery on large apps overflows the output limit and yields nothing. The source budget is filled alphabetically, so route files can be left out.    | fixed  |
-| CAP-14 | medium | GET arrays are sent as JSON strings. Non-GET inputs all go in the body, even when the app reads them from the query.                                  | partly |
+| CAP-14 | medium | GET arrays are sent as JSON strings. Non-GET inputs all go in the body, even when the app reads them from the query.                                  | fixed  |
 | CAP-15 | low    | A path value of `.` collapses its segment.                                                                                                            | fixed  |
 | CAP-16 | low    | Verifying as one person records a refusal for everyone.                                                                                               | fixed  |
 | CAP-17 | low    | A capability whose route is gone is never demoted.                                                                                                    | fixed  |
@@ -140,16 +140,18 @@ the test lives. When one is deliberately left alone, it says why.
 
 Found while using the product end to end, as a new company would.
 
-| ID    | Sev      | Finding                                                                                                                                                              | Status |
-| ----- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| UX-1  | medium   | Sign-up is a bare Clerk card with no Cira mark, no mention of the trial, and no way back. It also asks for a password, although sign-in is described as email codes. | open   |
-| UX-2  | low      | Every page is titled "Cira", including sign-up and sign-in.                                                                                                          | fixed  |
-| E2E-1 | critical | Every deploy in production stopped as "superseded" before going out: the check for a newer deploy compared a millisecond copy of the row with its microsecond self.  | fixed  |
-| E2E-2 | high     | `cira deploy --help` deployed the folder, and any unknown or misspelled flag was ignored rather than refused.                                                        | fixed  |
-| E2E-3 | low      | A workspace package deployed from its own folder was named after the repository, not the package.                                                                    | fixed  |
-| E2E-4 | medium   | A build that failed from the CLI said only that its logs were on the app's page; the terminal that started it never showed the error.                                | fixed  |
-| E2E-5 | medium   | When capability analysis failed, the CLI printed the model provider's raw error: status, JSON body and request id, about Cira's own account.                         | fixed  |
-| ENG-1 | medium   | The packages' tests were never typechecked, and ten of them had drifted from the types they test.                                                                    | fixed  |
+| ID    | Sev      | Finding                                                                                                                                                                           | Status |
+| ----- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| UX-1  | medium   | Sign-up is a bare Clerk card with no Cira mark, no mention of the trial, and no way back. It also asks for a password, although sign-in is described as email codes.              | open   |
+| UX-2  | low      | Every page is titled "Cira", including sign-up and sign-in.                                                                                                                       | fixed  |
+| E2E-1 | critical | Every deploy in production stopped as "superseded" before going out: the check for a newer deploy compared a millisecond copy of the row with its microsecond self.               | fixed  |
+| E2E-2 | high     | `cira deploy --help` deployed the folder, and any unknown or misspelled flag was ignored rather than refused.                                                                     | fixed  |
+| E2E-3 | low      | A workspace package deployed from its own folder was named after the repository, not the package.                                                                                 | fixed  |
+| E2E-4 | medium   | A build that failed from the CLI said only that its logs were on the app's page; the terminal that started it never showed the error.                                             | fixed  |
+| E2E-5 | medium   | When capability analysis failed, the CLI printed the model provider's raw error: status, JSON body and request id, about Cira's own account.                                      | fixed  |
+| ENG-1 | medium   | The packages' tests were never typechecked, and ten of them had drifted from the types they test.                                                                                 | fixed  |
+| E2E-6 | medium   | A deploy whose migration failed showed the build log, which had succeeded; the release's own output was nowhere a person could read it, and the CLI said "building" while it ran. | fixed  |
+| E2E-7 | medium   | Pricing and the terms said a subscription that ends goes back to the trial allowance; since plans were enforced, a space past its trial stops its workers and cannot deploy.      | fixed  |
 
 ## Fixes
 
@@ -217,7 +219,6 @@ What changed for each finding, and where its test is.
 - **CAP-9** (fixed). A run is written down before the call and counted with itself in; a run the limit refuses is taken back out. A burst of parallel calls now passes at most the room left. Tested in capability-engine.test.ts.
 - **CAP-10** (fixed). Calls go to the newest deployment that went live (`servingDeployment` in lib/queries.ts), not the newest deployment, so capabilities keep working while a build runs and after one fails. Tested in capability-engine.test.ts.
 - **CAP-11** (fixed). `content-length` is the body's UTF-8 byte length. Tested with accents and CJK in capability-engine.test.ts.
-- **CAP-14** (partly). GET, HEAD and DELETE carry input in the query, a list as the key once per item. Still open: a POST whose app reads some fields from the query; the capability schema has no way to say where a field goes yet.
 - **CAP-15** (fixed). `isSafeTargetPath` refuses a `.` segment and an empty one (`//` anywhere), and an empty string no longer fills a path parameter. Tested in capability.test.ts.
 - **CAP-16** (fixed). A refusal met while verifying as one person (with an identity assertion) is not recorded for the capability. Tested in capability-verify.test.ts.
 - **CAP-18** (fixed). An agent is handed at most 100,000 characters: pretty when it fits, compact when that fits, otherwise cut with a note asking for less (`forAnAgent` in lib/mcp.ts). Each run records the approval it used (`invocations.approval_id`, migration 0039), and an app's run history says 'approved'. Tested in mcp.test.ts and capability-engine.test.ts.
@@ -243,3 +244,7 @@ What changed for each finding, and where its test is.
 - **UX-2** (fixed). Every page names itself under a root template (`%s · Cira`): sign-in, sign-up, the CLI and invite pages by what they are, and every page inside a space by its space or app ("Logs · Payroll"), looked up through the same access checks as the page so a title never names something its reader cannot open (lib/page-title.ts). Checked in the browser pass.
 - **E2E-5** (fixed). Found on the Turborepo deploy, when Cira's Anthropic account had run out of credit. Analysis failures are now said in plain words (busy, unavailable, too large) with what still works, and the raw error goes to Sentry for whoever runs Cira (`analysisFailure`). Tested in capability-analyzer.test.ts, which also covers the large-app second pass.
 - **ENG-1** (fixed). `tsconfig.test.json` typechecks every package's sources and tests together, emitting nothing, as the last step of `pnpm typecheck` (so in CI and the publish workflow). The ten drifted tests were brought up to date, one of them mapping database rows to a Capability instead of casting them.
+- **CAP-14** (fixed). GET, HEAD and DELETE carry input in the query, a list as the key once per item. A write's input goes as its JSON body except the fields its schema marks `"x-cira-in": "query"`, which the analyzer is now asked to mark for parameters a handler reads from the query string. Tested in capability-engine.test.ts.
+- **DEPLOY-19** (fixed). A site with no server - a Vite, Create React App, Astro, Vue CLI or Parcel build with no start script, or a folder with an index.html - is built with the repository's own package manager and its public variables, and served by nginx on Cloud Run's port with a fallback to index.html (packages/cli/src/static-site.ts); inside a workspace it is built the workspace's way. Tested in static-site.test.ts and by deploying a Vite app to production, which went live.
+- **E2E-6** (fixed). Found by deploying a Flask app whose release command fails, in production: the deploy was correctly refused and the old version kept serving, but the output shown was the successful build's. `deployOutput` (lib/deploy-output.ts) shows the release run's own log for a deploy that failed at its release, in the CLI and in the app's deploy history, and the CLI says "running the release command" while it runs. Tested in deploy-output.test.ts.
+- **E2E-7** (fixed). Found reading the live pricing page. Pricing and the terms now say what happens: apps keep answering, workers and scheduled runs stop, no new deploys until it is paid again, nothing deleted. Worth the lawyer's eye with the rest of the terms.

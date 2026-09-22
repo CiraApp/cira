@@ -1331,6 +1331,43 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       expect(Number(echoed.declared)).toBe(echoed.received);
     });
 
+    it("sends what a write reads from the query there, and the rest as its body", async () => {
+      const { capabilities } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      const id = newId("capability");
+      await database.insert(capabilities).values({
+        id,
+        appId,
+        spaceId,
+        name: "tagNote",
+        description: "Tag a note.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            note: { type: "string" },
+            tag: { type: "string", "x-cira-in": "query" },
+          },
+          required: ["note"],
+        },
+        method: "POST",
+        path: "/api/echo",
+        risk: "write",
+        verifiedAt: new Date(),
+        reach: "callable" as const,
+        answeredBy: deploymentId,
+        enabled: true,
+      });
+      try {
+        const sent = await run(id, { note: "hello", tag: "urgent" });
+        expect(JSON.parse(sent.content)).toMatchObject({
+          body: { note: "hello" },
+          tags: ["urgent"],
+        });
+      } finally {
+        await database.delete(capabilities).where(eq(capabilities.id, id));
+      }
+    });
+
     it("sends a list in a query as the key once per item", async () => {
       const found = await run(ids.echoRead, { tag: ["urgent", "vip"] });
       expect(found.isError).toBe(false);

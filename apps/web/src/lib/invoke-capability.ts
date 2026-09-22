@@ -355,7 +355,16 @@ async function call(
   if (inQuery(capability.target.method)) {
     for (const [key, value] of queryPairs(rest)) url.searchParams.append(key, value);
   } else {
-    body = JSON.stringify(rest);
+    // A body, except for what the capability says the app reads from the
+    // query string - a POST with `?dry_run=true` is not rare.
+    const inAddress = queryFields(capability.inputSchema);
+    const query = Object.fromEntries(
+      Object.entries(rest).filter(([k]) => inAddress.has(k)),
+    );
+    for (const [key, value] of queryPairs(query)) url.searchParams.append(key, value);
+    body = JSON.stringify(
+      Object.fromEntries(Object.entries(rest).filter(([k]) => !inAddress.has(k))),
+    );
   }
   const write = capability.risk === "write";
 
@@ -585,6 +594,22 @@ async function routerSaidIt(
 /** What to tell anyone about a write whose result Cira could not see. */
 const MAY_HAVE_HAPPENED =
   "The change may still have been made: check in the app before trying again.";
+
+/** The properties a schema marks as read from the query string. */
+function queryFields(schema: Record<string, unknown>): Set<string> {
+  const properties = schema["properties"];
+  if (properties === null || typeof properties !== "object") return new Set();
+  return new Set(
+    Object.entries(properties as Record<string, unknown>)
+      .filter(
+        ([, value]) =>
+          value !== null &&
+          typeof value === "object" &&
+          (value as Record<string, unknown>)["x-cira-in"] === "query",
+      )
+      .map(([key]) => key),
+  );
+}
 
 /** Methods whose input goes in the address, since they carry no body. */
 function inQuery(method: string): boolean {

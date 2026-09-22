@@ -710,8 +710,7 @@ describe("a release command", () => {
     const state = await provider().releaseState(started.providerDeploymentId, run);
     expect(state).toEqual({
       state: "failed",
-      reason:
-        "The release command failed (exit code 2). Its output is in the app's logs.",
+      reason: "The release command failed (exit code 2). Its output is with this deploy.",
     });
   });
 

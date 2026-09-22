@@ -238,6 +238,15 @@ turbo when there is a `turbo.json`), and starts it with its `start` script
 (`packages/cli/src/workspace.ts`). From the root, a workspace with several
 apps prints the `cd <app> && cira deploy` for each.
 
+**Sites with no server.** A Vite, Create React App, Astro, Vue CLI or Parcel
+app with a `build` script and no `start` script, or a folder whose root is an
+`index.html`, is a static site: Cira builds it with the repository's own
+package manager, with its browser-public variables, and serves the output with
+nginx on Cloud Run's port, sending any path the site does not have to its
+`index.html` so a client-side router works (`packages/cli/src/static-site.ts`).
+A start script or a Dockerfile always wins over this, and so does anything that
+renders on a server (Next.js, Nuxt, Remix, SvelteKit).
+
 **The release command.** A Procfile `release:` line, or fly.toml's
 `[deploy] release_command`, runs once per deploy on the new build with the new
 variables, before anything takes traffic - which is where a migration belongs.

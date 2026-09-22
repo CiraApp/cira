@@ -23,6 +23,12 @@ export function SiteFrame({
   return (
     <>
       <AmbientField />
+      {/* The field quietens where the text is, so its lines never run through
+          a sentence, and stays lively at the edges where nothing is read. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-[9] bg-[radial-gradient(ellipse_62%_70%_at_46%_42%,var(--color-base)_35%,transparent_100%)] opacity-80"
+      />
       <div className="flex min-h-dvh flex-col">
         <header className="sticky top-0 z-20 border-b border-line bg-panel/70 backdrop-blur-xl">
           <div className="mx-auto flex h-14 w-full max-w-[980px] items-center gap-6 px-5">
@@ -50,10 +56,11 @@ export function SiteFrame({
         </header>
 
         <main className="flex-1">
-          <div
-            className={`mx-auto w-full px-5 py-14 ${wide ? "max-w-[980px]" : "max-w-[720px]"}`}
-          >
-            {children}
+          {/* The same column as the header and the foot, so the page's text
+              starts under the logo; prose is narrower within it, not
+              centred apart from it. */}
+          <div className="mx-auto w-full max-w-[980px] px-5 py-14">
+            <div className={wide ? "" : "max-w-[720px]"}>{children}</div>
           </div>
         </main>
 

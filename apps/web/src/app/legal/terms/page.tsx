@@ -76,9 +76,10 @@ export default function TermsPage() {
         </p>
         <p>
           If a payment fails, your software keeps running and we will tell you. If it
-          stays unpaid, the space goes back to the trial allowance - one worker - and
-          nothing is deleted. Cancel any time in the billing portal; the current month is
-          not refunded.
+          stays unpaid, the space&rsquo;s apps keep answering, but its workers and
+          scheduled runs stop and it cannot deploy until it is paid again. Nothing is
+          deleted. Cancel any time in the billing portal; the current month is not
+          refunded.
         </p>
       </Section>
 
