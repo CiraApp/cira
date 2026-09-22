@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apps, db } from "@cira/db";
+import { apps, db, spaces } from "@cira/db";
 import { userManages } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { verifyAppCapabilities } from "@/lib/capability-verification";
@@ -46,7 +46,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });
   }
 
-  const outcome = await verifyAppCapabilities(app.id);
+  const [space] = await db()
+    .select({ slug: spaces.slug })
+    .from(spaces)
+    .where(eq(spaces.id, app.spaceId))
+    .limit(1);
+  // The CLI asks this once a deploy is live, so what worked under the last
+  // build is asked about again - as the person deploying, for an app that is
+  // told who is calling.
+  const outcome = await verifyAppCapabilities(
+    app.id,
+    space === undefined ? undefined : { user, spaceSlug: space.slug },
+    { afterDeploy: true },
+  );
 
   if (!outcome.ok) {
     return outcome.reason === "not-running"

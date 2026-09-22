@@ -9,6 +9,7 @@ import type * as AnthropicSdk from "@anthropic-ai/sdk";
 
 const replies: Array<() => Promise<unknown>> = [];
 const systems: string[] = [];
+const prompts: string[] = [];
 
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }));
 vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
@@ -16,8 +17,9 @@ vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
   class Fake {
     static APIError = actual.APIError;
     messages = {
-      stream: (request: { system: string }) => {
+      stream: (request: { system: string; messages: { content: string }[] }) => {
         systems.push(request.system);
+        prompts.push(request.messages[0]?.content ?? "");
         const next = replies.shift() ?? (() => Promise.reject(new Error("no reply")));
         return { finalMessage: next };
       },
@@ -39,6 +41,7 @@ const answer =
 beforeEach(() => {
   replies.length = 0;
   systems.length = 0;
+  prompts.length = 0;
   vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test");
 });
 
@@ -55,6 +58,21 @@ describe("analyzeCapabilities", () => {
     const said = result.ok ? "" : result.error;
     expect(said).toContain("unavailable right now");
     expect(said).not.toMatch(/credit|request_id|\{/);
+  });
+
+  it("shows the previous list so a route still served keeps its name", async () => {
+    const { analyzeCapabilities } = await import("./capability-analyzer");
+    replies.push(answer("end_turn", { summary: "Orders.", capabilities: [] }));
+    await analyzeCapabilities("x", {
+      appName: "A",
+      known: [{ name: "listOrders", method: "GET", path: "/api/orders" }],
+    });
+    expect(prompts[0]).toContain("return it under the same name");
+    expect(prompts[0]).toContain("- listOrders: GET /api/orders");
+
+    replies.push(answer("end_turn", { summary: "Orders.", capabilities: [] }));
+    await analyzeCapabilities("x", { appName: "A" });
+    expect(prompts[1]).not.toContain("previous version");
   });
 
   it("says a busy service is busy", async () => {

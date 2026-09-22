@@ -96,6 +96,84 @@ describe("reconcileCapabilities", () => {
     expect(plan.remove).toEqual(["cap_1"]);
   });
 
+  it("keeps a capability the analyzer renamed, under the name agents know", () => {
+    // The same code, read twice, came back as listOrders and then getOrders.
+    const plan = reconcileCapabilities(
+      [
+        {
+          id: "cap_1",
+          name: "createRefund",
+          enabled: true,
+          risk: "write",
+          method: "POST",
+          path: "/refunds",
+        },
+      ],
+      [detected("issueRefund", "write", { method: "POST", path: "/refunds" })],
+    );
+    expect(plan.create).toEqual([]);
+    expect(plan.remove).toEqual([]);
+    expect(plan.update).toEqual([
+      {
+        id: "cap_1",
+        detected: {
+          name: "createRefund",
+          risk: "write",
+          method: "POST",
+          path: "/refunds",
+        },
+        enabled: true,
+      },
+    ]);
+  });
+
+  it("does not guess between two operations at one route", () => {
+    const plan = reconcileCapabilities(
+      [
+        {
+          id: "cap_1",
+          name: "listOrders",
+          enabled: true,
+          method: "GET",
+          path: "/orders",
+        },
+      ],
+      [
+        detected("getOrders", "read", { path: "/orders" }),
+        detected("searchOrders", "read", { path: "/orders" }),
+      ],
+    );
+    expect(plan.remove).toEqual(["cap_1"]);
+    expect(plan.create.map((entry) => entry.detected.name)).toEqual([
+      "getOrders",
+      "searchOrders",
+    ]);
+  });
+
+  it("prefers a name match to a route match", () => {
+    const plan = reconcileCapabilities(
+      [
+        {
+          id: "cap_1",
+          name: "listOrders",
+          enabled: true,
+          method: "GET",
+          path: "/orders",
+        },
+        {
+          id: "cap_2",
+          name: "getOrders",
+          enabled: false,
+          method: "GET",
+          path: "/v1/orders",
+        },
+      ],
+      [detected("getOrders", "read", { path: "/orders" })],
+    );
+    expect(plan.update.map((entry) => entry.id)).toEqual(["cap_2"]);
+    expect(plan.remove).toEqual(["cap_1"]);
+  });
+
   it("keeps a person's decision across a redeploy, rather than re-applying policy", () => {
     // Someone reviewed createRefund and turned it on. Detecting it again must
     // not switch it back off...

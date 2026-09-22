@@ -85,26 +85,28 @@ the test lives. When one is deliberately left alone, it says why.
 
 ## Capabilities and agents
 
-| ID     | Sev    | Finding                                                                                                                                               | Status |
-| ------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| CAP-1  | high   | Read or write is whatever the model says. A `DELETE` it grades as a read switches itself on and runs without approval.                                | fixed  |
-| CAP-2  | high   | MCP writes have no approval on Cira's side. The promise that changes wait for a person holds only in Ask Cira and the console.                        | fixed  |
-| CAP-3  | high   | A read with a path parameter (`GET /customers/{id}`) is deleted when verification's made-up id gets a "no such record" 404.                           | fixed  |
-| CAP-4  | high   | A write that succeeds but answers with a redirect, a non-JSON body, or late is reported as unreachable. That invites a retry and a duplicate.         | fixed  |
-| CAP-5  | high   | A capability that changes method, path or risk on redeploy stays switched on. A read can become an unreviewed write.                                  | fixed  |
-| CAP-6  | medium | Ask Cira's daily limit can be bypassed with decision requests, and history sent from the browser is not capped.                                       | fixed  |
-| CAP-7  | medium | A 302 to a login page, or an OPTIONS with no `Allow`, counts as callable in verification.                                                             | fixed  |
-| CAP-8  | medium | Once headers arrive, the response body is read with no deadline, so a trickling endpoint hangs until the function is killed and no record is written. | fixed  |
-| CAP-9  | medium | The 60-runs-a-minute limit is counted after calls finish, so parallel calls all pass.                                                                 | fixed  |
-| CAP-10 | medium | During a build, or after a failed deploy, every capability goes dark while the old revision is still serving.                                         | fixed  |
-| CAP-11 | medium | A write body with non-ASCII characters sends a wrong `content-length` and fails.                                                                      | fixed  |
-| CAP-12 | medium | Ask Cira reads capabilities from every space a person is in, not only the one it was opened in.                                                       | fixed  |
-| CAP-13 | medium | Discovery on large apps overflows the output limit and yields nothing. The source budget is filled alphabetically, so route files can be left out.    | fixed  |
-| CAP-14 | medium | GET arrays are sent as JSON strings. Non-GET inputs all go in the body, even when the app reads them from the query.                                  | fixed  |
-| CAP-15 | low    | A path value of `.` collapses its segment.                                                                                                            | fixed  |
-| CAP-16 | low    | Verifying as one person records a refusal for everyone.                                                                                               | fixed  |
-| CAP-17 | low    | A capability whose route is gone is never demoted.                                                                                                    | fixed  |
-| CAP-18 | low    | MCP results are pretty-printed without a size cap, and the record does not say whether a person approved a write.                                     | fixed  |
+| ID     | Sev    | Finding                                                                                                                                                                    | Status |
+| ------ | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| CAP-1  | high   | Read or write is whatever the model says. A `DELETE` it grades as a read switches itself on and runs without approval.                                                     | fixed  |
+| CAP-2  | high   | MCP writes have no approval on Cira's side. The promise that changes wait for a person holds only in Ask Cira and the console.                                             | fixed  |
+| CAP-3  | high   | A read with a path parameter (`GET /customers/{id}`) is deleted when verification's made-up id gets a "no such record" 404.                                                | fixed  |
+| CAP-4  | high   | A write that succeeds but answers with a redirect, a non-JSON body, or late is reported as unreachable. That invites a retry and a duplicate.                              | fixed  |
+| CAP-5  | high   | A capability that changes method, path or risk on redeploy stays switched on. A read can become an unreviewed write.                                                       | fixed  |
+| CAP-6  | medium | Ask Cira's daily limit can be bypassed with decision requests, and history sent from the browser is not capped.                                                            | fixed  |
+| CAP-7  | medium | A 302 to a login page, or an OPTIONS with no `Allow`, counts as callable in verification.                                                                                  | fixed  |
+| CAP-8  | medium | Once headers arrive, the response body is read with no deadline, so a trickling endpoint hangs until the function is killed and no record is written.                      | fixed  |
+| CAP-9  | medium | The 60-runs-a-minute limit is counted after calls finish, so parallel calls all pass.                                                                                      | fixed  |
+| CAP-10 | medium | During a build, or after a failed deploy, every capability goes dark while the old revision is still serving.                                                              | fixed  |
+| CAP-11 | medium | A write body with non-ASCII characters sends a wrong `content-length` and fails.                                                                                           | fixed  |
+| CAP-12 | medium | Ask Cira reads capabilities from every space a person is in, not only the one it was opened in.                                                                            | fixed  |
+| CAP-13 | medium | Discovery on large apps overflows the output limit and yields nothing. The source budget is filled alphabetically, so route files can be left out.                         | fixed  |
+| CAP-14 | medium | GET arrays are sent as JSON strings. Non-GET inputs all go in the body, even when the app reads them from the query.                                                       | fixed  |
+| CAP-15 | low    | A path value of `.` collapses its segment.                                                                                                                                 | fixed  |
+| CAP-16 | low    | Verifying as one person records a refusal for everyone.                                                                                                                    | fixed  |
+| CAP-17 | low    | A capability whose route is gone is never demoted.                                                                                                                         | fixed  |
+| CAP-18 | low    | MCP results are pretty-printed without a size cap, and the record does not say whether a person approved a write.                                                          | fixed  |
+| CAP-19 | high   | The same code, analysed twice, came back with different names (listOrders, then getOrders), and a renamed capability was a new one: its approval reset and agents lost it. | fixed  |
+| CAP-20 | medium | A capability that worked was never checked again, so a route that started refusing Cira in a new build went unnoticed until an agent called it.                            | fixed  |
 
 ## Money
 
@@ -248,6 +250,8 @@ What changed for each finding, and where its test is.
 - **E2E-5** (fixed). Found on the Turborepo deploy, when Cira's Anthropic account had run out of credit. Analysis failures are now said in plain words (busy, unavailable, too large) with what still works, and the raw error goes to Sentry for whoever runs Cira (`analysisFailure`). Tested in capability-analyzer.test.ts, which also covers the large-app second pass.
 - **ENG-1** (fixed). `tsconfig.test.json` typechecks every package's sources and tests together, emitting nothing, as the last step of `pnpm typecheck` (so in CI and the publish workflow). The ten drifted tests were brought up to date, one of them mapping database rows to a Capability instead of casting them.
 - **CAP-14** (fixed). GET, HEAD and DELETE carry input in the query, a list as the key once per item. A write's input goes as its JSON body except the fields its schema marks `"x-cira-in": "query"`, which the analyzer is now asked to mark for parameters a handler reads from the query string. Tested in capability-engine.test.ts.
+- **CAP-19** (fixed). Found on production by redeploying `notify-e2e` with only a variable changed. A capability is now also the same one when a new name is served at the method and path of one that is gone, and it keeps the old name (`reconcileCapabilities`; two candidates on either side stay new rather than guess). The analyzer is also shown the previous list and asked to keep names for routes still served. Tested in capability.test.ts and capability-analyzer.test.ts.
+- **CAP-20** (fixed). The deploy's own check now also asks about what the previous build confirmed, keeping it callable while asking, as the person deploying for an app told who is calling; a refusal from the new build is recorded and its managers are emailed. Opening a page still never re-asks what works. The CLI's "Those 1 are real routes" now reads right for one, and names the setting that lets agents in. Tested in capability-engine.test.ts.
 - **DEPLOY-19** (fixed). A site with no server - a Vite, Create React App, Astro, Vue CLI or Parcel build with no start script, or a folder with an index.html - is built with the repository's own package manager and its public variables, and served by nginx on Cloud Run's port with a fallback to index.html (packages/cli/src/static-site.ts); inside a workspace it is built the workspace's way. Tested in static-site.test.ts and by deploying a Vite app to production, which went live.
 - **E2E-6** (fixed). Found by deploying a Flask app whose release command fails, in production: the deploy was correctly refused and the old version kept serving, but the output shown was the successful build's. `deployOutput` (lib/deploy-output.ts) shows the release run's own log for a deploy that failed at its release, in the CLI and in the app's deploy history, and the CLI says "running the release command" while it runs. Tested in deploy-output.test.ts.
 - **E2E-7** (fixed). Found reading the live pricing page. Pricing and the terms now say what happens: apps keep answering, workers and scheduled runs stop, no new deploys until it is paid again, nothing deleted. Worth the lawyer's eye with the rest of the terms.

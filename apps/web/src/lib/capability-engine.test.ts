@@ -933,6 +933,75 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     }
   });
 
+  it("asks again after a deploy about what worked, and tells its managers when it stopped", async () => {
+    const { capabilities, deployments, notifications } = await import("@cira/db");
+    const { and, eq } = await import("drizzle-orm");
+    const { verifyAppCapabilities } = await import("./capability-verification");
+
+    const lockedId = newId("capability");
+    const nextBuild = newId("deployment");
+
+    // Worked under the build before: the new one put it behind a sign-in.
+    await database.insert(capabilities).values({
+      id: lockedId,
+      appId,
+      spaceId,
+      name: "readLocked",
+      description: "Something behind a sign-in added in the new build.",
+      inputSchema: { type: "object", properties: {}, required: [] },
+      method: "GET",
+      path: "/api/locked",
+      risk: "read",
+      enabled: true,
+      reach: "callable",
+      answeredBy: deploymentId,
+      verifiedAt: new Date(),
+    });
+    await database.insert(deployments).values({
+      id: nextBuild,
+      appId,
+      provider: "vercel",
+      providerDeploymentId: "dpl_locked",
+      status: "live",
+      url: APP_ORIGIN,
+      createdAt: new Date(Date.now() + 60_000),
+    });
+
+    const reachOf = async () =>
+      (
+        await database.select().from(capabilities).where(eq(capabilities.id, lockedId))
+      )[0];
+
+    try {
+      // Looking at a page never re-asks what works, so nothing goes dark.
+      await verifyAppCapabilities(appId);
+      expect((await reachOf())?.reach).toBe("callable");
+
+      // The deploy's own check does.
+      await verifyAppCapabilities(appId, undefined, { afterDeploy: true });
+      const row = await reachOf();
+      expect(row?.reach).toBe("refused");
+      expect(row?.answeredBy).toBe(nextBuild);
+
+      const told = await database
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.kind, "capability-refused"),
+            eq(notifications.subject, `${lockedId}:${nextBuild}`),
+          ),
+        );
+      expect(told).toHaveLength(1);
+    } finally {
+      await database
+        .delete(notifications)
+        .where(eq(notifications.subject, `${lockedId}:${nextBuild}`));
+      await database.delete(capabilities).where(eq(capabilities.id, lockedId));
+      await database.delete(deployments).where(eq(deployments.id, nextBuild));
+    }
+  });
+
   /**
    * A write cannot be verified by calling it, and a framework answers the
    * method probe before it checks who is asking - so the real call is the

@@ -204,6 +204,19 @@ input schema to the parameters that matter.`;
 }
 
 /**
+ * The previous list, as evidence rather than as instructions: each line is
+ * checked against the source like anything else, and one whose route has gone
+ * is simply not returned.
+ */
+function knownSection(
+  known: readonly { name: string; method: string; path: string }[],
+): string {
+  if (known.length === 0) return "";
+  const lines = known.map((item) => `- ${item.name}: ${item.method} ${item.path}`);
+  return `Operations found in this app's previous version. Where the source still serves one, return it under the same name; leave out any whose route is gone, and add any that are new:\n\n${lines.join("\n")}\n\n`;
+}
+
+/**
  * Which model reads the source.
  *
  * Haiku while this is being built, because the question being asked of it -
@@ -229,7 +242,15 @@ const THINKS = MODEL !== CHEAP_MODEL;
 
 export async function analyzeCapabilities(
   source: string,
-  options: { appName: string },
+  options: {
+    appName: string;
+    /**
+     * What the last analysis of this app found. Names are the model's choice,
+     * and the same code read twice came back with different ones; agents learn
+     * names, so a route still served keeps the one it had.
+     */
+    known?: readonly { name: string; method: string; path: string }[];
+  },
 ): Promise<AnalysisResult> {
   // Nothing to read means nothing to expose, and no reason to spend a call
   // finding that out.
@@ -266,7 +287,7 @@ export async function analyzeCapabilities(
           messages: [
             {
               role: "user",
-              content: `App name: ${options.appName}\n\nSource:\n\n${source}`,
+              content: `App name: ${options.appName}\n\n${knownSection(options.known ?? [])}Source:\n\n${source}`,
             },
           ],
         })

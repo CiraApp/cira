@@ -861,9 +861,18 @@ function reportCapabilities(
   // change it is looking at the terminal.
   if (confirmed.refused > 0) {
     info(
-      dim(`  Those ${confirmed.refused} are real routes behind your app's own sign-in.`),
+      dim(
+        confirmed.refused === 1
+          ? "  That one is a real route behind your app's own sign-in."
+          : `  Those ${confirmed.refused} are real routes behind your app's own sign-in.`,
+      ),
     );
-    info(dim("  Agents cannot reach them until the app lets Cira in."));
+    info(
+      dim(
+        "  To let agents in, turn on \u201cTell this app who is calling\u201d in its settings,",
+      ),
+    );
+    info(dim("  and have the app accept Cira's signed statement of who it is."));
   }
 
   if (confirmed.callable > reads) {

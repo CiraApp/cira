@@ -45,6 +45,14 @@ export async function verifyAppCapabilities(
   appId: string,
   /** Who this is being checked for, when an app is told who is calling. */
   actor?: { user: User; spaceSlug: string },
+  /**
+   * Right after a deploy, also ask again about what worked under the build
+   * before. A callable answer is otherwise never asked again, so a route that
+   * started refusing Cira in a new build - behind a sign-in added in it - was
+   * only found out when an agent called it, and nobody was told it had
+   * stopped. Kept as it is while being asked, so nothing working goes dark.
+   */
+  options: { afterDeploy?: boolean } = {},
 ): Promise<VerificationOutcome> {
   const database = db();
 
@@ -80,6 +88,22 @@ export async function verifyAppCapabilities(
         ),
       )
   ).filter((row) => currentReach(row, serving?.id ?? null) === "pending");
+  const confirmedBefore = (
+    serving === null || options.afterDeploy !== true
+      ? []
+      : await database
+          .select({
+            name: capabilities.name,
+            method: capabilities.method,
+            path: capabilities.path,
+            risk: capabilities.risk,
+            probe: capabilities.probe,
+            reach: capabilities.reach,
+            answeredBy: capabilities.answeredBy,
+          })
+          .from(capabilities)
+          .where(and(eq(capabilities.appId, appId), eq(capabilities.reach, "callable")))
+  ).filter((row) => row.answeredBy !== serving?.id);
 
   // The demo company's apps answer from a table rather than over a network,
   // so asking them is a lookup: whatever the table can answer is callable, and
@@ -135,7 +159,7 @@ export async function verifyAppCapabilities(
       .where(eq(apps.id, appId));
   }
 
-  if (pending.length === 0) return SETTLED;
+  if (pending.length === 0 && confirmedBefore.length === 0) return SETTLED;
 
   // Only for an app whose managers asked to be told, and only when a person
   // is behind the check; a background run speaks for nobody, as before.
@@ -155,11 +179,20 @@ export async function verifyAppCapabilities(
         }) ?? undefined)
       : undefined;
 
+  // What worked is asked again only as whoever it worked for. An app that
+  // lets people in by Cira's statement refuses a check that carries none, and
+  // that would read as every working route having stopped.
+  const asking =
+    told?.tellsWhoIsCalling === true && identity === undefined
+      ? pending
+      : [...pending, ...confirmedBefore];
+  if (asking.length === 0) return SETTLED;
+
   const outcome = await verifyCapabilities({
     origin,
     token,
     identity,
-    capabilities: pending.map((row) => ({
+    capabilities: asking.map((row) => ({
       name: row.name,
       method: row.method,
       path: row.path,

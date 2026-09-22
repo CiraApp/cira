@@ -272,6 +272,15 @@ export interface Reconciliation<T> {
  * decision a person already made about it: re-detecting `createRefund` must
  * never quietly switch it back on, which is exactly what would happen if the
  * publication policy were applied again on every deploy.
+ *
+ * A capability is the same one when it has the same name, or - when the name
+ * is new - when it is served at the same method and path as one that is gone.
+ * Names are chosen by a model reading the code, and the same code read twice
+ * came back as `listOrders` and then `getOrders`. Matched by name alone,
+ * that was a new capability: a write someone had switched on went back to
+ * review, every agent that knew the old name lost it, and a route that started
+ * refusing Cira was never noticed, since nothing had been callable before it.
+ * A route match keeps the name agents already know.
  */
 export function reconcileCapabilities<
   T extends { name: string; risk: CapabilityRisk; method: string; path: string },
@@ -287,19 +296,44 @@ export function reconcileCapabilities<
   }[],
   detected: readonly T[],
 ): Reconciliation<T> {
-  const previous = new Map(existing.map((row) => [row.name, row]));
-  const keep = new Set(detected.map((item) => item.name));
+  const byName = new Map(existing.map((row) => [row.name, row]));
+  const matched = new Map<T, (typeof existing)[number]>();
+  for (const item of detected) {
+    const prior = byName.get(item.name);
+    if (prior !== undefined) matched.set(item, prior);
+  }
+
+  // Then renames: one route left unclaimed on each side. Two candidates on
+  // either side is a guess, and a guess could hand one operation's decision to
+  // another, so those stay new.
+  const claimed = new Set([...matched.values()].map((row) => row.id));
+  const route = (method: string | undefined, path: string | undefined) =>
+    method === undefined || path === undefined ? null : `${method} ${path}`;
+  const unmatched = detected.filter((item) => !matched.has(item));
+  for (const item of unmatched) {
+    const at = route(item.method, item.path);
+    const rows = existing.filter(
+      (row) => !claimed.has(row.id) && route(row.method, row.path) === at,
+    );
+    const rivals = unmatched.filter((other) => route(other.method, other.path) === at);
+    const [prior] = rows;
+    if (at === null || prior === undefined || rows.length > 1 || rivals.length > 1)
+      continue;
+    matched.set(item, prior);
+    claimed.add(prior.id);
+  }
 
   const result: Reconciliation<T> = {
     create: [],
     update: [],
-    remove: existing.filter((row) => !keep.has(row.name)).map((row) => row.id),
+    remove: existing.filter((row) => !claimed.has(row.id)).map((row) => row.id),
     enabledCount: 0,
     reviewCount: 0,
   };
 
-  for (const item of detected) {
-    const prior = previous.get(item.name);
+  for (const found of detected) {
+    const prior = matched.get(found);
+    const item = prior === undefined ? found : { ...found, name: prior.name };
     // A decision a person made survives a redeploy - but only about the thing
     // they decided on. A read that has become a write, or a write that now
     // points somewhere else, is not what anyone agreed to, and goes back to

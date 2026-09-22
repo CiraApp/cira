@@ -1,7 +1,7 @@
 import "server-only";
 
 import { eq } from "drizzle-orm";
-import { apps, db } from "@cira/db";
+import { apps, capabilities, db } from "@cira/db";
 import { packSource, sourceStore, tarUngzip } from "@cira/deploy";
 import { analyzeCapabilities } from "@/lib/capability-analyzer";
 import type { AnalyzedCapability } from "@/lib/capability-grounding";
@@ -64,7 +64,18 @@ export async function analyzeAppSource(args: {
     };
   }
 
-  const result = await analyzeCapabilities(source.text, { appName: args.app.name });
+  const known = await db()
+    .select({
+      name: capabilities.name,
+      method: capabilities.method,
+      path: capabilities.path,
+    })
+    .from(capabilities)
+    .where(eq(capabilities.appId, args.app.id));
+  const result = await analyzeCapabilities(source.text, {
+    appName: args.app.name,
+    known,
+  });
   if (!result.ok) return { ok: false, reason: "model", error: result.error };
 
   // Written once and then left alone. A description someone has edited is a
