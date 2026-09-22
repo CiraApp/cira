@@ -135,6 +135,19 @@ export function deployFailedMessage(args: {
   });
 }
 
+/**
+ * A worker as a sentence names it. Most Procfiles call theirs "worker", and
+ * "the worker worker keeps stopping" reads as a typo; that one is just "its
+ * worker", and any other is "the worker “name”".
+ */
+export function workerCalled(name: string): string {
+  return name === "worker" ? "its worker" : `the worker “${name}”`;
+}
+
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function notAnsweringMessage(args: {
   app: AppRef;
   /** Null for the app's web address, or the worker's name. */
@@ -145,12 +158,12 @@ export function notAnsweringMessage(args: {
   logs: string;
 }): Message {
   const { app } = args;
-  const what = args.worker === null ? app.name : `The worker ${args.worker}`;
+  const what = args.worker === null ? app.name : capitalised(workerCalled(args.worker));
   return letter({
     subject:
       args.worker === null
         ? `${app.name} is not answering`
-        : `${app.name}: the worker ${args.worker} keeps stopping`,
+        : `${app.name}: ${workerCalled(args.worker)} keeps stopping`,
     paragraphs: [
       args.worker === null
         ? `${app.name} has not answered Cira's checks since ${utc(args.since)}. People opening it are likely to see an error.`
@@ -173,9 +186,9 @@ export function answeringAgainMessage(args: {
     subject:
       args.worker === null
         ? `${app.name} is answering again`
-        : `${app.name}: the worker ${args.worker} is running again`,
+        : `${app.name}: ${workerCalled(args.worker)} is running again`,
     paragraphs: [
-      `${args.worker === null ? app.name : `The worker ${args.worker}`} is back, after ${minutesBetween(args.since, args.now)} (since ${utc(args.since)}).`,
+      `${args.worker === null ? app.name : capitalised(workerCalled(args.worker))} is back, after ${minutesBetween(args.since, args.now)} (since ${utc(args.since)}).`,
     ],
     action: { label: `Open ${app.name}`, href: app.page },
     because: manager(app),

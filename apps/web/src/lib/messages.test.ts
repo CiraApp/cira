@@ -68,8 +68,19 @@ describe("messages", () => {
       why: "it keeps running out of memory and being restarted",
       logs: "https://cira.dev/acme/revenue/logs?process=worker",
     });
-    expect(message.subject).toContain("the worker worker keeps stopping");
+    // Most Procfiles call theirs "worker"; "the worker worker" read as a typo.
+    expect(message.subject).toContain(": its worker keeps stopping");
+    expect(message.text).toContain("Its worker of Revenue");
     expect(message.text).toContain("it keeps running out of memory");
+
+    const named = notAnsweringMessage({
+      app,
+      worker: "ingest",
+      since: new Date("2026-09-19T11:58:00Z"),
+      why: null,
+      logs: "https://cira.dev/acme/revenue/logs?process=ingest",
+    });
+    expect(named.subject).toContain(": the worker \u201cingest\u201d keeps stopping");
   });
 
   it("says a refused capability is decided in the app, not in Cira", () => {

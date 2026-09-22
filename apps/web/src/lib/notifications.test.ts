@@ -278,8 +278,8 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     ];
     await watchEverything(now);
     expect(sent.map((e) => e.subject)).toEqual([
-      "Reports: the worker worker keeps stopping",
-      "Reports: the worker worker keeps stopping",
+      "Reports: its worker keeps stopping",
+      "Reports: its worker keeps stopping",
     ]);
     expect(sent[0]?.text).toContain("running out of memory");
   });
@@ -306,8 +306,8 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     ];
     await watchEverything(now);
     expect(sent.map((e) => e.subject)).toEqual([
-      "Reports: the worker worker keeps stopping",
-      "Reports: the worker worker keeps stopping",
+      "Reports: its worker keeps stopping",
+      "Reports: its worker keeps stopping",
     ]);
     expect(sent[0]?.text).toContain("exited with code 3 12 times in the last hour");
   });
