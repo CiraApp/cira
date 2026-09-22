@@ -14,10 +14,13 @@ import type { EnvVarSummary } from "@/lib/env-vars";
 export function EnvPanel({
   vars,
   database,
+  cache,
 }: {
   vars: EnvVarSummary[];
   /** The variable a database Cira made is set as, when it made one. */
   database: { envName: string } | null;
+  /** The variable a cache Cira made is set as, when it made one. */
+  cache: { envName: string } | null;
 }) {
   if (vars.length === 0) return null;
   const fromDatabase = new Set(
@@ -40,6 +43,15 @@ export function EnvPanel({
             <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">
               {entry.key}
             </code>
+
+            {cache?.envName === entry.key ? (
+              <span
+                title="The Redis cache Cira made for this app"
+                className="shrink-0 rounded-[2px] border border-line-strong px-1.5 py-[1px] text-[10.5px] text-ink-muted"
+              >
+                cache
+              </span>
+            ) : null}
 
             {fromDatabase.has(entry.key) ? (
               <span
@@ -78,6 +90,13 @@ export function EnvPanel({
           <code className="font-mono">psql</code> or{" "}
           <code className="font-mono">pg_dump</code>. Removing the app deletes it and
           everything in it.
+        </p>
+      )}
+      {cache === null ? null : (
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-subtle">
+          <code className="font-mono">{cache.envName}</code> is a Redis cache Cira made
+          for this app on Upstash. <code className="font-mono">cira cache url</code>{" "}
+          prints its address. Removing the app deletes it.
         </p>
       )}
     </section>

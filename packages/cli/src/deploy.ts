@@ -8,7 +8,7 @@ import { collectEnv, isPublicName } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { resolveMissing, terminal } from "./confirm.js";
-import { chooseDatabase } from "./database.js";
+import { chooseAddon, type AddonKind } from "./addons.js";
 import { discoverServices, type DiscoveredService, type Discovery } from "./services.js";
 import { NGINX_CONF, NGINX_CONFIG, staticDockerfile, staticSite } from "./static-site.js";
 import {
@@ -45,6 +45,8 @@ interface DeployResponse {
   deploymentId: string;
   /** The database this deploy set, when it asked for one. */
   database?: { envName: string; created: boolean };
+  /** The cache this deploy set, when it asked for one. */
+  cache?: { envName: string; created: boolean };
 }
 
 interface StatusResponse {
@@ -383,24 +385,41 @@ export async function deploy(argv: string[] = []): Promise<number> {
     (need) => !supplied.has(need.name) && !inProduction.has(need.name),
   );
 
-  // Before the list, so the list can say what is true: a database is the one
-  // thing on it Cira can supply itself, rather than send the developer off to
-  // find, and it answers for the direct address beside the pooled one.
-  const chosen = await chooseDatabase({
-    missing: missing.map((need) => need.name),
-    supplied,
-    argv,
-    io: terminal(),
-  });
-  if ("error" in chosen) {
-    fail(chosen.error);
-    return 1;
+  // Before the list, so the list can say what is true: a database and a cache
+  // are the things on it Cira can supply itself, rather than send the
+  // developer off to find. A database answers for its direct address too.
+  const chosen: Record<AddonKind, string | null> = { database: null, cache: null };
+  for (const kind of ["database", "cache"] as const) {
+    const choice = await chooseAddon({
+      kind,
+      missing: missing.map((need) => need.name),
+      supplied,
+      argv,
+      io: terminal(),
+    });
+    if ("error" in choice) {
+      fail(choice.error);
+      return 1;
+    }
+    chosen[kind] = choice.envName;
   }
-  const databaseEnv = chosen.envName;
-  const fromDatabase = new Set(
-    databaseEnv === null ? [] : [databaseEnv, `${databaseEnv}_UNPOOLED`],
-  );
-  missing = missing.filter((need) => !fromDatabase.has(need.name));
+  const databaseEnv = chosen.database;
+  const cacheEnv = chosen.cache;
+  const madeByCira = new Map<string, string>([
+    ...(databaseEnv === null
+      ? []
+      : [
+          [databaseEnv, "from a new Postgres database, made by Cira"] as const,
+          [
+            `${databaseEnv}_UNPOOLED`,
+            "from a new Postgres database, made by Cira",
+          ] as const,
+        ]),
+    ...(cacheEnv === null
+      ? []
+      : [[cacheEnv, "from a new Redis cache, made by Cira"] as const]),
+  ]);
+  missing = missing.filter((need) => !madeByCira.has(need.name));
 
   const checklist = [
     ...needed.map((need) => ({
@@ -408,22 +427,17 @@ export async function deploy(argv: string[] = []): Promise<number> {
       have:
         supplied.has(need.name) ||
         inProduction.has(need.name) ||
-        fromDatabase.has(need.name),
+        madeByCira.has(need.name),
       note: supplied.has(need.name)
         ? ""
-        : fromDatabase.has(need.name)
-          ? "from a new Postgres database, made by Cira"
-          : inProduction.has(need.name)
+        : (madeByCira.get(need.name) ??
+          (inProduction.has(need.name)
             ? "already set in production"
-            : `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
+            : `${need.reason}, in ${need.file.replace(/^\.\//, "")}`)),
     })),
-    ...[...fromDatabase]
-      .filter((name) => !needed.some((need) => need.name === name))
-      .map((name) => ({
-        name,
-        have: true,
-        note: "from a new Postgres database, made by Cira",
-      })),
+    ...[...madeByCira]
+      .filter(([name]) => !needed.some((need) => need.name === name))
+      .map(([name, note]) => ({ name, have: true, note })),
     // Set, and not something the scan asked for. Still going to the app, so
     // still worth seeing - a typo in a name shows up here as a variable
     // nobody asked for sitting next to the one still missing.
@@ -555,6 +569,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         webMemoryMiB: servesWeb ? declared.webMemoryMiB : null,
         release: declared.release,
         database: databaseEnv === null ? null : { envName: databaseEnv },
+        cache: cacheEnv === null ? null : { envName: cacheEnv },
         processes: declared.processes,
         env: collected.env,
         unset: collected.unset,
@@ -563,6 +578,13 @@ export async function deploy(argv: string[] = []): Promise<number> {
   } catch (error) {
     fail(error instanceof ApiError ? error.message : "The deploy could not be started.");
     return 1;
+  }
+  if (started.cache !== undefined) {
+    success(
+      started.cache.created
+        ? `Made a Redis cache, set as ${started.cache.envName}`
+        : `Its cache is set as ${started.cache.envName}`,
+    );
   }
   if (started.database !== undefined) {
     success(

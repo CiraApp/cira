@@ -30,6 +30,12 @@ const SUBPROCESSORS = [
     where: "United States (AWS us-east-1)",
   },
   {
+    name: "Upstash",
+    role: "The caches Cira makes for apps that ask for one.",
+    data: "Whatever an app keeps in its own cache, in a separate database per app.",
+    where: "United States (Google Cloud us-central1)",
+  },
+  {
     name: "Clerk",
     role: "Signs people in.",
     data: "Names, email addresses, and sessions.",

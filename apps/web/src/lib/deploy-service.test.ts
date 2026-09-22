@@ -714,6 +714,19 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
+        if (url.startsWith("https://api.upstash.com/")) {
+          neonCalls.push(
+            `${method} upstash ${url.replace("https://api.upstash.com/v2/redis", "")}`,
+          );
+          return method === "DELETE"
+            ? new Response('"ok"')
+            : Response.json({
+                database_id: "cache-1",
+                endpoint: "calm-owl-1.upstash.io",
+                port: 6379,
+                password: "pw",
+              });
+        }
         if (!url.startsWith("https://console.neon.tech/")) return realFetch(input, init);
         neonCalls.push(
           `${method} ${url.replace("https://console.neon.tech/api/v2", "")}`,
@@ -892,6 +905,38 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       });
       expect(replaced.ok && replaced.database?.created).toBe(true);
       expect(told.at(-1)?.env?.unset).toEqual([]);
+    });
+
+    it("makes a cache the same way, and deletes it with the app", async () => {
+      vi.stubEnv("UPSTASH_EMAIL", "ops@cira.dev");
+      vi.stubEnv("UPSTASH_API_KEY", "key");
+      const { deployToSpace } = await import("./deploy-service");
+      const first = await deployToSpace({
+        user: deployer,
+        spaceSlug: "paradym",
+        appName: "Orders Cache",
+        appId: null,
+        sourceId: "src_1",
+        framework: "unknown",
+        container: null,
+        cache: { envName: "REDIS_URL" },
+      });
+      expect(first.ok && first.cache).toEqual({ envName: "REDIS_URL", created: true });
+      if (!first.ok) return;
+      expect(told.at(-1)?.env?.set).toEqual({
+        REDIS_URL: "rediss://default:pw@calm-owl-1.upstash.io:6379",
+      });
+
+      neonCalls.length = 0;
+      const { apps, appCaches } = await import("@cira/db");
+      const [app] = await database.select().from(apps).where(eq(apps.id, first.appId));
+      const { tearDownApp } = await import("./app-teardown");
+      const { toApp } = await import("./capabilities");
+      expect((await tearDownApp(toApp(app!))).ok).toBe(true);
+      expect(neonCalls).toEqual(["DELETE upstash /database/cache-1"]);
+      expect(
+        await database.select().from(appCaches).where(eq(appCaches.appId, first.appId)),
+      ).toEqual([]);
     });
 
     it("says so, and leaves no app behind, when this Cira cannot make databases", async () => {

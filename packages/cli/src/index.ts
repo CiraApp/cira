@@ -3,7 +3,7 @@ import { api, ApiError } from "./api.js";
 import { clearConfig, readConfig } from "./config.js";
 import { deploy } from "./deploy.js";
 import { remove } from "./remove.js";
-import { database } from "./database.js";
+import { addonCommand } from "./addons.js";
 import { login } from "./login.js";
 import { mcpCommand } from "./mcp.js";
 import { skillCommand } from "./skill/command.js";
@@ -26,6 +26,8 @@ const USAGE = `
                                  where it sits apart from the workspace root
                --database       give the app a Postgres database, made by Cira,
                                 as DATABASE_URL (or the name its code reads)
+               --cache          give the app a Redis cache, made by Cira,
+                                as REDIS_URL (or the name its code reads)
                --yes            deploy without asking about missing variables
                A deploy only changes the variables it sends. Everything else
                stays as it is in production.
@@ -35,6 +37,7 @@ const USAGE = `
                --confirm <name> the app's name, to remove without being asked
     database   url        Print the app's database address, for psql or pg_dump
                --pooled   the address the app itself runs on
+    cache      url        Print the app's cache address, for redis-cli
     login      Connect this machine to your Cira account
     skill      install    Add the Cira Skill to your coding agents
     mcp        connect    Point this machine's assistants at your company
@@ -117,7 +120,9 @@ async function main(): Promise<number> {
     case "remove":
       return remove(process.argv.slice(3));
     case "database":
-      return database(process.argv.slice(3));
+      return addonCommand("database", process.argv.slice(3));
+    case "cache":
+      return addonCommand("cache", process.argv.slice(3));
     case "login":
       return login();
     case "skill":

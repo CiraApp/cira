@@ -87,6 +87,11 @@ const body = z.object({
     .object({ envName: z.string().regex(ENV_NAME).max(100) })
     .nullable()
     .default(null),
+  /** A Redis cache for the app, set as this variable. Absent: none is made. */
+  cache: z
+    .object({ envName: z.string().regex(ENV_NAME).max(100) })
+    .nullable()
+    .default(null),
   /** Workers and scheduled runs found in the repository. */
   processes: z
     .array(
@@ -136,6 +141,7 @@ export async function POST(request: Request) {
     webMemoryMiB: settleAppMemory(parsed.data.webMemoryMiB).memoryMiB,
     release: parsed.data.release,
     database: parsed.data.database,
+    cache: parsed.data.cache,
     // A timetable is taken only if Cira can run it; one it cannot is dropped
     // for a person to set, rather than refusing the whole deploy.
     // Memory is rounded to a size Cira offers, so what is recorded is what

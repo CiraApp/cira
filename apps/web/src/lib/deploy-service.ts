@@ -32,6 +32,7 @@ import { archiveUri, deploymentProvider, parseHandle, sourceStore } from "@cira/
 import { userManages } from "@/lib/app-rights";
 import { supersedeEarlierDeploys } from "@/lib/deployment-sync";
 import { appDatabase, databaseForDeploy, removeAppDatabase } from "@/lib/app-databases";
+import { appCache, cacheForDeploy, removeAppCache } from "@/lib/app-caches";
 import { recordEnvChange } from "@/lib/env-vars";
 import { planForSpace } from "@/lib/plan";
 import { recordProcesses, specsFor } from "@/lib/processes";
@@ -50,6 +51,7 @@ export type DeployOutcome =
       spaceSlug: string;
       deploymentId: string;
       database?: DeployedDatabase;
+      cache?: DeployedDatabase;
     }
   | {
       ok: false;
@@ -113,6 +115,8 @@ export async function deployToSpace(args: {
    * deploy if the app has none, set again if it has.
    */
   database?: { envName: string } | null;
+  /** A Redis cache for the app, set as this variable, the same way. */
+  cache?: { envName: string } | null;
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName } = args;
   let env = args.env ?? NO_ENV_CHANGE;
@@ -268,8 +272,10 @@ export async function deployToSpace(args: {
   // A database this deploy made, taken back out with it if it goes no
   // further: kept, it would be a project holding nothing that nobody knows of.
   let madeDatabase = false;
+  let madeCache = false;
   const abandon = async (error: string): Promise<DeployOutcome> => {
     if (madeDatabase) await removeAppDatabase(app.id);
+    if (madeCache) await removeAppCache(app.id);
     if (created) {
       await database.delete(apps).where(eq(apps.id, app.id));
     } else {
@@ -349,7 +355,11 @@ export async function deployToSpace(args: {
     // A database the app already points somewhere else at is not Cira's to
     // replace: that is someone's real data, and the app would quietly start
     // reading an empty one.
-    const clash = await pointsElsewhere(app.id, args.database.envName, env);
+    const clash = await pointsElsewhere(app.id, args.database.envName, env, {
+      what: "database",
+      flag: "--database",
+      madeByCira: (await appDatabase(app.id)) !== null,
+    });
     if (clash !== null) return abandon(clash);
     const found = await databaseForDeploy({
       appId: app.id,
@@ -362,6 +372,31 @@ export async function deployToSpace(args: {
     madeDatabase = found.created;
     databaseSet = { envName: found.envName, created: found.created };
     // Set with everything else this deploy sets, and never unset by it.
+    env = {
+      set: { ...env.set, ...found.env },
+      unset: env.unset.filter((name) => !(name in found.env)),
+    };
+  }
+
+  let cacheSet: DeployedDatabase | null = null;
+  if (args.cache !== undefined && args.cache !== null) {
+    // The same rule as a database: a cache the app already has is its own.
+    const clash = await pointsElsewhere(app.id, args.cache.envName, env, {
+      what: "cache",
+      flag: "--cache",
+      madeByCira: (await appCache(app.id)) !== null,
+    });
+    if (clash !== null) return abandon(clash);
+    const found = await cacheForDeploy({
+      appId: app.id,
+      spaceSlug: space.slug,
+      appSlug: app.slug,
+      userId: user.id,
+      envName: args.cache.envName,
+    });
+    if (!found.ok) return abandon(found.error);
+    madeCache = found.created;
+    cacheSet = { envName: found.envName, created: found.created };
     env = {
       set: { ...env.set, ...found.env },
       unset: env.unset.filter((name) => !(name in found.env)),
@@ -427,23 +462,25 @@ export async function deployToSpace(args: {
     spaceSlug: space.slug,
     deploymentId,
     ...(databaseSet === null ? {} : { database: databaseSet }),
+    ...(cacheSet === null ? {} : { cache: cacheSet }),
   };
 }
 
 /**
- * Why a database cannot be set as this variable, or null when it can: when
- * this deploy sets the variable itself, or the app already has it from
- * somewhere other than a database Cira made.
+ * Why a database or cache cannot be set as this variable, or null when it can:
+ * when this deploy sets the variable itself, or the app already has it from
+ * somewhere other than one Cira made.
  */
 async function pointsElsewhere(
   appId: string,
   envName: string,
   env: EnvChange,
+  kind: { what: "database" | "cache"; flag: string; madeByCira: boolean },
 ): Promise<string | null> {
   if (envName in env.set) {
-    return `This deploy sets ${envName} itself. Leave it out to use a database Cira makes.`;
+    return `This deploy sets ${envName} itself. Leave it out to use a ${kind.what} Cira makes.`;
   }
-  if (await appDatabase(appId)) return null;
+  if (kind.madeByCira) return null;
   const [set] = await db()
     .select({ key: appEnvVars.key })
     .from(appEnvVars)
@@ -451,7 +488,7 @@ async function pointsElsewhere(
     .limit(1);
   return set === undefined || env.unset.includes(envName)
     ? null
-    : `${envName} already points at a database of this app's own. Cira will not replace it. If a new, empty one is what you want, deploy with --unset ${envName} --database.`;
+    : `${envName} already points at a ${kind.what} of this app's own. Cira will not replace it. If a new, empty one is what you want, deploy with --unset ${envName} ${kind.flag}.`;
 }
 
 /**

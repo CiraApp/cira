@@ -943,6 +943,25 @@ export const appDatabases = pgTable("app_databases", {
 });
 
 /**
+ * The Redis cache Cira made for an app on Upstash, one at most. Which cache
+ * it is, never its password or address.
+ */
+export const appCaches = pgTable("app_caches", {
+  appId: text("app_id")
+    .primaryKey()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  provider: text("provider").$type<"upstash">().notNull(),
+  externalId: text("external_id").notNull(),
+  /** The variable the app reads it from. */
+  envName: text("env_name").notNull(),
+  region: text("region").notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * A company's own hostname for an app - `tools.acme.com` - served through a
  * Cloudflare custom hostname on Cira's zone. Unique across every company: a
  * name can only point at one app.

@@ -7,6 +7,7 @@ import {
   capabilities,
   db,
   deployments,
+  appCaches,
   appDatabases,
   appEnvVars,
   invites,
@@ -62,7 +63,7 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
   const appIds = ownApps.map((app) => app.id);
   const none = appIds.length === 0;
 
-  const [grants, parts, ops, background, deploys, variables, teamPeople, made] =
+  const [grants, parts, ops, background, deploys, variables, teamPeople, made, caches] =
     await Promise.all([
       none
         ? []
@@ -97,6 +98,9 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
       none
         ? []
         : database.select().from(appDatabases).where(inArray(appDatabases.appId, appIds)),
+      none
+        ? []
+        : database.select().from(appCaches).where(inArray(appCaches.appId, appIds)),
     ]);
 
   const emailOf = new Map(people.map((p) => [p.user.id, p.user.email]));
@@ -182,6 +186,15 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
           .filter((row) => row.appId === app.id)
           .map((row) => ({
             postgresOn: "Neon",
+            setAs: row.envName,
+            region: row.region,
+            createdAt: row.createdAt.toISOString(),
+          }))[0] ?? null,
+      cache:
+        caches
+          .filter((row) => row.appId === app.id)
+          .map((row) => ({
+            redisOn: "Upstash",
             setAs: row.envName,
             region: row.region,
             createdAt: row.createdAt.toISOString(),

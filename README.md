@@ -602,6 +602,12 @@ which app, never an address; `cira database url` asks Neon for one when a
 manager wants it. Removing an app deletes its project before its row, and a
 database already pointed at by the app's own `DATABASE_URL` is never replaced.
 
+A Redis cache works the same way (`lib/app-caches.ts`,
+`packages/deploy/src/upstash`): offered for a `REDIS_URL` nobody set, asked
+for with `--cache`, made as the app's own Upstash database on Google Cloud in
+the apps' region, set as one `rediss://` address, read back with
+`cira cache url`, and deleted with the app.
+
 ### 12. An app on a company's own domain
 
 A manager adds `tools.acme.com` on the app page (`lib/app-domains.ts`). Cira
@@ -966,6 +972,7 @@ None of this is recreated by a deploy.
 | Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                                                                                                                                                  |
 | Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                                                                                                                                                            |
 | Vercel         | `NEON_API_KEY` (an organization key named `cira-app-databases`) and `NEON_ORG_ID`, production only, so Cira can make and delete apps' databases in its Neon organization                                                                    |
+| Vercel         | `UPSTASH_EMAIL` and `UPSTASH_API_KEY` (a management API key of Cira's Upstash account), production only, so Cira can make and delete apps' caches                                                                                           |
 | Vercel         | `CLOUDFLARE_API_TOKEN` (Zone: SSL and Certificates, DNS and Workers Routes, all Edit, on `cira.dev`), `CLOUDFLARE_ZONE_ID` and `CIRA_DOMAINS_TARGET` (`domains.cira.dev`), production only, so companies can open apps on their own domains |
 | Stripe         | prices with the lookup keys `cira_team_seat`, `cira_team_worker` and `cira_team_always_on`, and the webhook (`customer.subscription.*`, `checkout.session.completed`, `invoice.payment_failed`)                                             |
 | Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted                                                                                                                                |

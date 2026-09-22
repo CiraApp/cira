@@ -60,6 +60,11 @@ export default function DocsPage() {
           Removing the app deletes its database and everything in it. An app that already
           has a database of its own keeps it; Cira never replaces one.
         </p>
+        <p>
+          A Redis cache works the same way: offered for a <code>REDIS_URL</code> nobody
+          set, or asked for with <code>cira deploy --cache</code>, and read back with{" "}
+          <code>cira cache url</code>.
+        </p>
       </Section>
 
       <Section title="Open it">

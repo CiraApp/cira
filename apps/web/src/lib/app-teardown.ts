@@ -7,6 +7,7 @@ import type { App } from "@cira/core";
 import { resourcesOf } from "@/lib/usage";
 import { removeAppDatabase } from "@/lib/app-databases";
 import { removeAppDomains } from "@/lib/app-domains";
+import { removeAppCache } from "@/lib/app-caches";
 
 /**
  * Take an app down and remove what it left behind.
@@ -62,6 +63,14 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
     return {
       ok: false,
       error: `The app is down, but its database was not deleted: ${dropped.error}`,
+    };
+  }
+
+  const cleared = await removeAppCache(app.id);
+  if (!cleared.ok) {
+    return {
+      ok: false,
+      error: `The app is down, but its cache was not deleted: ${cleared.error}`,
     };
   }
 

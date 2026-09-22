@@ -153,7 +153,13 @@ what it uses.
   - [ ] _You:_ Neon's free plan caps how many projects the organisation holds
         and how big each is. Move the Cira organisation to a paid plan before
         a customer depends on it.
-  - [ ] Caches (Redis on Upstash), the same way, when an app asks.
+  - [x] Caches: `cira deploy --cache`, or yes to the offer for a `REDIS_URL`
+        nobody set, makes the app its own Upstash Redis on Google Cloud in the
+        apps' region and sets it; `cira cache url`; deleted with the app
+        (2026-09-22).
+  - [ ] _You:_ an Upstash account for Cira and a management API key, stored
+        as `UPSTASH_EMAIL` and `UPSTASH_API_KEY` in Vercel. Until then a
+        deploy asking for a cache is told this Cira cannot make one yet.
 - [x] **3.5 Custom domains** for apps. A manager adds `tools.acme.com` on the
       app page; Cira makes it a Cloudflare custom hostname, shows the CNAME to
       make, and the app proxy serves it once the certificate is issued, behind

@@ -47,10 +47,11 @@ export default function PrivacyPage() {
         </p>
         <p>
           Your apps&rsquo; own data. Cira never copies it out of an app. When an app asks
-          Cira for a database, Cira makes one for that app alone on Neon and hands the app
-          its address; the rows in it are the app&rsquo;s, Cira never reads them, and
-          removing the app deletes the database. Your apps&rsquo; logs stay in Google
-          Cloud and are read on demand by people who manage them.
+          Cira for a database or a cache, Cira makes one for that app alone - a database
+          on Neon, a cache on Upstash - and hands the app its address; the rows in it are
+          the app&rsquo;s, Cira never reads them, and removing the app deletes the
+          database. Your apps&rsquo; logs stay in Google Cloud and are read on demand by
+          people who manage them.
         </p>
         <p>
           Ask Cira conversations, which live in the browser tab that holds them. No

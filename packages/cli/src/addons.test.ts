@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseDatabase } from "./database.js";
+import { chooseAddon } from "./addons.js";
 import type { Prompt } from "./confirm.js";
 
 const answering = (answer: string, interactive = true): Prompt & { asked: string[] } => {
@@ -14,10 +14,11 @@ const answering = (answer: string, interactive = true): Prompt & { asked: string
   };
 };
 
-describe("chooseDatabase", () => {
+describe("chooseAddon", () => {
   it("offers one when the code reads an address nobody set, yes by default", async () => {
     const io = answering("");
-    const chosen = await chooseDatabase({
+    const chosen = await chooseAddon({
+      kind: "database",
       missing: ["STRIPE_KEY", "POSTGRES_URL"],
       supplied: new Set(),
       argv: [],
@@ -28,7 +29,8 @@ describe("chooseDatabase", () => {
   });
 
   it("takes no for an answer", async () => {
-    const chosen = await chooseDatabase({
+    const chosen = await chooseAddon({
+      kind: "database",
       missing: ["DATABASE_URL"],
       supplied: new Set(),
       argv: [],
@@ -43,7 +45,8 @@ describe("chooseDatabase", () => {
       [[], false],
     ] as const) {
       const io = answering("y", interactive);
-      const chosen = await chooseDatabase({
+      const chosen = await chooseAddon({
+        kind: "database",
         missing: ["DATABASE_URL"],
         supplied: new Set(),
         argv,
@@ -57,7 +60,8 @@ describe("chooseDatabase", () => {
   it("makes one outright with --database, as DATABASE_URL unless the code reads another", async () => {
     const io = answering("n", false);
     expect(
-      await chooseDatabase({
+      await chooseAddon({
+        kind: "database",
         missing: [],
         supplied: new Set(),
         argv: ["--database"],
@@ -65,7 +69,8 @@ describe("chooseDatabase", () => {
       }),
     ).toEqual({ envName: "DATABASE_URL" });
     expect(
-      await chooseDatabase({
+      await chooseAddon({
+        kind: "database",
         missing: ["PG_URL"],
         supplied: new Set(),
         argv: ["--database"],
@@ -75,7 +80,8 @@ describe("chooseDatabase", () => {
   });
 
   it("refuses --database beside an address this deploy sets itself", async () => {
-    const chosen = await chooseDatabase({
+    const chosen = await chooseAddon({
+      kind: "database",
       missing: [],
       supplied: new Set(["DATABASE_URL"]),
       argv: ["--database"],
@@ -84,5 +90,43 @@ describe("chooseDatabase", () => {
     expect(chosen).toMatchObject({
       error: expect.stringContaining("sets DATABASE_URL itself"),
     });
+  });
+});
+
+describe("chooseAddon for a cache", () => {
+  it("offers one for a REDIS_URL nobody set, and makes one outright with --cache", async () => {
+    const io = answering("");
+    expect(
+      await chooseAddon({
+        kind: "cache",
+        missing: ["REDIS_URL"],
+        supplied: new Set(),
+        argv: [],
+        io,
+      }),
+    ).toEqual({ envName: "REDIS_URL" });
+    expect(
+      await chooseAddon({
+        kind: "cache",
+        missing: ["DATABASE_URL"],
+        supplied: new Set(),
+        argv: ["--cache"],
+        io: answering("n", false),
+      }),
+    ).toEqual({ envName: "REDIS_URL" });
+  });
+
+  it("does not offer a cache for a database's address", async () => {
+    const io = answering("y");
+    expect(
+      await chooseAddon({
+        kind: "cache",
+        missing: ["DATABASE_URL"],
+        supplied: new Set(),
+        argv: [],
+        io,
+      }),
+    ).toEqual({ envName: null });
+    expect(io.asked).toEqual([]);
   });
 });

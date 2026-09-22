@@ -22,6 +22,7 @@ import { AppSettings } from "@/components/app-settings";
 import { EnvPanel } from "@/components/env-panel";
 import { listEnvVars } from "@/lib/env-vars";
 import { appDatabase } from "@/lib/app-databases";
+import { appCache } from "@/lib/app-caches";
 import { domainTarget, listDomains, refreshDomains } from "@/lib/app-domains";
 import { DomainPanel } from "@/components/domain-panel";
 import { proxyConfig } from "@/lib/proxy-config";
@@ -96,6 +97,7 @@ export default async function AppPage({
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
     const databaseOf = manages ? await appDatabase(app.id) : null;
+    const cacheOf = manages ? await appCache(app.id) : null;
     // A name someone is waiting on is asked about while they look.
     if (manages) await refreshDomains(new Date(), app.id).catch(() => undefined);
     const domains = manages ? await listDomains(app.id) : [];
@@ -426,7 +428,9 @@ export default async function AppPage({
             />
           ) : null}
 
-          {manages ? <EnvPanel vars={envVars} database={databaseOf} /> : null}
+          {manages ? (
+            <EnvPanel vars={envVars} database={databaseOf} cache={cacheOf} />
+          ) : null}
 
           {manages ? (
             <AppSettings
