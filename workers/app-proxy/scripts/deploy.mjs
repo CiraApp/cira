@@ -72,6 +72,24 @@ const secret = required(
   "The same value Cira signs with. Cira verifies nothing it did not sign, so a mismatch locks everyone out of every app.",
 );
 
+// The secret has to be the one Cira runs with, and nothing here can see
+// that - Vercel does not hand a sensitive value back, and a pulled copy of one
+// was once shipped and locked everyone out of every app until it was rotated.
+// So Cira is asked: its proxy-only route refuses a wrong secret with 401 and
+// answers a right one, for a name no app has, with 404.
+const probe = await fetch(new URL("/api/proxy/domain", ciraOrigin), {
+  method: "POST",
+  headers: { "content-type": "application/json", "x-cira-proxy-secret": secret },
+  body: JSON.stringify({ hostname: "secret-check.invalid" }),
+});
+if (probe.status !== 404) {
+  throw new Error(
+    probe.status === 401
+      ? "Cira does not accept this CIRA_PROXY_SECRET. Nothing was deployed: shipping it would lock everyone out of every app."
+      : `Could not check the secret with Cira (${probe.status}). Nothing was deployed.`,
+  );
+}
+
 const worker = join(root, "build", "worker.js");
 let size;
 try {

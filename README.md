@@ -945,6 +945,9 @@ The script is `ship` because pnpm has a built-in `deploy` that shadows it. The
 Cloudflare token is read from `~/.cloudflare-token` or `CLOUDFLARE_API_TOKEN`,
 and needs Workers Scripts:Edit on the account plus DNS:Edit and Workers
 Routes:Edit on the zone.
+It refuses to ship a `CIRA_PROXY_SECRET` Cira does not accept. Vercel will
+not hand the value back, so rotating it means setting a new one in Vercel and
+shipping with it, then redeploying Cira (`gh workflow run ci --ref prod`).
 
 ### Configured outside the repository
 
