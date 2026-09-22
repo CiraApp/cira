@@ -29,7 +29,7 @@ export default function PricingPage() {
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-[var(--radius-edge)] border border-line bg-surface p-6">
+        <div className="flex flex-col rounded-[var(--radius-edge)] border border-line bg-surface p-6">
           <h2 className="text-[15px] font-semibold text-ink">{trial.name}</h2>
           <p className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-ink">
             Free
@@ -37,7 +37,7 @@ export default function PricingPage() {
           <p className="mt-1 text-[12.5px] text-ink-subtle">
             {trial.trialDays} days, no card
           </p>
-          <ul className="mt-4 flex flex-col gap-2 text-[13px] text-ink-muted">
+          <ul className="mt-4 mb-5 flex flex-col gap-2 text-[13px] text-ink-muted">
             {[
               `Up to ${trial.limits.appsPerSpace} apps`,
               `${trial.limits.processes.workersPerSpace} worker`,
@@ -47,12 +47,16 @@ export default function PricingPage() {
               <li key={line}>{line}</li>
             ))}
           </ul>
-          <Link href="/sign-up" className="btn btn-secondary mt-5 w-full justify-center">
+          <Link
+            href="/sign-up"
+            // At the foot of the card, level with the other plan's button.
+            className="btn btn-secondary mt-auto w-full justify-center"
+          >
             Start
           </Link>
         </div>
 
-        <div className="rounded-[var(--radius-edge)] border border-line-strong bg-raised p-6">
+        <div className="flex flex-col rounded-[var(--radius-edge)] border border-line-strong bg-raised p-6">
           <h2 className="text-[15px] font-semibold text-ink">{team.name}</h2>
           <p className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-ink">
             ${team.perSeatMonthly}
@@ -64,7 +68,7 @@ export default function PricingPage() {
           <p className="mt-1 text-[12.5px] text-ink-subtle">
             {team.minimumSeats} people minimum
           </p>
-          <ul className="mt-4 flex flex-col gap-2 text-[13px] text-ink-muted">
+          <ul className="mt-4 mb-5 flex flex-col gap-2 text-[13px] text-ink-muted">
             {[
               `Up to ${limits.appsPerSpace} apps, each up to ${limits.app.maxInstances} instances`,
               `${limits.processes.scheduledPerSpace} scheduled runs, as often as every ${limits.processes.minIntervalMinutes} minutes`,
@@ -75,7 +79,7 @@ export default function PricingPage() {
               <li key={line}>{line}</li>
             ))}
           </ul>
-          <Link href="/sign-up" className="btn btn-primary mt-5 w-full justify-center">
+          <Link href="/sign-up" className="btn btn-primary mt-auto w-full justify-center">
             Start free, pay later
           </Link>
         </div>
