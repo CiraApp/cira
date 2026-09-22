@@ -179,26 +179,37 @@ export async function recordDeploymentStatus(
     .returning({ id: deployments.id });
   if (moved.length === 0) return deployment;
 
+  // The build before a failed one is still serving, unless there was none.
+  const [earlier] =
+    next.status === "failed"
+      ? await database
+          .select({ id: deployments.id })
+          .from(deployments)
+          .where(
+            and(
+              eq(deployments.appId, deployment.appId),
+              eq(deployments.status, "live"),
+              ne(deployments.id, deployment.id),
+            ),
+          )
+          .limit(1)
+      : [];
+
   // A replaced deploy says nothing about the app: the one replacing it does.
+  // And a failed one leaves an app that was running still running - marking
+  // it failed put a red dot on the shelf and took its Open button away while
+  // the version before went on answering every request.
   if (isTerminal(next.status) && next.status !== "superseded") {
     await database
       .update(apps)
-      .set({ status: next.status === "live" ? "live" : "failed", updatedAt: now })
+      .set({
+        status: next.status === "live" || earlier !== undefined ? "live" : "failed",
+        updatedAt: now,
+      })
       .where(eq(apps.id, deployment.appId));
   }
 
   if (next.status === "failed") {
-    const [earlier] = await database
-      .select({ id: deployments.id })
-      .from(deployments)
-      .where(
-        and(
-          eq(deployments.appId, deployment.appId),
-          eq(deployments.status, "live"),
-          ne(deployments.id, deployment.id),
-        ),
-      )
-      .limit(1);
     await notifyManagers({
       appId: deployment.appId,
       kind: "deploy-failed",

@@ -3,6 +3,7 @@ import "server-only";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   appOpens,
+  appWatch,
   apps,
   appSlugHistory,
   db,
@@ -42,6 +43,20 @@ export async function servingDeployment(appId: string): Promise<Deployment | nul
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * When the app's address stopped answering, as the watcher found it, or null
+ * while it answers. The page and assistants used to say "live" through an
+ * outage the watcher had already emailed its managers about.
+ */
+export async function webDownSince(appId: string): Promise<Date | null> {
+  const [row] = await db()
+    .select({ downSince: appWatch.downSince })
+    .from(appWatch)
+    .where(and(eq(appWatch.appId, appId), eq(appWatch.target, "web")))
+    .limit(1);
+  return row?.downSince ?? null;
 }
 
 /** Every deploy of an app, newest first. */

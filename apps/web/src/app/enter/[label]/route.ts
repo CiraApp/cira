@@ -6,7 +6,7 @@ import {
   isSafeTargetPath,
 } from "@cira/core";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
-import { latestDeployment, recordAppOpen } from "@/lib/queries";
+import { latestDeployment, recordAppOpen, servingDeployment } from "@/lib/queries";
 import { proxyConfig } from "@/lib/proxy-config";
 import { resolveAppState } from "@/lib/app-state";
 
@@ -43,7 +43,12 @@ export async function GET(
     const deployment = await latestDeployment(ctx.app.id);
     // A live deployment is the precondition; where a browser goes is this
     // route's own answer, so the address is not asked of it here.
-    const resolved = resolveAppState(ctx.app, deployment, `/enter/${label}`);
+    const resolved = resolveAppState(
+      ctx.app,
+      deployment,
+      `/enter/${label}`,
+      await servingDeployment(ctx.app.id),
+    );
 
     // Nothing to open is not a permission problem, so it goes back to the page
     // that explains which of the several reasons it is.

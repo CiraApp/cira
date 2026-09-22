@@ -111,6 +111,30 @@ describe("resolveAppState", () => {
     );
   });
 
+  it("stays open on the build before a failed deploy, and says the deploy failed", () => {
+    const failed = { ...deployment("failed", null), id: "dep_2" };
+    const resolved = resolveAppState(app("live"), failed, OPEN_AT, deployment("live"));
+    expect(resolved.state).toBe("live");
+    expect(resolved.openUrl).toBe(OPEN_AT);
+    expect(resolved.notice).toEqual({
+      kind: "failed",
+      text: "The last deploy did not finish, so the version before it is still running.",
+    });
+  });
+
+  it("stays open while a new version deploys over a running one", () => {
+    const next = { ...deployment("building", null), id: "dep_2" };
+    const resolved = resolveAppState(app("deploying"), next, OPEN_AT, deployment("live"));
+    expect(resolved.state).toBe("live");
+    expect(resolved.notice?.kind).toBe("deploying");
+  });
+
+  it("is failed when nothing earlier ever went live", () => {
+    const resolved = resolveAppState(app("failed"), deployment("failed"), OPEN_AT, null);
+    expect(resolved.state).toBe("failed");
+    expect(resolved.notice).toBeUndefined();
+  });
+
   it("reports a removed deployment as removed", () => {
     expect(resolveAppState(app("live"), deployment("removed"), OPEN_AT).state).toBe(
       "never-deployed",

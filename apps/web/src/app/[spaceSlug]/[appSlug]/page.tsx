@@ -25,7 +25,8 @@ import { CapabilityPanel } from "@/components/capability-panel";
 import { ServicePanel } from "@/components/service-panel";
 import { AppIdentity } from "@/components/app-identity";
 import { StatusDot } from "@/components/status-dot";
-import { latestDeployment } from "@/lib/queries";
+import { LocalTime } from "@/components/local-time";
+import { latestDeployment, servingDeployment, webDownSince } from "@/lib/queries";
 import { appColor } from "@/lib/app-color";
 import { appDoor, consoleHref, resolveAppState } from "@/lib/app-state";
 import { appOpenPath } from "@/lib/app-open";
@@ -70,6 +71,11 @@ export default async function AppPage({
     // status has to be true rather than whatever was last written down.
     const deployment =
       rawDeployment === null ? null : await reconcileDeployment(rawDeployment);
+    // Read after reconciling, which is what can turn the newest into it.
+    const [serving, downSince] = await Promise.all([
+      servingDeployment(ctx.app.id),
+      webDownSince(ctx.app.id),
+    ]);
 
     // Whether this app has a front door is settled the same way its deploy
     // status is: by asking, at the moment somebody wants to know. Deploying is
@@ -99,6 +105,7 @@ export default async function AppPage({
       app,
       deployment,
       appOpenPath({ appSlug, spaceSlug }),
+      serving,
     );
     // Somewhere to go when the answer is "this app's front door is elsewhere".
     // The setting lives with the app's other details, which is the right place
@@ -242,6 +249,49 @@ export default async function AppPage({
                       </a>
                     </>
                   ) : null}
+                </p>
+              )}
+              {downSince === null || resolved.state !== "live" ? null : (
+                <p className="mt-3.5 flex items-baseline gap-2 text-[12.5px] text-ink-muted">
+                  <span
+                    aria-hidden="true"
+                    className="relative top-[-1px] h-[6px] w-[6px] shrink-0 rounded-full bg-failed"
+                  />
+                  <span>
+                    <span className="text-failed">Not answering</span> since{" "}
+                    <LocalTime at={downSince} />: Cira&rsquo;s checks get a server error
+                    or no reply.
+                    {manages ? (
+                      <>
+                        {" "}
+                        <a
+                          href={`/${spaceSlug}/${appSlug}/logs`}
+                          className="text-ink underline underline-offset-2 transition-colors duration-150 hover:text-ink-muted"
+                        >
+                          Its logs say why
+                        </a>
+                      </>
+                    ) : null}
+                  </span>
+                </p>
+              )}
+              {resolved.notice === undefined ? null : (
+                <p className="mt-3.5 flex items-baseline gap-2 text-[12.5px] text-ink-muted">
+                  <span
+                    aria-hidden="true"
+                    className={`relative top-[-1px] h-[6px] w-[6px] shrink-0 rounded-full ${
+                      resolved.notice.kind === "failed" ? "bg-failed" : "bg-pending"
+                    }`}
+                  />
+                  <span>
+                    {resolved.notice.text}{" "}
+                    <a
+                      href="#deploys"
+                      className="text-ink underline underline-offset-2 transition-colors duration-150 hover:text-ink-muted"
+                    >
+                      {resolved.notice.kind === "failed" ? "See why" : "Follow it"}
+                    </a>
+                  </span>
                 </p>
               )}
             </div>

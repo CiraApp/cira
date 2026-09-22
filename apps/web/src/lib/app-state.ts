@@ -33,6 +33,12 @@ export interface ResolvedApp {
   blockedReason: string | null;
   /** Set for an app that is only workers and scheduled runs. */
   background?: true;
+  /**
+   * About a newer deploy than the one serving: one that failed, or one still
+   * going out. Said beside an app that is otherwise answered for by the build
+   * before it.
+   */
+  notice?: { kind: "failed" | "deploying"; text: string };
 }
 
 export function resolveAppState(
@@ -47,8 +53,14 @@ export function resolveAppState(
    * whose slugs are too long to make a legal hostname.
    */
   openAt: string | null,
+  /**
+   * The newest build that went live, when it is older than `deployment`. A
+   * deploy that failed or is still building takes no traffic, so the build
+   * before it goes on answering - and the app is that build, not the attempt.
+   */
+  serving: Deployment | null = null,
 ): ResolvedApp {
-  const deployed = fromDeployment(app, deployment, openAt);
+  const deployed = behindNewerDeploy(app, deployment, openAt, serving);
 
   // An app that says where it really lives can always be opened, whatever its
   // deployment is doing - they are answers to different questions. Wave's site
@@ -66,6 +78,37 @@ export function resolveAppState(
   }
 
   return deployed;
+}
+
+function behindNewerDeploy(
+  app: App,
+  deployment: Deployment | null,
+  openAt: string | null,
+  serving: Deployment | null,
+): ResolvedApp {
+  const pending =
+    deployment !== null &&
+    (deployment.status === "failed" ||
+      deployment.status === "queued" ||
+      deployment.status === "building" ||
+      deployment.status === "deploying");
+  if (!pending || serving === null || serving.id === deployment.id) {
+    return fromDeployment(app, deployment, openAt);
+  }
+  const running = fromDeployment({ ...app, status: "live" }, serving, openAt);
+  return {
+    ...running,
+    notice:
+      deployment.status === "failed"
+        ? {
+            kind: "failed",
+            text: "The last deploy did not finish, so the version before it is still running.",
+          }
+        : {
+            kind: "deploying",
+            text: "A new version is deploying. This one keeps running until it is ready.",
+          },
+  };
 }
 
 function fromDeployment(

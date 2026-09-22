@@ -76,7 +76,7 @@ export function DeploymentHistory({
   if (deploys.length === 0) return null;
 
   return (
-    <section className="enter-up mt-10">
+    <section id="deploys" className="enter-up mt-10 scroll-mt-6">
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Deploys</h2>
         {logsHref !== null ? (

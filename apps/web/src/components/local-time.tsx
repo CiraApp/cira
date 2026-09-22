@@ -34,7 +34,7 @@ export function LocalTime({
   const date = typeof at === "string" ? new Date(at) : at;
   return (
     <time dateTime={date.toISOString()}>
-      {!hydrated ? "—" : as === "ahead" ? ahead(date) : when(date)}
+      {!hydrated ? "-" : as === "ahead" ? ahead(date) : when(date)}
     </time>
   );
 }

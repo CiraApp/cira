@@ -199,6 +199,11 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     expect(sent[0]?.subject).toBe("Reports: a deploy failed");
     expect(sent[0]?.text).toContain("still running");
     expect(sent[0]?.text).toContain("https://cira.dev/acme/reports");
+
+    // And the app is still what it was: live, on the build before.
+    const { apps } = await import("@cira/db");
+    const [after] = await database.select().from(apps).where(eq(apps.id, appId));
+    expect(after?.status).toBe("live");
   });
 
   it("tells them once when a capability that worked stops letting Cira in", async () => {

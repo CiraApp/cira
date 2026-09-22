@@ -21,7 +21,7 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { principalManages } from "@/lib/app-rights";
 import { principalFor } from "@/lib/principal";
 import { processesForPage, type ProcessView } from "@/lib/processes";
-import { latestDeployment } from "@/lib/queries";
+import { latestDeployment, servingDeployment, webDownSince } from "@/lib/queries";
 
 /**
  * "Is the report still going out?", answered for Ask Cira and for agents.
@@ -237,6 +237,12 @@ async function report(
   ]);
 
   const page = `${origin}/${spaceSlug}/${app.slug}`;
+
+  const down = await webDownSince(app.id);
+  const web =
+    down === null
+      ? null
+      : `not answering since ${down.toISOString()}: Cira's checks found a server error or no reply`;
   const notes = [
     ...(list.length === 0
       ? ["This app has no workers or scheduled runs. It only answers requests."]
@@ -256,7 +262,8 @@ async function report(
     app: app.name,
     appId: app.id,
     space: spaceName,
-    deployment: deploymentWords(deployment),
+    deployment: deploymentWords(deployment, await servingDeployment(app.id)),
+    ...(web === null ? {} : { web }),
     ...(deployment === null
       ? {}
       : { lastDeployedAt: deployment.createdAt.toISOString() }),
@@ -268,8 +275,26 @@ async function report(
   };
 }
 
-function deploymentWords(deployment: Deployment | null): string {
+function deploymentWords(
+  deployment: Deployment | null,
+  serving: Deployment | null,
+): string {
   if (deployment === null) return "never deployed";
+  // A deploy that failed or is still going out takes no traffic; the build
+  // before it is what answers, and "the last deploy failed" alone read as
+  // though the app were down.
+  const earlier = serving !== null && serving.id !== deployment.id;
+  if (earlier && deployment.status === "failed") {
+    return "live; the last deploy failed, so the version before it is still running";
+  }
+  if (
+    earlier &&
+    (deployment.status === "queued" ||
+      deployment.status === "building" ||
+      deployment.status === "deploying")
+  ) {
+    return "live; a new version is deploying, and this one runs until it is ready";
+  }
   switch (deployment.status) {
     case "live":
       return "live";
