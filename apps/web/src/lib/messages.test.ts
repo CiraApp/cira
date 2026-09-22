@@ -83,12 +83,19 @@ describe("messages", () => {
     expect(named.subject).toContain(": the worker \u201cingest\u201d keeps stopping");
   });
 
-  it("says a refused capability is decided in the app, not in Cira", () => {
-    const message = refusedMessage({ app, operation: "Create refund" });
+  it("points a refused capability at telling the app who is calling", () => {
+    const message = refusedMessage({ app, operation: "Create refund", told: false });
     expect(message.subject).toBe(
       "Revenue <b>Board</b>: Create refund stopped letting Cira in",
     );
-    expect(message.text).toContain("No setting in Cira changes that");
+    expect(message.text).toContain("\u201cTell this app who is calling\u201d");
+    expect(message.html).toContain("#settings");
+  });
+
+  it("says the app's own code decides once Cira already tells it", () => {
+    const message = refusedMessage({ app, operation: "Create refund", told: true });
+    expect(message.text).toContain("not accepting that statement");
+    expect(message.text).not.toContain("turn on");
   });
 
   it("invites someone by name, to one address, until a date", () => {

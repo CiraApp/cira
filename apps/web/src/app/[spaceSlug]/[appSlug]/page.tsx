@@ -284,6 +284,7 @@ export default async function AppPage({
             spaceSlug={spaceSlug}
             appSlug={appSlug}
             consoleHref={consolePath}
+            tellsWhoIsCalling={app.tellsWhoIsCalling}
           />
 
           <ProcessPanel

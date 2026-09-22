@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIMITS, checkProcessOn } from "./limits.js";
 import {
+  crashCount,
   checkTimetable,
   mergeDeclarations,
   planProcesses,
@@ -460,5 +461,21 @@ describe("the web process's memory", () => {
         { web: true, processes: [], webMemoryMiB: 4096 },
       ]).webMemoryMiB,
     ).toBe(1024);
+  });
+});
+
+describe("crashCount", () => {
+  const lastAt = new Date("2026-09-22T10:00:00Z");
+
+  it("puts the count before the exit code, so the numbers never run together", () => {
+    expect(crashCount({ count: 12, more: false, lastAt, exitCode: 3 })).toBe(
+      "12 times in the last hour, with code 3",
+    );
+  });
+
+  it("says a count read from one page of logs is a lower bound", () => {
+    expect(crashCount({ count: 100, more: true, lastAt, exitCode: null })).toBe(
+      "100 or more times in the last hour",
+    );
   });
 });

@@ -223,15 +223,25 @@ export function runFailedMessage(args: {
   });
 }
 
-export function refusedMessage(args: { app: AppRef; operation: string }): Message {
+export function refusedMessage(args: {
+  app: AppRef;
+  operation: string;
+  /** Whether Cira already tells the app who is behind each call. */
+  told: boolean;
+}): Message {
   const { app } = args;
   return letter({
     subject: `${app.name}: ${args.operation} stopped letting Cira in`,
     paragraphs: [
-      `${app.name} turned Cira away when ${args.operation} was run through it: the app now asks everyone to sign in, and Cira cannot sign in on anyone's behalf.`,
-      "Until the app lets Cira call it, people and agents asking for it are told it is unavailable. No setting in Cira changes that; it is decided in the app's own code.",
+      `${app.name} turned Cira away when ${args.operation} was run through it: the app now asks everyone to sign in, and Cira cannot sign in with anyone's password.`,
+      args.told
+        ? "Cira already tells the app who is behind each call, so the app's own code is not accepting that statement. Until it does, people and agents asking for this are told it is unavailable."
+        : "If the app signs its own users in, turn on \u201cTell this app who is calling\u201d in its settings and have its code accept Cira's signed statement of who the person is. Until then, people and agents asking for this are told it is unavailable.",
     ],
-    action: { label: `Open ${app.name}`, href: app.page },
+    action: {
+      label: args.told ? `Open ${app.name}` : `Open ${app.name}'s settings`,
+      href: args.told ? app.page : `${app.page}#settings`,
+    },
     because: manager(app),
   });
 }

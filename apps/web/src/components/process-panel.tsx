@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LIMITS } from "@cira/core/limits";
-import { describeMemory } from "@cira/core/processes";
+import { crashCount, describeMemory } from "@cira/core/processes";
 import { describeSchedule, parseSchedule } from "@cira/core/schedule";
 import type { ProcessView } from "@/lib/processes";
 import {
@@ -240,12 +240,7 @@ function Row({
 
       {process.crashes !== null && process.enabled && !missing ? (
         <p className="mt-2 text-[12px] text-failed">
-          Exited
-          {process.crashes.exitCode === null
-            ? ""
-            : ` with code ${process.crashes.exitCode}`}{" "}
-          {process.crashes.count}
-          {process.crashes.more ? " or more" : ""} times in the last hour, last at{" "}
+          Exited {crashCount(process.crashes)}, last at{" "}
           <LocalTime at={process.crashes.lastAt} />, and was started again each time.{" "}
           <span className="text-ink-muted">
             A worker should run for good; its logs say why it stops.

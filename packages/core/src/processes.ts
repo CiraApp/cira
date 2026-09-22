@@ -1,3 +1,4 @@
+import type { ProcessState } from "./deployment-provider.js";
 import { DEFAULT_LIMITS, type Limits } from "./limits.js";
 import { monthlyCost } from "./pricing.js";
 import {
@@ -594,4 +595,19 @@ export function runTimeoutSeconds(
   if (process.schedule === null) return fallback;
   const checked = checkTimetable(process.schedule, process.timeoutMinutes, limits, now);
   return checked.ok ? checked.timeoutMinutes * 60 : fallback;
+}
+
+/** How often a worker has been stopping, when it has been. */
+export type WorkerCrashes = NonNullable<
+  Extract<ProcessState, { kind: "worker" }>["crashes"]
+>;
+
+/**
+ * "12 times in the last hour, with code 3": the count first, since that is
+ * what makes it a crash loop. Put the other way round the two numbers ran
+ * together, as "exited with code 3 12 times".
+ */
+export function crashCount(crashes: WorkerCrashes): string {
+  const times = `${crashes.count}${crashes.more ? " or more" : ""} times in the last hour`;
+  return crashes.exitCode === null ? times : `${times}, with code ${crashes.exitCode}`;
 }

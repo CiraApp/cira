@@ -332,12 +332,19 @@ async function tellRefused(
   capability: { id: string; name: string },
   deploymentId: string,
 ): Promise<void> {
+  const [row] = await db()
+    .select({ told: apps.tellsWhoIsCalling })
+    .from(apps)
+    .where(eq(apps.id, appId))
+    .limit(1);
+  const told = row?.told;
   await notifyManagers({
     appId,
     kind: "capability-refused",
     // Per build: refused again after a later build let it in is news again.
     subject: `${capability.id}:${deploymentId}`,
-    compose: (app) => refusedMessage({ app, operation: humanize(capability.name) }),
+    compose: (app) =>
+      refusedMessage({ app, operation: humanize(capability.name), told: told === true }),
   });
 }
 

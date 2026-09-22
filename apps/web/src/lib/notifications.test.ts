@@ -309,7 +309,7 @@ describe.skipIf(!hasDatabase)("notifications", () => {
       "Reports: its worker keeps stopping",
       "Reports: its worker keeps stopping",
     ]);
-    expect(sent[0]?.text).toContain("exited with code 3 12 times in the last hour");
+    expect(sent[0]?.text).toContain("exited 12 times in the last hour, with code 3");
   });
 
   it("records an event it could not send, and sends it once the provider is back", async () => {
@@ -318,7 +318,7 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     const { refusedMessage } = await import("./messages");
     emailOutcome = { sent: false, reason: "unreachable" };
     const compose = (app: Parameters<typeof refusedMessage>[0]["app"]) =>
-      refusedMessage({ app, operation: "Export" });
+      refusedMessage({ app, operation: "Export", told: false });
     expect(
       await notifyManagers({ appId, kind: "capability-refused", subject: "x", compose }),
     ).toBe("not-sent");

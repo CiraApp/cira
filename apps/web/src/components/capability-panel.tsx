@@ -35,6 +35,7 @@ export function CapabilityPanel({
   spaceSlug,
   appSlug,
   consoleHref,
+  tellsWhoIsCalling,
 }: {
   capabilities: Capability[];
   canManage: boolean;
@@ -46,6 +47,8 @@ export function CapabilityPanel({
   appSlug: string;
   /** Where these can be run by hand. */
   consoleHref: string;
+  /** Whether Cira already tells this app who is behind each call. */
+  tellsWhoIsCalling: boolean;
 }) {
   const router = useRouter();
   const asked = useRef(false);
@@ -127,12 +130,34 @@ export function CapabilityPanel({
           Shown rather than hidden, and shown with the reason. These are real
           routes correctly described - the app served every one of them - and
           the only thing standing between an agent and them is that the app
-          signs its own users in and Cira is not one of them. No switch,
-          because there is nothing here a person can turn on.
+          signs its own users in and does not take Cira's word for who is
+          calling. Whoever manages the app is pointed at the one setting that
+          can change that; the app's code has to accept it too.
         */}
         <Group
           title="Refused"
-          note="Real routes behind the app's own sign-in. Agents cannot reach them."
+          note={
+            <>
+              Real routes behind the app&rsquo;s own sign-in. Agents cannot reach them
+              {tellsWhoIsCalling ? (
+                " until the app accepts Cira\u2019s statement of who is calling."
+              ) : canManage ? (
+                <>
+                  {" "}
+                  unless the app is{" "}
+                  <a
+                    href="#settings"
+                    className="underline underline-offset-4 hover:text-ink"
+                  >
+                    told who is calling
+                  </a>{" "}
+                  and accepts it.
+                </>
+              ) : (
+                "."
+              )}
+            </>
+          }
           items={refused}
           canManage={false}
         />
@@ -149,7 +174,7 @@ function Group({
   busy = false,
 }: {
   title: string;
-  note: string;
+  note: React.ReactNode;
   items: Capability[];
   canManage: boolean;
   /** Still being checked, so the group says so and offers no switch. */
