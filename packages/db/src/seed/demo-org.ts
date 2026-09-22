@@ -1,5 +1,5 @@
 import { eq, like } from "drizzle-orm";
-import { publicationFor, type CapabilityRisk } from "@cira/core";
+import { DEMO_MARK, publicationFor, type CapabilityRisk } from "@cira/core";
 import type { Database } from "../client.js";
 import {
   appAccess,
@@ -35,9 +35,6 @@ export const DEMO_SPACE = {
   slug: "halcyon",
   domain: "halcyon.dev",
 } as const;
-
-/** Marks every row this file owns, and nothing else. */
-const DEMO_MARK = "_demo_";
 
 interface Person {
   key: string;

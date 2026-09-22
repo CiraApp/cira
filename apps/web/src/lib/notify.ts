@@ -11,7 +11,7 @@ import {
   teamMembers,
   users,
 } from "@cira/db";
-import { newId } from "@cira/core";
+import { isInventedPerson, newId } from "@cira/core";
 import { appOrigin, sendEmail } from "@/lib/email";
 import type { AppRef, Message } from "@/lib/messages";
 
@@ -21,9 +21,10 @@ import type { AppRef, Message } from "@/lib/messages";
  * Each event is claimed before anything is sent, by writing its row under a
  * key that names it. Several paths can notice the same failure at once - the
  * CLI polling a deploy, someone opening the app's page, the watcher - and
- * only the one whose write lands sends; the rest find it taken. A claimed
- * event is never sent twice, even if sending it failed: a repeated email about
- * an old problem is worse than one that did not arrive.
+ * only the one whose write lands sends; the rest find it taken. Nobody is
+ * ever sent the same notice twice. One that did not reach someone - the email
+ * provider refused, or was down - is kept with its message and tried again
+ * for them by the watcher, rather than lost.
  *
  * Never throws. Nothing that notices a failure should fail because telling
  * someone about it did.
@@ -296,7 +297,7 @@ async function holdBack(args: {
 /** A space's admins and owners, by email. */
 async function adminEmails(spaceId: string): Promise<string[]> {
   const rows = await db()
-    .select({ email: users.email })
+    .select({ id: users.id, email: users.email })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
@@ -305,7 +306,21 @@ async function adminEmails(spaceId: string): Promise<string[]> {
         inArray(memberships.role, ["admin", "owner"]),
       ),
     );
-  return [...new Set(rows.map((r) => r.email.toLowerCase()))].sort();
+  return addresses(rows);
+}
+
+/**
+ * Addresses to write to, once each, lowercased. Never one of the demo
+ * company's invented people: their addresses are at a domain Cira does not
+ * own, and a stranger's inbox, or a bounce against Cira's sending name, is
+ * what writing to one would reach.
+ */
+function addresses(rows: ReadonlyArray<{ id: string; email: string }>): string[] {
+  return [
+    ...new Set(
+      rows.filter((r) => !isInventedPerson(r.id)).map((r) => r.email.toLowerCase()),
+    ),
+  ].sort();
 }
 
 const REASONS: Record<string, string> = {
@@ -344,7 +359,7 @@ export async function managerEmails(app: {
   // Still in the space, always: a grant outliving someone's membership must
   // not keep sending them the company's alerts.
   const rows = await database
-    .select({ email: users.email })
+    .select({ id: users.id, email: users.email })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
@@ -357,5 +372,5 @@ export async function managerEmails(app: {
         ),
       ),
     );
-  return [...new Set(rows.map((r) => r.email.toLowerCase()))].sort();
+  return addresses(rows);
 }

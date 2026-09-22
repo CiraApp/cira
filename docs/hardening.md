@@ -128,12 +128,13 @@ the test lives. When one is deliberately left alone, it says why.
 
 ## Alerts
 
-| ID      | Sev    | Finding                                                                                                                                 | Status |
-| ------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| ALERT-1 | high   | An alert that fails to send is lost forever: it is claimed first and never retried. Resend's rate limit makes that likely in an outage. | fixed  |
-| ALERT-2 | medium | Nothing limits how many emails a flapping app, a crashlooping worker, or a failing five-minute job sends.                               | fixed  |
-| ALERT-3 | medium | A worker that crashes without running out of memory is never reported, but is still billed.                                             | later  |
-| ALERT-4 | medium | The billing sync runs last in the watcher, so a slow run can starve it.                                                                 | fixed  |
+| ID      | Sev    | Finding                                                                                                                                                                                          | Status |
+| ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| ALERT-1 | high   | An alert that fails to send is lost forever: it is claimed first and never retried. Resend's rate limit makes that likely in an outage.                                                          | fixed  |
+| ALERT-2 | medium | Nothing limits how many emails a flapping app, a crashlooping worker, or a failing five-minute job sends.                                                                                        | fixed  |
+| ALERT-3 | medium | A worker that crashes without running out of memory is never reported, but is still billed.                                                                                                      | later  |
+| ALERT-4 | medium | The billing sync runs last in the watcher, so a slow run can starve it.                                                                                                                          | fixed  |
+| ALERT-5 | high   | Notices about a space would have gone to the demo company's invented admins, at a domain Cira does not own, and a stranger's inbox or a bounce against Cira's sending name is what that reaches. | fixed  |
 
 ## Found by hand
 
@@ -199,3 +200,4 @@ What changed for each finding, and where its test is.
 - **ALERT-2** (fixed). Each notice has a topic. There are at most two outage emails per topic in two hours and one failing-run email in six, and no 'back up' for an outage nobody was told about. What is held back is recorded. Tests: `notifications.test.ts`.
 - **ALERT-4** (fixed). Spaces - trial notices, plan enforcement, billing sync - now come before app checks, and a pass stops starting checks after four minutes.
 - **ALERT-3** (later). Worth doing with a real crash-looping worker to read Google's log lines from, not guessed. Picked up in the end-to-end pass.
+- **ALERT-5** (fixed). Found while checking who the new trial notices would reach. Recipients now leave out anyone whose id carries the demo mark (`isInventedPerson` in core, `DEMO_MARK` shared with the seed). Tests: `notifications.test.ts`.

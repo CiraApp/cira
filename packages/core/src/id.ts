@@ -38,6 +38,18 @@ export const ID_PREFIXES = {
 
 export type IdKind = keyof typeof ID_PREFIXES;
 
+/**
+ * What the demo company's rows carry in their ids: `usr_demo_ada`,
+ * `app_demo_ledger`. Its people are invented, and their addresses are at a
+ * domain someone else may own, so nothing Cira sends may ever reach one.
+ */
+export const DEMO_MARK = "_demo_";
+
+/** Whether this is one of the demo company's invented people. */
+export function isInventedPerson(userId: string): boolean {
+  return userId.startsWith(`${ID_PREFIXES.user}${DEMO_MARK}`);
+}
+
 export function newId(kind: IdKind): string {
   return `${ID_PREFIXES[kind]}_${crypto.randomUUID().replaceAll("-", "")}`;
 }

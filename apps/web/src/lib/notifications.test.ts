@@ -364,6 +364,31 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     ).toBe("held-back");
   });
 
+  it("never writes to one of the demo company's invented people", async () => {
+    const { memberships, users } = await import("@cira/db");
+    const { notifyAdmins } = await import("./notify");
+    const { paymentFailedMessage } = await import("./messages");
+    await database.insert(users).values({
+      id: "usr_demo_ada",
+      externalId: "demo_ada",
+      name: "Ada",
+      email: "ada@halcyon.dev",
+    });
+    await database.insert(memberships).values({
+      id: "mem_demo_ada",
+      userId: "usr_demo_ada",
+      spaceId,
+      role: "admin",
+    });
+    await notifyAdmins({
+      spaceId,
+      kind: "payment-failed",
+      subject: "in_1",
+      compose: (space) => paymentFailedMessage({ space }),
+    });
+    expect(recipients()).toEqual(["admin@acme.test"]);
+  });
+
   it("tells a space's admins about the space once", async () => {
     const { notifyAdmins } = await import("./notify");
     const { trialEndingMessage } = await import("./messages");
