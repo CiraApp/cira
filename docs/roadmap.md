@@ -176,7 +176,9 @@ what it uses.
 - [x] **3.5 Custom domains** for apps. A manager adds `tools.acme.com` on the
       app page; Cira makes it a Cloudflare custom hostname, shows the CNAME to
       make, and the app proxy serves it once the certificate is issued, behind
-      the same sign-in (2026-09-22).
+      the same sign-in (2026-09-22). Verified end to end on production with
+      `probe.acmetest.app`: certificate in about two minutes, opened through
+      Cira's sign-in, refused without a session, removed cleanly.
 - [ ] **3.6 Penetration test** of the app proxy, sessions and MCP, by an
       outside firm. _You._
 
