@@ -584,6 +584,8 @@ export function toApp(row: typeof apps.$inferSelect): App {
     homepageUrl: row.homepageUrl,
     hasWebUi: row.hasWebUi,
     minInstances: row.minInstances,
+    memoryMiB: row.memoryMiB,
+    declaredMemoryMiB: row.declaredMemoryMiB,
     tellsWhoIsCalling: row.tellsWhoIsCalling,
     capabilitiesAnalyzedAt: row.capabilitiesAnalyzedAt,
     createdAt: row.createdAt,

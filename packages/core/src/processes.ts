@@ -50,6 +50,8 @@ export interface ProcessDeclarations {
    */
   web: boolean | null;
   processes: DeclaredProcess[];
+  /** Memory the file gives the web process, in MiB, when it says. */
+  webMemoryMiB?: number | null;
 }
 
 /**
@@ -116,20 +118,26 @@ export function readFlyToml(text: string): ProcessDeclarations & {
     else if (commands.size === 0 || listed === undefined) serving.add("app");
   }
 
-  if (commands.size === 0) {
-    return { web: serving.size > 0 ? true : null, processes: [], dockerfile };
-  }
-
   // `[[compute]]` is the newer name for the same table.
   const vms = entries.filter(([table]) => table === "vm" || table === "compute");
+  const general = vms.find(([, v]) => !Array.isArray(v.get("processes")));
   const memoryOf = (group: string): number | null => {
     const listed = vms.find(([, v]) => {
       const groups = v.get("processes");
       return Array.isArray(groups) && groups.includes(group);
     });
-    const general = vms.find(([, v]) => !Array.isArray(v.get("processes")));
     return flyMemory((listed ?? general)?.[1]);
   };
+
+  if (commands.size === 0) {
+    return {
+      web: serving.size > 0 ? true : null,
+      processes: [],
+      dockerfile,
+      webMemoryMiB: flyMemory(general?.[1]),
+    };
+  }
+  const webGroup = [...serving][0];
 
   const processes: DeclaredProcess[] = [];
   for (const [name, value] of commands) {
@@ -144,7 +152,12 @@ export function readFlyToml(text: string): ProcessDeclarations & {
       memoryMiB: memoryOf(name),
     });
   }
-  return { web: serving.size > 0, processes, dockerfile };
+  return {
+    web: serving.size > 0,
+    processes,
+    dockerfile,
+    webMemoryMiB: webGroup === undefined ? null : memoryOf(webGroup),
+  };
 }
 
 /**
@@ -344,13 +357,15 @@ export function mergeDeclarations(
 ): ProcessDeclarations {
   const byName = new Map<string, DeclaredProcess>();
   let web: boolean | null = null;
+  let webMemoryMiB: number | null = null;
   for (const declaration of found) {
     if (declaration.web !== null) web = web === true ? true : declaration.web;
+    webMemoryMiB ??= declaration.webMemoryMiB ?? null;
     for (const process of declaration.processes) {
       if (!byName.has(process.name)) byName.set(process.name, process);
     }
   }
-  return { web, processes: [...byName.values()] };
+  return { web, processes: [...byName.values()], webMemoryMiB };
 }
 
 type TomlValue = string | string[] | number | boolean;

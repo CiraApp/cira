@@ -93,6 +93,10 @@ export interface App {
   hasWebUi: boolean | null;
   /** Instances kept warm for it. Zero unless a paid plan turned it on. */
   minInstances: number;
+  /** Memory a person chose for its web service, per container. Null: not chosen. */
+  memoryMiB: number | null;
+  /** Memory its repository asked for, as of the last deploy. Null: it did not say. */
+  declaredMemoryMiB: number | null;
   /** Whether Cira tells it who is calling, signed, for it to verify. */
   tellsWhoIsCalling: boolean;
   /** When the analyzer last finished. Null means nobody has read this code. */
@@ -166,6 +170,11 @@ export interface Deployment {
   servesWeb: boolean;
   /** Why it failed, in plain words, when that is known. */
   failureReason: string | null;
+  /**
+   * Something that went wrong without stopping the deploy: a worker Google
+   * would not create or take down, workers left on the previous build.
+   */
+  warning: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

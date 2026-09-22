@@ -12,7 +12,13 @@ import {
   removedApps,
   services,
 } from "@cira/db";
-import { computeCost, DEFAULT_LIMITS, requestCost, type App } from "@cira/core";
+import {
+  appMemory,
+  computeCost,
+  DEFAULT_LIMITS,
+  requestCost,
+  type App,
+} from "@cira/core";
 import { deploymentProvider, parseHandle, processResourceName } from "@cira/deploy";
 
 /**
@@ -177,11 +183,18 @@ export async function resourcesOf(
       .where(eq(processes.appId, appId)),
     database.select({ id: services.id }).from(services).where(eq(services.appId, appId)),
   ]);
+  const [sized] = await database
+    .select({ memoryMiB: apps.memoryMiB, declaredMemoryMiB: apps.declaredMemoryMiB })
+    .from(apps)
+    .where(eq(apps.id, appId))
+    .limit(1);
 
-  const serviceMemory =
-    parts.length > 1
-      ? DEFAULT_LIMITS.app.memoryMiBWithSidecars
-      : DEFAULT_LIMITS.app.memoryMiB;
+  // What it really runs with: the size a person or the repository chose,
+  // which used to be priced at the default whatever it was.
+  const serviceMemory = appMemory(
+    sized ?? { memoryMiB: null, declaredMemoryMiB: null },
+    parts.length > 1,
+  );
 
   const found = new Map<string, number>();
   for (const row of deployed) {

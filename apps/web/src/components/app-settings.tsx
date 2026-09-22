@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { describeMemory } from "@cira/core/processes";
 import {
   deleteApp,
+  setAppMemory,
   setKeepWarm,
   setTellsWhoIsCalling,
   updateAppDetails,
@@ -28,6 +30,7 @@ export function AppSettings({
   warmMonthly,
   tellsWhoIsCalling,
   canTellWhoIsCalling,
+  memory,
 }: {
   spaceSlug: string;
   appSlug: string;
@@ -43,6 +46,15 @@ export function AppSettings({
   tellsWhoIsCalling: boolean;
   /** False when this Cira has no signing key, so the switch explains itself. */
   canTellWhoIsCalling: boolean;
+  /** The web service's memory, per container. Null for an app with no web service. */
+  memory: {
+    current: number;
+    /** What it runs with when nobody has chosen: the repository's size, or the default. */
+    fallback: number;
+    chosen: number | null;
+    declared: number | null;
+    choices: readonly number[];
+  } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -153,6 +165,56 @@ export function AppSettings({
             ) : null}
           </div>
         </form>
+
+        {memory !== null ? (
+          <div className="border-t border-line pt-5">
+            <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+              <div className="min-w-0 flex-1">
+                <label
+                  htmlFor="app-memory"
+                  className="text-[12.5px] font-medium text-ink"
+                >
+                  Memory
+                </label>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
+                  What each instance of the app runs with.{" "}
+                  {memory.chosen !== null
+                    ? "Chosen here, over what the repository says."
+                    : memory.declared !== null
+                      ? "As its repository asks."
+                      : "Cira's default."}{" "}
+                  An app that runs out is restarted, so a server that renders pages or
+                  holds large files may need more. Changing it starts a new instance.
+                </p>
+              </div>
+              <select
+                id="app-memory"
+                value={memory.chosen === null ? "" : String(memory.chosen)}
+                disabled={pending}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? null : Number(e.target.value);
+                  setError(null);
+                  startTransition(async () => {
+                    const result = await setAppMemory(spaceSlug, appSlug, value);
+                    if (result.ok) router.refresh();
+                    else setError(result.error);
+                  });
+                }}
+                className="field w-auto shrink-0 py-1.5 text-[12.5px]"
+              >
+                <option value="">
+                  {memory.declared !== null ? "As the repository says" : "Default"} (
+                  {describeMemory(memory.fallback)})
+                </option>
+                {memory.choices.map((mib) => (
+                  <option key={mib} value={String(mib)}>
+                    {describeMemory(mib)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ) : null}
 
         {keepWarm !== null ? (
           <div className="border-t border-line pt-5">

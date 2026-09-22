@@ -56,5 +56,6 @@ export async function GET(request: Request) {
     status: settled.status,
     url: settled.url,
     reason: settled.failureReason,
+    warning: settled.warning,
   });
 }

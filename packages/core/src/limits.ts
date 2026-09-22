@@ -55,6 +55,8 @@ export interface Limits {
     memoryMiB: number;
     /** For an app with sidecars, whose limits are the sum of its containers'. */
     memoryMiBWithSidecars: number;
+    /** What a person, or the repository, can choose instead, per container. */
+    memoryChoicesMiB: readonly number[];
     /** How long one request may run before Cloud Run ends it. */
     requestTimeoutSeconds: number;
   };
@@ -78,11 +80,46 @@ export const DEFAULT_LIMITS: Limits = {
     cpu: 1,
     memoryMiB: 512,
     memoryMiBWithSidecars: 1024,
+    memoryChoicesMiB: [512, 1024, 2048, 4096],
     requestTimeoutSeconds: 300,
   },
 };
 
 export type LimitVerdict = { ok: true } | { ok: false; message: string };
+
+/**
+ * The memory an app's web service runs with, per container: what a person
+ * chose, else what the repository asked for, else Cira's default for its
+ * shape. It was always the default, whatever fly.toml or app.json said, and a
+ * server-rendered app that needs a gigabyte died of it with no explanation.
+ */
+export function appMemory(
+  app: { memoryMiB: number | null; declaredMemoryMiB: number | null },
+  withSidecars: boolean,
+  limits: Limits = DEFAULT_LIMITS,
+): number {
+  const floor = withSidecars ? limits.app.memoryMiBWithSidecars : limits.app.memoryMiB;
+  const wanted = app.memoryMiB ?? app.declaredMemoryMiB;
+  // A lone container's choice stands; beside sidecars it is never less than
+  // what their sum already needed.
+  return wanted === null ? floor : withSidecars ? Math.max(floor, wanted) : wanted;
+}
+
+/**
+ * A size the repository asked for, as one Cira offers: the smallest choice
+ * that holds it, or the largest when nothing does. Null when it asked nothing.
+ */
+export function settleAppMemory(
+  askedMiB: number | null | undefined,
+  limits: Limits = DEFAULT_LIMITS,
+): { memoryMiB: number | null; capped: boolean } {
+  if (askedMiB === null || askedMiB === undefined || !(askedMiB > 0)) {
+    return { memoryMiB: null, capped: false };
+  }
+  const choices = limits.app.memoryChoicesMiB;
+  const fits = choices.find((c) => c >= askedMiB);
+  return { memoryMiB: fits ?? choices[choices.length - 1]!, capped: fits === undefined };
+}
 
 /**
  * Whether a space may take one more app. Redeploying an app it already has is
@@ -135,8 +172,14 @@ export function checkInvocationRate(recentCount: number, limits: Limits): LimitV
 }
 
 /** An app's allowance in words, for the page that shows it. */
-export function describeAppAllowance(limits: Limits, withSidecars: boolean): string {
-  const memory = withSidecars ? limits.app.memoryMiBWithSidecars : limits.app.memoryMiB;
+export function describeAppAllowance(
+  limits: Limits,
+  withSidecars: boolean,
+  /** The memory it really has, when a person or its repository chose one. */
+  memoryMiB?: number,
+): string {
+  const memory =
+    memoryMiB ?? (withSidecars ? limits.app.memoryMiBWithSidecars : limits.app.memoryMiB);
   const size = memory >= 1024 ? `${memory / 1024} GB` : `${memory} MB`;
   return `Up to ${limits.app.maxInstances} instances, each ${limits.app.cpu} CPU and ${size}`;
 }

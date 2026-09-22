@@ -2,8 +2,15 @@
 
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
-import { apps, appSlugHistory, capabilities, db } from "@cira/db";
-import { newId, normalizeAppImage, normalizeHomepageUrl, slugify } from "@cira/core";
+import { apps, appSlugHistory, capabilities, db, services } from "@cira/db";
+import {
+  DEFAULT_LIMITS,
+  appMemory,
+  newId,
+  normalizeAppImage,
+  normalizeHomepageUrl,
+  slugify,
+} from "@cira/core";
 import { revalidatePath } from "next/cache";
 import { deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
@@ -328,6 +335,71 @@ export async function setKeepWarm(
 
   revalidatePath(`/${spaceSlug}/${appSlug}`);
   return { ok: true, data: { warm } };
+}
+
+/**
+ * How much memory an app's web service runs with. Null goes back to what the
+ * repository asks for, or Cira's default.
+ *
+ * Like keeping an app warm, it is changed at Google straight away, which
+ * starts a new revision; nothing secret is needed to do it. Written down
+ * first and put back if Google says no, so Cira's records - and so the bill -
+ * never say less than what is running.
+ */
+export async function setAppMemory(
+  spaceSlug: string,
+  appSlug: string,
+  memoryMiB: number | null,
+): Promise<ActionResult<{ memoryMiB: number }>> {
+  let ctx;
+  try {
+    ctx = await requireAppManage(spaceSlug, appSlug);
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof ForbiddenError) {
+      return { ok: false, error: "No such app, or you do not manage it." };
+    }
+    throw error;
+  }
+
+  if (memoryMiB !== null && !DEFAULT_LIMITS.app.memoryChoicesMiB.includes(memoryMiB)) {
+    return { ok: false, error: "That is not a size Cira offers." };
+  }
+
+  const deployment = await latestDeployment(ctx.app.id);
+  if (
+    deployment === null ||
+    deployment.provider !== "cloudrun" ||
+    !deployment.servesWeb
+  ) {
+    return { ok: false, error: "This app has no web service to size." };
+  }
+
+  const parts = await db()
+    .select({ id: services.id })
+    .from(services)
+    .where(eq(services.appId, ctx.app.id));
+  const effective = appMemory(
+    { memoryMiB, declaredMemoryMiB: ctx.app.declaredMemoryMiB },
+    parts.length > 1,
+  );
+
+  const before = ctx.app.memoryMiB;
+  await db()
+    .update(apps)
+    .set({ memoryMiB, updatedAt: new Date() })
+    .where(eq(apps.id, ctx.app.id));
+  try {
+    await deploymentProvider().setMemory(deployment.providerDeploymentId, effective);
+  } catch {
+    await db()
+      .update(apps)
+      .set({ memoryMiB: before, updatedAt: new Date() })
+      .where(eq(apps.id, ctx.app.id));
+    return { ok: false, error: "Google would not make that change right now." };
+  }
+
+  revalidatePath(`/${spaceSlug}/${appSlug}`);
+  return { ok: true, data: { memoryMiB: effective } };
 }
 
 /**

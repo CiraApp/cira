@@ -513,6 +513,60 @@ describe("getStatus", () => {
     ]);
   });
 
+  // A large app shrinking back to the default when its build finished would
+  // be an out-of-memory kill nobody could explain.
+  it("keeps the memory the service was given through the rollout", async () => {
+    serve([
+      [/cloudbuild/, () => built],
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET"
+            ? serviceAt("older-image", {
+                template: {
+                  labels: {},
+                  containers: [
+                    { image: "older-image", resources: { limits: { memory: "2Gi" } } },
+                  ],
+                },
+              })
+            : {},
+      ],
+    ]);
+    await provider().getStatus(handle);
+    const patch = calls.find((c) => c.method === "PATCH");
+    const container = (
+      patch?.body as { template: { containers: Array<{ resources: unknown }> } }
+    ).template.containers[0];
+    expect(container?.resources).toMatchObject({ limits: { memory: "2048Mi" } });
+  });
+
+  it("deploys at the size it is given, and changes it without a deploy", async () => {
+    serve([
+      [/cloudbuild/, () => ({ metadata: { build: { id: "b-1" } } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? serviceAt("older-image") : {})],
+    ]);
+    await provider().deploy({ ...input, memoryMiB: 2048 });
+    const written = calls.find(
+      (c) => c.method === "PATCH" && c.url.includes("/services/"),
+    );
+    expect(
+      (written?.body as { template: { containers: Array<{ resources: unknown }> } })
+        .template.containers[0]?.resources,
+    ).toMatchObject({ limits: { memory: "2048Mi" } });
+
+    calls.length = 0;
+    await provider().setMemory(handle, 4096);
+    const changed = calls.find((c) => c.method === "PATCH");
+    const body = changed?.body as {
+      template: { containers: Array<{ image: string; resources: unknown }> };
+    };
+    expect(body.template.containers[0]).toMatchObject({
+      image: "older-image",
+      resources: { limits: { memory: "4096Mi" } },
+    });
+  });
+
   it("does not roll the same build out twice", async () => {
     serve([
       [/cloudbuild/, () => built],

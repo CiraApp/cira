@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_LIMITS,
   NO_ENV_CHANGE,
+  appMemory,
   checkDeployRate,
   checkNewApp,
   newId,
@@ -83,6 +84,11 @@ export async function deployToSpace(args: {
   web?: boolean;
   /** Workers and scheduled runs found in the repository. */
   processes?: readonly DeployedProcess[];
+  /**
+   * Memory the repository gives its web process (fly.toml, app.json), already
+   * settled to a size Cira offers. Null when it says nothing.
+   */
+  webMemoryMiB?: number | null;
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName } = args;
   const env = args.env ?? NO_ENV_CHANGE;
@@ -295,6 +301,15 @@ export async function deployToSpace(args: {
   if (refusal !== null) return abandon(refusal);
 
   await recordServices(app.id, parts);
+  // What the repository asks for now, kept so the page can say where a size
+  // came from and a person's own choice can stand over it.
+  const declaredMemoryMiB = args.webMemoryMiB ?? null;
+  if (declaredMemoryMiB !== app.declaredMemoryMiB) {
+    await database
+      .update(apps)
+      .set({ declaredMemoryMiB, updatedAt: new Date() })
+      .where(eq(apps.id, app.id));
+  }
   const stored = await recordProcesses({
     appId: app.id,
     spaceId: space.id,
@@ -315,6 +330,10 @@ export async function deployToSpace(args: {
       env,
       // A warm app stays warm across a deploy; it is paid for either way.
       minInstances: app.minInstances,
+      memoryMiB: appMemory(
+        { memoryMiB: app.memoryMiB, declaredMemoryMiB },
+        parts.length > 1,
+      ),
       processes: specsFor(stored),
     });
   } catch (error) {
@@ -336,6 +355,7 @@ export async function deployToSpace(args: {
     status: result.status,
     url: result.url,
     servesWeb,
+    warning: result.warning ?? null,
   });
   await supersedeEarlierDeploys(app.id, deploymentId);
 

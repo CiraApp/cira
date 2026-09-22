@@ -4,7 +4,9 @@ import {
   checkDeployRate,
   checkInvocationRate,
   checkNewApp,
+  appMemory,
   describeAppAllowance,
+  settleAppMemory,
   type Limits,
 } from "./limits.js";
 
@@ -70,5 +72,31 @@ describe("describeAppAllowance", () => {
     expect(describeAppAllowance(DEFAULT_LIMITS, true)).toBe(
       "Up to 10 instances, each 1 CPU and 1 GB",
     );
+  });
+});
+
+describe("appMemory", () => {
+  const none = { memoryMiB: null, declaredMemoryMiB: null };
+
+  it("is the default for the app's shape when nobody said", () => {
+    expect(appMemory(none, false)).toBe(512);
+    expect(appMemory(none, true)).toBe(1024);
+  });
+
+  it("follows the repository, and a person's choice over that", () => {
+    expect(appMemory({ memoryMiB: null, declaredMemoryMiB: 2048 }, false)).toBe(2048);
+    expect(appMemory({ memoryMiB: 1024, declaredMemoryMiB: 2048 }, false)).toBe(1024);
+  });
+
+  it("never gives an app with sidecars less than their sum needed", () => {
+    expect(appMemory({ memoryMiB: 512, declaredMemoryMiB: null }, true)).toBe(1024);
+  });
+});
+
+describe("settleAppMemory", () => {
+  it("rounds up to a size Cira offers, and says when it had to cap", () => {
+    expect(settleAppMemory(700)).toEqual({ memoryMiB: 1024, capped: false });
+    expect(settleAppMemory(16384)).toEqual({ memoryMiB: 4096, capped: true });
+    expect(settleAppMemory(null)).toEqual({ memoryMiB: null, capped: false });
   });
 });

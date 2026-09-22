@@ -118,6 +118,7 @@ interface RunContainer {
   env?: Array<{ name?: string; value?: string }>;
   ports?: Array<{ name?: string; containerPort?: number }>;
   startupProbe?: { tcpSocket?: { port?: number } };
+  resources?: { limits?: Record<string, string> };
 }
 
 interface RunService {
@@ -168,6 +169,8 @@ interface ServiceSpec {
   labels: Record<string, string>;
   /** Instances kept running when nobody is asking. Zero unless paid for. */
   minInstances?: number;
+  /** Memory per container, in MiB. Cira's default for the app's shape when absent. */
+  memoryMiB?: number;
   /**
    * Where requests go: the newest revision, or one named revision held while
    * the next one waits for its build. Always said, because a write that leaves
@@ -226,13 +229,17 @@ export class CloudRunProvider implements DeploymentProvider {
     // An app none of whose parts takes the port is only workers and
     // scheduled runs. It has no service to write, and no address.
     const web = app.services.some((part) => part.ingress);
-    const current = web ? await this.getService(service) : null;
+    // Read whether or not this deploy has one: an app that used to serve web
+    // and now declares only workers keeps its variables on that service until
+    // the build is ready, and the service is taken down then (getStatus).
+    const existing = await this.getService(service);
+    const current = web ? existing : null;
 
     // What the app runs with next: what Google already holds for it, changed
     // by exactly what this deploy says. Never only what one machine sent -
     // that is how a teammate's clone with no `.env` used to wipe production.
     const had =
-      current !== null ? envOf(current) : await this.processes.currentEnv(service);
+      existing !== null ? envOf(existing) : await this.processes.currentEnv(service);
     const env = applyEnvChange(had, app.env);
 
     // One build, not one per service. They share an upload, they succeed or
@@ -276,8 +283,13 @@ export class CloudRunProvider implements DeploymentProvider {
     }
 
     // Beside a web service they are not the app, and a problem with them is
-    // reported on its page rather than standing in the way of the deploy.
-    await writeProcesses.catch(() => undefined);
+    // reported with the deploy rather than standing in the way of it. It used
+    // to be dropped, and a worker taken out of the Procfile could go on
+    // running where nobody could see it.
+    const processProblem = await writeProcesses.then(
+      () => undefined,
+      (error: unknown) => (error instanceof Error ? error.message : "failed"),
+    );
 
     const serving = current?.template?.containers ?? [];
     // By name when there are several, and by position when there is one -
@@ -298,6 +310,7 @@ export class CloudRunProvider implements DeploymentProvider {
     const holding = current === null ? null : servingRevision(current);
     await this.putService(service, {
       minInstances: app.minInstances ?? 0,
+      ...(app.memoryMiB === undefined ? {} : { memoryMiB: app.memoryMiB }),
       containers: planned.map((part) => ({
         name: part.slug,
         image: (several ? running.get(part.slug) : serving[0]?.image) ?? part.image,
@@ -318,6 +331,7 @@ export class CloudRunProvider implements DeploymentProvider {
       // A redeploy is still serving its previous revision, and saying so is
       // more useful than reporting an app with no address for ten minutes.
       url: current?.uri ?? null,
+      ...(processProblem === undefined ? {} : { warning: processProblem }),
     };
   }
 
@@ -351,9 +365,23 @@ export class CloudRunProvider implements DeploymentProvider {
       }
       // Nothing to answer requests, so nothing to wait on: it is live the
       // moment its processes are on the build.
-      return (await this.processes.any(service))
-        ? { providerDeploymentId: deploymentId, status: "live", url: null }
-        : { providerDeploymentId: deploymentId, status: "removed", url: null };
+      if (!(await this.processes.any(service))) {
+        return { providerDeploymentId: deploymentId, status: "removed", url: null };
+      }
+      // A web process taken out of the Procfile used to leave its service
+      // serving the old code at the old address indefinitely. It goes now,
+      // once what replaces it is running.
+      const leftover = await this.removeService(service).then(
+        () => undefined,
+        () =>
+          "The web service from before could not be taken down, so it still answers at its old address. Deploy again to remove it.",
+      );
+      return {
+        providerDeploymentId: deploymentId,
+        status: "live",
+        url: null,
+        ...(leftover === undefined ? {} : { warning: leftover }),
+      };
     }
     const current = await this.getService(service);
     if (current === null) {
@@ -363,10 +391,17 @@ export class CloudRunProvider implements DeploymentProvider {
     }
 
     // The processes move onto the build with the variables the service has
-    // been holding for it, so code and configuration arrive together.
-    await this.processes
+    // been holding for it, so code and configuration arrive together. Asked
+    // on every poll, including the one that finds the web app live, and a
+    // failure on that last one is said: nothing polls after it, so workers
+    // left on the old build would otherwise stay there unseen.
+    const swapProblem = await this.processes
       .swap({ service, tag, buildId, env: envOf(current) })
-      .catch(() => undefined);
+      .then(
+        () => undefined,
+        (error: unknown) =>
+          `The web app is live, but its workers and scheduled runs are still on the previous build: ${error instanceof Error ? error.message : "Google refused the change"}. Deploy again to move them.`,
+      );
 
     if (current.template?.labels?.[BUILD_LABEL] !== buildId) {
       // The environment is read back off the service rather than carried from
@@ -394,8 +429,10 @@ export class CloudRunProvider implements DeploymentProvider {
         env: envOf(current),
         labels: { ...current.template?.labels, [BUILD_LABEL]: buildId },
         // Read back rather than remembered, like the environment above: a
-        // warm app must not go cold because its build finished.
+        // warm app must not go cold because its build finished, nor a large
+        // one shrink back to the default.
         minInstances: current.template?.scaling?.minInstanceCount ?? 0,
+        ...memoryOfService(current),
         // The new code, with the variables held for it, takes the requests.
         traffic: "latest",
       });
@@ -405,9 +442,13 @@ export class CloudRunProvider implements DeploymentProvider {
       return { providerDeploymentId: deploymentId, status: "deploying", url: null };
     }
 
+    const ready = this.readiness(current);
     return {
       providerDeploymentId: deploymentId,
-      ...this.readiness(current),
+      ...ready,
+      ...(ready.status === "live" && swapProblem !== undefined
+        ? { warning: swapProblem }
+        : {}),
     };
   }
 
@@ -645,6 +686,41 @@ export class CloudRunProvider implements DeploymentProvider {
         template: {
           ...template,
           scaling: { ...scaling, minInstanceCount: Math.max(0, instances) },
+        },
+      }),
+    });
+  }
+
+  /**
+   * Give an app's web service more memory, or less, between deploys. Only the
+   * containers' memory changes; traffic stays where it is, so an app holding
+   * variables for a build in progress is not rolled onto it early.
+   */
+  async setMemory(deploymentId: string, memoryMiB: number): Promise<void> {
+    const { service } = parseHandle(deploymentId);
+    const current = await this.request<{
+      template?: Record<string, unknown> & { containers?: RunContainer[] };
+      labels?: Record<string, string>;
+      ingress?: string;
+      traffic?: unknown[];
+    }>(this.serviceUrl(service), { method: "GET" });
+
+    const template = current.template ?? {};
+    await this.request(this.serviceUrl(service), {
+      method: "PATCH",
+      body: JSON.stringify({
+        labels: current.labels,
+        ingress: current.ingress,
+        ...(current.traffic === undefined ? {} : { traffic: current.traffic }),
+        template: {
+          ...template,
+          containers: (template.containers ?? []).map((container) => ({
+            ...container,
+            resources: {
+              ...container.resources,
+              limits: { ...container.resources?.limits, memory: `${memoryMiB}Mi` },
+            },
+          })),
         },
       }),
     });
@@ -961,7 +1037,7 @@ export class CloudRunProvider implements DeploymentProvider {
                   },
                 }
               : {}),
-            resources: resourcesFor(several),
+            resources: resourcesFor(several, spec.memoryMiB),
           })),
         },
       }),
@@ -1014,17 +1090,31 @@ export class CloudRunProvider implements DeploymentProvider {
  * loop or a queue thread stops being scheduled between requests, and comes
  * back looking like intermittent flakiness rather than a configuration choice.
  */
-function resourcesFor(several: boolean): {
+function resourcesFor(
+  several: boolean,
+  chosenMiB?: number,
+): {
   limits: { cpu: string; memory: string };
   cpuIdle: boolean;
 } {
   const { cpu, memoryMiB, memoryMiBWithSidecars } = DEFAULT_LIMITS.app;
+  const memory = chosenMiB ?? (several ? memoryMiBWithSidecars : memoryMiB);
   return several
-    ? {
-        limits: { cpu: String(cpu), memory: `${memoryMiBWithSidecars}Mi` },
-        cpuIdle: false,
-      }
-    : { limits: { cpu: String(cpu), memory: `${memoryMiB}Mi` }, cpuIdle: true };
+    ? { limits: { cpu: String(cpu), memory: `${memory}Mi` }, cpuIdle: false }
+    : { limits: { cpu: String(cpu), memory: `${memory}Mi` }, cpuIdle: true };
+}
+
+/**
+ * The memory a service's containers run with, as it was last written, so a
+ * rollout carries it forward. Nothing when it cannot be read, and then the
+ * default applies, as it always did.
+ */
+function memoryOfService(service: RunService): { memoryMiB?: number } {
+  const text = service.template?.containers?.[0]?.resources?.limits?.["memory"];
+  const match = text === undefined ? null : /^(\d+)(Mi|Gi)$/.exec(text);
+  if (match === null) return {};
+  const amount = Number(match[1]);
+  return { memoryMiB: match[2] === "Gi" ? amount * 1024 : amount };
 }
 
 /**

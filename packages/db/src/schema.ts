@@ -297,6 +297,10 @@ export const apps = pgTable(
      * every hour, so it is off unless a paid plan turns it on.
      */
     minInstances: integer("min_instances").notNull().default(0),
+    /** Memory a person chose for the web service, per container, in MiB. */
+    memoryMiB: integer("memory_mib"),
+    /** Memory the repository asked for at its last deploy, settled to a choice. */
+    declaredMemoryMiB: integer("declared_memory_mib"),
     /**
      * Whether Cira tells this app who is calling, as a signed assertion it can
      * verify. Off unless the app's managers turned it on: an app that is not
@@ -453,6 +457,8 @@ export const deployments = pgTable(
     url: text("url"),
     /** Why it failed, in plain words, when the provider said. Never logs. */
     failureReason: text("failure_reason"),
+    /** What went wrong without stopping it, in the same kind of words. */
+    warning: text("warning"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

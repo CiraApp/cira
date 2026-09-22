@@ -129,6 +129,21 @@ describe("discoverProcesses", () => {
         scripts: { start: "next start" },
       }),
     });
-    expect(found).toEqual({ web: null, processes: [] });
+    expect(found).toEqual({ web: null, processes: [], webMemoryMiB: null });
+  });
+
+  it("gives the web process the size an app.json formation says", () => {
+    const found = find({
+      "package.json": JSON.stringify({
+        dependencies: { next: "16" },
+        scripts: { start: "next start" },
+      }),
+      Procfile: "web: npm start\nworker: node worker.js\n",
+      "app.json": JSON.stringify({
+        formation: { web: { size: "standard-2x" }, worker: { size: "basic" } },
+      }),
+    });
+    expect(found.webMemoryMiB).toBe(1024);
+    expect(found.processes[0]?.memoryMiB).toBe(512);
   });
 });

@@ -227,6 +227,17 @@ Storage with a signed URL that allows writing one object once. It never passes
 through Cira, which is what lets a real project deploy at all: Vercel caps
 request bodies far below the size of one.
 
+**One app out of a workspace.** Run from inside a package of a pnpm, yarn,
+npm or bun workspace - `apps/web` in a Turborepo - `cira deploy` uploads the
+workspace root, leaving out its other apps, and deploys that one package. A
+package with its own Dockerfile uses it; a Python or Go package is built by
+buildpacks at its path; a JavaScript package gets a Dockerfile Cira writes into
+the upload (never the repository) that installs from the root lockfile with
+the workspace's own manager, builds the package after its dependencies (with
+turbo when there is a `turbo.json`), and starts it with its `start` script
+(`packages/cli/src/workspace.ts`). From the root, a workspace with several
+apps prints the `cd <app> && cira deploy` for each.
+
 **The build and the rollout.** `POST /api/cli/deploy` checks membership,
 creates the app or - for a redeploy - checks the deployer may manage it (its
 owner, an admin, or someone given "Can manage" in its Access panel), records
@@ -247,6 +258,12 @@ unchanged. Each sidecar gets a TCP startup probe, and the ingress container
 waits for them to be ready. A single-container app runs with 512 MiB and CPU
 that idles between requests; a multi-container app gets 1 CPU and 1 GiB that
 stays allocated, because a sidecar's background work would otherwise be starved.
+Those are defaults. A repository that sizes its web process - a `fly.toml`
+`[[vm]]` for the group that takes traffic, or an `app.json` `formation.web`
+dyno - gets that, rounded up to 512 MB, 1, 2 or 4 GB, and anyone who manages
+the app can choose a size under Settings, which stands over the repository's
+on every later deploy (`appMemory` in `packages/core/src/limits.ts`). The size
+is carried through each rollout and is what usage is priced at.
 
 A redeploy never takes an app down for the length of its build. The
 environment is written to the service immediately, but it keeps serving the

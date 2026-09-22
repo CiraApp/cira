@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { DEFAULT_LIMITS, FRAMEWORKS, parseSchedule, settleMemory } from "@cira/core";
+import {
+  DEFAULT_LIMITS,
+  FRAMEWORKS,
+  parseSchedule,
+  settleAppMemory,
+  settleMemory,
+} from "@cira/core";
 import { isSafeDockerfilePath } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
 import { ENV_NAME, MAX_VARS, envSchema } from "@/lib/env-vars";
 
-export const maxDuration = 60;
+/**
+ * Starting a deploy writes the service and every worker and scheduled run at
+ * Google before it answers. At 60 seconds an app with many processes could be
+ * cut off part-way, and stayed "deploying" with half of them written.
+ */
+export const maxDuration = 300;
 
 const body = z.object({
   spaceSlug: z.string().min(1).max(64),
@@ -64,6 +75,8 @@ const body = z.object({
   unset: z.array(z.string().regex(ENV_NAME)).max(MAX_VARS).default([]),
   /** Whether the repository has a web process. Absent from an older CLI: yes. */
   web: z.boolean().default(true),
+  /** MiB the repository gives its web process. Absent from an older CLI: none. */
+  webMemoryMiB: z.number().int().positive().max(1_048_576).nullable().default(null),
   /** Workers and scheduled runs found in the repository. */
   processes: z
     .array(
@@ -110,6 +123,7 @@ export async function POST(request: Request) {
     services: parsed.data.services ?? null,
     env: { set: parsed.data.env ?? {}, unset: parsed.data.unset },
     web: parsed.data.web,
+    webMemoryMiB: settleAppMemory(parsed.data.webMemoryMiB).memoryMiB,
     // A timetable is taken only if Cira can run it; one it cannot is dropped
     // for a person to set, rather than refusing the whole deploy.
     // Memory is rounded to a size Cira offers, so what is recorded is what

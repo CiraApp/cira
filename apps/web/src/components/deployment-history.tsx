@@ -13,6 +13,8 @@ export interface DeployRow {
   relative: string;
   /** Why it failed, in plain words, when that is known. */
   reason: string | null;
+  /** What went wrong without stopping it. */
+  warning: string | null;
 }
 
 /** Keyed by every status, so a new one cannot reach this list unlabelled. */
@@ -120,6 +122,11 @@ export function DeploymentHistory({
               {d.reason !== null && d.status === "failed" ? (
                 <p className="-mt-1 px-4 pb-3 pl-[34px] text-[12.5px] leading-relaxed text-ink-muted">
                   {d.reason}
+                </p>
+              ) : null}
+              {d.warning !== null && d.status !== "failed" ? (
+                <p className="-mt-1 px-4 pb-3 pl-[34px] text-[12.5px] leading-relaxed text-pending">
+                  {d.warning}
                 </p>
               ) : null}
 

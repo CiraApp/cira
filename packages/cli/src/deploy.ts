@@ -3,19 +3,26 @@ import { basename, join } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
 import { collectFiles } from "./files.js";
-import { archiveProject, uploadSource } from "./source.js";
-import { collectEnv } from "./env.js";
+import { readEntries, uploadSource } from "./source.js";
+import { collectEnv, isPublicName } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { resolveMissing } from "./confirm.js";
-import { discoverServices } from "./services.js";
+import { discoverServices, type DiscoveredService, type Discovery } from "./services.js";
+import {
+  readWorkspacePackage,
+  workspaceAround,
+  workspaceDockerfile,
+  type WorkspacePackage,
+} from "./workspace.js";
 import { discoverProcesses } from "./processes.js";
 import { describeSchedule, parseSchedule } from "@cira/core/schedule";
-import { DEFAULT_LIMITS } from "@cira/core/limits";
+import { DEFAULT_LIMITS, settleAppMemory } from "@cira/core/limits";
 import { describeMemory, settleMemory } from "@cira/core/processes";
 import {
   checkBundle,
   findEnvNeeds,
+  tarGzip,
   isRootDockerfile,
   isSafeDockerfilePath,
   readDockerfile,
@@ -39,6 +46,8 @@ interface StatusResponse {
   url: string | null;
   /** Why it failed, in the provider's words, when it said. */
   reason?: string | null;
+  /** What went wrong without stopping it. */
+  warning?: string | null;
 }
 
 interface CapabilitiesResponse {
@@ -75,16 +84,23 @@ export async function deploy(argv: string[] = []): Promise<number> {
     return 1;
   }
 
-  const root = process.cwd();
+  // Inside a package of a JavaScript workspace, the workspace is what gets
+  // uploaded, because the package cannot be built without its lockfile and
+  // its sibling packages, and the package is what gets deployed. Everywhere
+  // else the folder the developer is standing in is both.
+  const here = process.cwd();
+  const workspace = workspaceAround(here);
+  const root = workspace?.root ?? here;
+  const focus = workspace === null ? null : readWorkspacePackage(workspace, here);
 
   info("");
   info(`${dim("Detecting application...")}`);
   // Never a reason to stop. The build works out what this is from the source
   // itself; this only decides what the app's page will call it.
-  const framework = detectFramework(root);
+  const framework = detectFramework(here);
   success(FRAMEWORK_NAMES[framework]);
 
-  const link = readProjectLink(root);
+  const link = readProjectLink(here);
 
   let me: MeResponse;
   try {
@@ -127,7 +143,14 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // half already carries whatever its own toolchain needs, which is the same
   // evidence a person would use. Read before the files, because a Dockerfile
   // anywhere changes which files a build expects to be sent.
-  const found = discoverServices(root);
+  const found =
+    workspace === null || focus === null ? discoverServices(root) : focusOn(focus, here);
+  if (focus !== null && found.services[0]?.dockerfile === GENERATED && !focus.hasStart) {
+    fail(
+      `${focus.path} has no start script, so there is nothing to run it with. Add one to its package.json.`,
+    );
+    return 1;
+  }
   const dockerfileNamed = readFlag(argv, "--dockerfile");
   const style =
     dockerfileNamed !== null ||
@@ -137,7 +160,20 @@ export async function deploy(argv: string[] = []): Promise<number> {
       : "buildpacks";
 
   const walked = collectFiles(root, style);
-  const files = walked.files;
+  // The workspace's other apps are not part of this one: not needed to build
+  // it, and read as its own code they would lend it their capabilities.
+  const siblings =
+    focus === null
+      ? []
+      : discoverServices(root)
+          .services.map((part) => part.sourcePath)
+          .filter(
+            (path) =>
+              path !== "" && path !== focus.path && !focus.path.startsWith(`${path}/`),
+          );
+  const files = walked.files.filter(
+    (file) => !siblings.some((path) => file.path.startsWith(`${path}/`)),
+  );
   if (files.length === 0) {
     fail("There is nothing to deploy in this folder.");
     return 1;
@@ -197,12 +233,16 @@ export async function deploy(argv: string[] = []): Promise<number> {
   const declared = discoverProcesses(root, found.services);
   const servesWeb = declared.web !== false;
 
-  if (found.services.length > 1) {
+  if (found.services.length > 1 || focus !== null) {
     if (servesWeb && found.ingress === null) {
+      const apps = found.services.map((part) => part.sourcePath).filter((p) => p !== "");
       fail(
         `This repository has more than one thing to deploy, and ${found.ambiguity}. ` +
-          "Deploy them from their own directories for now.",
+          "Deploy each from its own folder:",
       );
+      info("");
+      for (const path of apps) info(`  cd ${path} && cira deploy`);
+      info("");
       return 1;
     }
 
@@ -211,13 +251,33 @@ export async function deploy(argv: string[] = []): Promise<number> {
       ingress: servesWeb && part.slug === found.ingress?.slug,
     }));
 
-    info(`${dim(`Found ${services.length} services`)}`);
-    for (const part of services) {
+    if (focus !== null && workspace !== null) {
+      const how =
+        services[0]?.dockerfile === GENERATED
+          ? `built from the ${workspace.manager} workspace${workspace.turbo ? " with turbo" : ""}`
+          : services[0]?.dockerfile !== null
+            ? "its own Dockerfile, from the workspace"
+            : "from the workspace";
+      info(dim(`Deploying ${focus.path}, ${how}`));
+    } else info(`${dim(`Found ${services.length} services`)}`);
+    for (const part of focus === null ? services : []) {
       const how = part.dockerfile === null ? part.framework : "Dockerfile";
       const role = part.ingress
         ? "front door"
         : `internal${part.port === null ? "" : `, port ${part.port}`}`;
       success(`  ${part.slug}  ${dim(part.sourcePath)}  ${dim(`${how}, ${role}`)}`);
+    }
+  }
+
+  if (servesWeb && declared.webMemoryMiB !== null) {
+    const memory = settleAppMemory(declared.webMemoryMiB);
+    info(
+      dim(`Web process: ${describeMemory(memory.memoryMiB!)}, as the repository asks`),
+    );
+    if (memory.capped) {
+      warn(
+        `The web process asks for ${describeMemory(declared.webMemoryMiB)}; Cira gives it ${describeMemory(memory.memoryMiB!)}, the most it offers.`,
+      );
     }
   }
 
@@ -247,13 +307,16 @@ export async function deploy(argv: string[] = []): Promise<number> {
     walked.ignoreFiles.length === 0 ? "" : `, honouring ${walked.ignoreFiles.join(", ")}`;
   info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)}${honoured})...`)}`);
 
-  const packed = archiveProject(root, files);
+  const entries = readEntries(root, files);
 
   // Names are printed, values never are - not here, not on failure, not
   // anywhere. See docs/secrets.md.
   let collected;
   try {
-    collected = collectEnv(root, argv);
+    // The package's own .env first, where a workspace app keeps it, then the
+    // root's.
+    collected = collectEnv(here, argv);
+    if (collected.source === null && here !== root) collected = collectEnv(root, argv);
   } catch (error) {
     fail(error instanceof Error ? error.message : "Could not read the env file.");
     return 1;
@@ -265,7 +328,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // per-variable - do we have this one? - so it is answered per variable.
   //
   // Names only, here and everywhere. See docs/secrets.md.
-  const needed = findEnvNeeds(packed.entries);
+  const needed = findEnvNeeds(entries);
   const supplied = new Set(Object.keys(collected.env));
   // What production already has counts. A deploy changes only what it sends,
   // so a clone with no `.env` is not missing anything production is set with.
@@ -319,7 +382,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
     info("");
 
     const resolved = await resolveMissing(
-      root,
+      here,
       missing.map((need) => ({
         name: need.name,
         note: `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
@@ -353,11 +416,31 @@ export async function deploy(argv: string[] = []): Promise<number> {
     info("");
   }
 
+  // The Dockerfile Cira writes for a workspace package, now that every name a
+  // browser will be given is known: what this deploy sends, and what
+  // production already has. Each needs its own ARG line to reach the build.
+  const extra = [];
+  if (
+    workspace !== null &&
+    focus !== null &&
+    found.services[0]?.dockerfile === GENERATED
+  ) {
+    const publicNames = [
+      ...new Set([...Object.keys(collected.env), ...inProduction].filter(isPublicName)),
+    ].sort();
+    extra.push({
+      path: GENERATED,
+      mode: 0o644,
+      body: Buffer.from(workspaceDockerfile({ workspace, pkg: focus, publicNames })),
+    });
+  }
+  const archive = tarGzip([...entries, ...extra]);
+
   // One archive, sent straight to storage. It does not pass through Cira,
   // which is what lets a project larger than a few megabytes deploy at all.
   let sourceId: string;
   try {
-    sourceId = await uploadSource(packed.archive);
+    sourceId = await uploadSource(archive);
   } catch (error) {
     fail(error instanceof ApiError ? error.message : "Could not upload this project.");
     return 1;
@@ -372,13 +455,16 @@ export async function deploy(argv: string[] = []): Promise<number> {
       method: "POST",
       body: {
         spaceSlug,
-        appName: link === null ? prettyName(basename(root)) : basename(root),
+        // Named after the folder being deployed: in a workspace that is the
+        // package, not the repository holding it.
+        appName: link === null ? prettyName(basename(here)) : basename(here),
         appId: link?.appId ?? null,
         sourceId,
         framework,
         container,
         ...(services === null ? {} : { services }),
         web: servesWeb,
+        webMemoryMiB: servesWeb ? declared.webMemoryMiB : null,
         processes: declared.processes,
         env: collected.env,
         unset: collected.unset,
@@ -396,7 +482,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
       spaceSlug: started.spaceSlug,
       appSlug: started.appSlug,
     },
-    root,
+    here,
   );
 
   // Cira reads the source itself, out of the archive just uploaded, so there
@@ -450,6 +536,10 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info(`  ${bold(`${config.apiUrl}/${started.spaceSlug}/${started.appSlug}`)}`);
       info("");
       info(dim("  Only you can see it. Give people access from that page."));
+      if (typeof status.warning === "string" && status.warning !== "") {
+        info("");
+        warn(status.warning);
+      }
       if (declared.processes.length > 0) {
         info(
           dim(
@@ -566,6 +656,39 @@ function readContainer(
     if (named !== null) throw new Error(`Could not read ${path}.`);
     return null;
   }
+}
+
+/** Where the Dockerfile Cira writes for a workspace package sits in the upload. */
+const GENERATED = ".cira/workspace.Dockerfile";
+
+/**
+ * One package of a workspace, as the only part of the app: its own Dockerfile
+ * when it has one, the one Cira writes when it is a JavaScript package, and
+ * otherwise buildpacks pointed at its folder, which is all a Python or Go
+ * service in a monorepo needs.
+ */
+function focusOn(pkg: WorkspacePackage, here: string): Discovery {
+  const own = join(here, "Dockerfile");
+  let dockerfile: string | null = null;
+  let port: number | null = null;
+  if (existsSync(own)) {
+    dockerfile = `${pkg.path}/Dockerfile`;
+    try {
+      port = readDockerfile(readFileSync(own, "utf8")).port;
+    } catch {
+      // Unreadable is still a Dockerfile; the build will say what is wrong.
+    }
+  } else if (existsSync(join(here, "package.json"))) {
+    dockerfile = GENERATED;
+  }
+  const part: DiscoveredService = {
+    slug: "app",
+    sourcePath: pkg.path,
+    framework: detectFramework(here),
+    dockerfile,
+    port,
+  };
+  return { services: [part], ingress: part, ambiguity: null };
 }
 
 /** Read `--flag value` or `--flag=value` from the arguments. */

@@ -29,18 +29,21 @@ interface Ticket {
  * the whole project is in hand as text. Reading it all a second time to look
  * for anything would be reading it all a second time.
  */
-export function archiveProject(
-  root: string,
-  files: readonly BundleFile[],
-): { archive: Buffer; entries: ArchiveEntry[] } {
-  const entries: ArchiveEntry[] = files.map((file) => {
+export function readEntries(root: string, files: readonly BundleFile[]): ArchiveEntry[] {
+  return files.map((file) => {
     const full = join(root, file.path);
     // The mode is read here rather than carried from the walk, because the
     // only bit that survives into the archive is whether it is executable and
     // an entrypoint script that arrives without it will not run.
     return { path: file.path, mode: statSync(full).mode, body: readFileSync(full) };
   });
+}
 
+export function archiveProject(
+  root: string,
+  files: readonly BundleFile[],
+): { archive: Buffer; entries: ArchiveEntry[] } {
+  const entries = readEntries(root, files);
   return { archive: tarGzip(entries), entries };
 }
 

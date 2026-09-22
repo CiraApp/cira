@@ -51,6 +51,8 @@ describe("readFlyToml", () => {
     expect(readFlyToml(WAVE_FLY)).toEqual({
       web: true,
       dockerfile: "../apps/api/Dockerfile",
+      // Its [[vm]] is only the worker's, so the API's size is not said.
+      webMemoryMiB: null,
       processes: [
         {
           name: "worker",
@@ -410,5 +412,50 @@ ${lines}
     expect(workerMonthlyDollars(1024)).toBe(50);
     expect(workerMonthlyDollars(2048)).toBe(55);
     expect(workerMonthlyDollars(4096)).toBe(65);
+  });
+});
+
+/**
+ * The web process's own size, which Cira used to ignore whatever a
+ * repository said, running every web app at 512 MB.
+ */
+describe("the web process's memory", () => {
+  it("is the [[vm]] that lists the group serving traffic, else the general one", () => {
+    const listed = readFlyToml(
+      [
+        "[processes]",
+        '  web = "node server.js"',
+        '  worker = "node worker.js"',
+        "[http_service]",
+        '  processes = ["web"]',
+        "[[vm]]",
+        '  memory = "2gb"',
+        '  processes = ["web"]',
+        "[[vm]]",
+        '  memory = "512mb"',
+        '  processes = ["worker"]',
+      ].join("\n"),
+    );
+    expect(listed.webMemoryMiB).toBe(2048);
+
+    const general = readFlyToml(
+      [
+        "[http_service]",
+        "  internal_port = 3000",
+        "[[vm]]",
+        '  size = "shared-cpu-4x"',
+      ].join("\n"),
+    );
+    expect(general.webMemoryMiB).toBe(1024);
+  });
+
+  it("is kept from the first file that says, when several are merged", () => {
+    expect(
+      mergeDeclarations([
+        { web: true, processes: [] },
+        { web: true, processes: [], webMemoryMiB: 1024 },
+        { web: true, processes: [], webMemoryMiB: 4096 },
+      ]).webMemoryMiB,
+    ).toBe(1024);
   });
 });

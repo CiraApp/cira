@@ -11,6 +11,8 @@ function app(
 ): App {
   return {
     minInstances: 0,
+    memoryMiB: null,
+    declaredMemoryMiB: null,
     tellsWhoIsCalling: false,
     id: "app_1",
     spaceId: "spc_1",
@@ -44,6 +46,7 @@ function deployment(
     url,
     servesWeb,
     failureReason: null,
+    warning: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };

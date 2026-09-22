@@ -48,6 +48,8 @@ vi.mock("@/lib/browser-ui", () => ({
 
 const app = (hasWebUi: boolean | null): App => ({
   minInstances: 0,
+  memoryMiB: null,
+  declaredMemoryMiB: null,
   tellsWhoIsCalling: false,
   id: "app_1",
   spaceId: "spc_1",
@@ -77,6 +79,7 @@ const deployment = (
   url,
   servesWeb: true,
   failureReason: null,
+  warning: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });

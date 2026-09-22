@@ -158,6 +158,84 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
     expect(grants[0]?.targetId).toBe(deployer.id);
   });
 
+  /**
+   * A web app ran at 512 MB whatever its fly.toml or app.json said. Now the
+   * repository's size is kept and used, and a person's own choice stands
+   * over it on every later deploy.
+   */
+  it("runs a web app at the size its repository asks, unless a person chose", async () => {
+    const { deployToSpace } = await import("./deploy-service");
+    const { apps } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const sized = (appId: string | null, webMemoryMiB: number | null) =>
+      deployToSpace({
+        user: deployer,
+        spaceSlug: "paradym",
+        appName: "Renderer",
+        appId,
+        sourceId: "src_1",
+        framework: "unknown",
+        container: null,
+        webMemoryMiB,
+      });
+
+    told.length = 0;
+    const first = await sized(null, 2048);
+    if (!first.ok) throw new Error(first.error);
+    expect((told.at(-1) as { memoryMiB?: number }).memoryMiB).toBe(2048);
+    const [row] = await database.select().from(apps).where(eq(apps.id, first.appId));
+    expect(row?.declaredMemoryMiB).toBe(2048);
+
+    await database.update(apps).set({ memoryMiB: 1024 }).where(eq(apps.id, first.appId));
+    await sized(first.appId, 2048);
+    expect((told.at(-1) as { memoryMiB?: number }).memoryMiB).toBe(1024);
+
+    // Nothing said and nothing chosen: the default, as before.
+    await database.update(apps).set({ memoryMiB: null }).where(eq(apps.id, first.appId));
+    await sized(first.appId, null);
+    expect((told.at(-1) as { memoryMiB?: number }).memoryMiB).toBe(512);
+  });
+
+  /**
+   * A deploy request cut off before it wrote its record left the app saying
+   * "deploying" for good. Once that is long past, the app goes back to what
+   * its deploys say.
+   */
+  it("settles an app stranded as deploying with no deploy behind it", async () => {
+    const { apps, deployments } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { settleAbandonedDeploys } = await import("./deployment-sync");
+    const longAgo = new Date(Date.now() - 60 * 60_000);
+    const app = (name: string, updatedAt: Date) => ({
+      id: newId("app"),
+      spaceId,
+      name,
+      slug: name.toLowerCase(),
+      status: "deploying" as const,
+      ownerUserId: deployer.id,
+      updatedAt,
+    });
+    const served = app("Served", longAgo);
+    const never = app("Never", longAgo);
+    const now = app("Now", new Date());
+    await database.insert(apps).values([served, never, now]);
+    await database.insert(deployments).values({
+      id: newId("deployment"),
+      appId: served.id,
+      provider: "cloudrun",
+      providerDeploymentId: "b-0:svc:tag",
+      status: "live",
+    });
+
+    await settleAbandonedDeploys(spaceId);
+    const status = async (id: string) =>
+      (await database.select().from(apps).where(eq(apps.id, id)))[0]?.status;
+    expect(await status(served.id)).toBe("live");
+    expect(await status(never.id)).toBe("failed");
+    // Still inside any request's own time: it may be deploying right now.
+    expect(await status(now.id)).toBe("deploying");
+  });
+
   it("records the deployment against the app it just made", async () => {
     const outcome = await deploy("Payroll");
     expect(outcome.ok).toBe(true);
@@ -309,6 +387,32 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       const again = await reconcileDeployment(older as never);
       expect(again.status).toBe("superseded");
       expect(asked).toEqual([]);
+    });
+
+    /**
+     * The newest deploy is not newer than itself. Postgres keeps its
+     * timestamp in microseconds and the row read back keeps milliseconds, and
+     * comparing with the copy made every deploy in production supersede
+     * itself before it could go out.
+     */
+    it("lets the newest deploy go out, read back as production reads it", async () => {
+      const first = await deploy("Only One");
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const { deployments } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      const [row] = await database
+        .select()
+        .from(deployments)
+        .where(eq(deployments.id, first.deploymentId));
+      // Written by the database's clock, with its microseconds, as it is live.
+      expect(row!.createdAt.getMilliseconds()).toBeGreaterThanOrEqual(0);
+
+      asked.length = 0;
+      const { reconcileDeployment } = await import("./deployment-sync");
+      const now = await reconcileDeployment(row as never);
+      expect(now.status).toBe("live");
+      expect(asked).toEqual(["prov_1"]);
     });
 
     it("catches an older deploy still in flight even if it was never marked", async () => {

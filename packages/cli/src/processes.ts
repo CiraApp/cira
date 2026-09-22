@@ -25,6 +25,8 @@ export interface FoundProcesses {
   /** Whether the repository names a web process. Null when it does not say. */
   web: boolean | null;
   processes: FoundProcess[];
+  /** Memory the repository gives its web process, in MiB. Null when it does not say. */
+  webMemoryMiB: number | null;
 }
 
 interface Part {
@@ -102,6 +104,7 @@ export function discoverProcesses(root: string, parts: readonly Part[]): FoundPr
     usable.map((f) => ({
       web: f.web,
       processes: f.processes.map((p) => ({ ...p, service: f.service! }) as FoundProcess),
+      webMemoryMiB: f.webMemoryMiB ?? null,
     })),
   );
 
@@ -119,7 +122,13 @@ export function discoverProcesses(root: string, parts: readonly Part[]): FoundPr
     memoryMiB: p.memoryMiB ?? sizes.get(p.service)?.get(p.name) ?? null,
   }));
 
-  return { web: merged.web, processes };
+  // The web process's own size: fly.toml's, else an app.json's `web` dyno.
+  const webMemoryMiB =
+    merged.webMemoryMiB ??
+    [...sizes.values()].map((byName) => byName.get("web")).find((m) => m !== undefined) ??
+    null;
+
+  return { web: merged.web, processes, webMemoryMiB };
 }
 
 function read(path: string): string | null {

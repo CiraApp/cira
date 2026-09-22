@@ -207,7 +207,22 @@ export class CloudRunProcesses {
     const existingJobs = await this.jobsOf(args.service);
     const existingPools = await this.poolsOf(args.service);
 
-    for (const process of args.processes) {
+    // Every write is tried, and every failure is kept, rather than the first
+    // one stopping the rest: one process Google refuses should not leave a
+    // removed worker running, and nothing that went wrong is swallowed.
+    const problems: string[] = [];
+    const attempt = async (what: string, act: () => Promise<unknown>) => {
+      try {
+        await act();
+      } catch (error) {
+        problems.push(`${what}: ${error instanceof Error ? error.message : "failed"}`);
+      }
+    };
+
+    // A few at a time rather than one after another: each is a write and, for
+    // a scheduled run, a timetable too, and twenty of them in a row ran past
+    // the time the request that started the deploy is given.
+    await inBatches(args.processes, WRITES_AT_ONCE, async (process) => {
       const part = args.parts.get(process.service) ?? {
         builder: "buildpacks",
         imagePart: "",
@@ -223,27 +238,30 @@ export class CloudRunProcesses {
       if (process.kind === "scheduled") {
         const existing = existingJobs.find((j) => leaf(j.name) === name);
         const current = existing?.template?.template?.containers?.[0];
-        await this.write(`${this.jobUrl(name)}?allowMissing=true`, "PATCH", {
-          labels,
-          annotations,
-          template: {
-            labels: existing?.template?.labels ?? {},
-            taskCount: 1,
+        await attempt(`scheduled run ${process.name}`, async () => {
+          await this.write(`${this.jobUrl(name)}?allowMissing=true`, "PATCH", {
+            labels,
+            annotations,
             template: {
-              containers: [
-                {
-                  image: current?.image ?? PLACEHOLDER.job,
-                  ...(current?.command !== undefined
-                    ? { command: current.command, args: current.args ?? [] }
-                    : {}),
-                  env: args.holdEnv && current !== undefined ? (current.env ?? []) : env,
-                  resources: resources(process.memoryMiB),
-                },
-              ],
-              timeout: `${process.timeoutSeconds}s`,
-              maxRetries: 0,
+              labels: existing?.template?.labels ?? {},
+              taskCount: 1,
+              template: {
+                containers: [
+                  {
+                    image: current?.image ?? PLACEHOLDER.job,
+                    ...(current?.command !== undefined
+                      ? { command: current.command, args: current.args ?? [] }
+                      : {}),
+                    env:
+                      args.holdEnv && current !== undefined ? (current.env ?? []) : env,
+                    resources: resources(process.memoryMiB),
+                  },
+                ],
+                timeout: `${process.timeoutSeconds}s`,
+                maxRetries: 0,
+              },
             },
-          },
+          });
         });
         // A timetable failing to apply does not undo the deploy: the job is
         // there, and the page says what is missing.
@@ -251,45 +269,65 @@ export class CloudRunProcesses {
       } else {
         const existing = existingPools.find((p) => leaf(p.name) === name);
         const current = existing?.template?.containers?.[0];
-        await this.write(`${this.poolUrl(name)}?allowMissing=true`, "PATCH", {
-          labels,
-          annotations,
-          // A new worker starts off: it is running Google's placeholder until
-          // the build is ready, and nobody has turned it on yet anyway.
-          scaling: {
-            manualInstanceCount: existing === undefined ? 0 : process.enabled ? 1 : 0,
-          },
-          template: {
-            labels: existing?.template?.labels ?? {},
-            containers: [
-              {
-                image: current?.image ?? PLACEHOLDER.worker,
-                ...(current?.command !== undefined
-                  ? { command: current.command, args: current.args ?? [] }
-                  : {}),
-                env: args.holdEnv && current !== undefined ? (current.env ?? []) : env,
-                resources: resources(process.memoryMiB),
-              },
-            ],
-          },
-        });
+        await attempt(`worker ${process.name}`, () =>
+          this.write(`${this.poolUrl(name)}?allowMissing=true`, "PATCH", {
+            labels,
+            annotations,
+            // A new worker starts off: it is running Google's placeholder until
+            // the build is ready, and nobody has turned it on yet anyway.
+            scaling: {
+              manualInstanceCount: existing === undefined ? 0 : process.enabled ? 1 : 0,
+            },
+            template: {
+              labels: existing?.template?.labels ?? {},
+              containers: [
+                {
+                  image: current?.image ?? PLACEHOLDER.worker,
+                  ...(current?.command !== undefined
+                    ? { command: current.command, args: current.args ?? [] }
+                    : {}),
+                  env: args.holdEnv && current !== undefined ? (current.env ?? []) : env,
+                  resources: resources(process.memoryMiB),
+                },
+              ],
+            },
+          }),
+        );
       }
-    }
+    });
 
     // Anything the repository stopped declaring is taken down, timetable and
-    // all, rather than left running something nobody can see.
-    const declared = new Set(
-      args.processes.map((p) => processResourceName(args.service, p.name)),
-    );
+    // all, rather than left running something nobody can see. By kind: a
+    // process that keeps its name and becomes a scheduled run is a job now,
+    // and the worker pool it used to be is not declared by anything.
+    const named = (kind: ProcessSpec["kind"]) =>
+      new Set(
+        args.processes
+          .filter((p) => p.kind === kind)
+          .map((p) => processResourceName(args.service, p.name)),
+      );
+    const jobs = named("scheduled");
+    const pools = named("worker");
     for (const job of existingJobs) {
       const name = leaf(job.name);
-      if (declared.has(name)) continue;
-      await this.remove(this.schedulerUrl(name));
-      await this.remove(this.jobUrl(name));
+      if (jobs.has(name)) continue;
+      await attempt(`removing scheduled run ${name}`, async () => {
+        await this.remove(this.schedulerUrl(name));
+        await this.remove(this.jobUrl(name));
+      });
     }
     for (const pool of existingPools) {
       const name = leaf(pool.name);
-      if (!declared.has(name)) await this.remove(this.poolUrl(name));
+      if (pools.has(name)) continue;
+      await attempt(`removing worker ${name}`, () => this.remove(this.poolUrl(name)));
+    }
+
+    if (problems.length > 0) {
+      throw new ProcessError(
+        `Google refused ${problems.length === 1 ? "one change" : `${problems.length} changes`} to this app's workers and scheduled runs - ${problems.join("; ")}.`,
+        "failed",
+        0,
+      );
     }
   }
 
@@ -611,18 +649,41 @@ export class CloudRunProcesses {
 
   private async jobsOf(service: string): Promise<JobResource[]> {
     const { projectId, region } = this.config;
-    const listed = await this.read<{ jobs?: JobResource[] }>(
-      `${RUN_API}/projects/${projectId}/locations/${region}/jobs?pageSize=500`,
+    const all = await this.everyPage<JobResource>(
+      `${RUN_API}/projects/${projectId}/locations/${region}/jobs`,
+      "jobs",
     );
-    return (listed?.jobs ?? []).filter((j) => j.labels?.[APP_LABEL] === service);
+    return all.filter((j) => j.labels?.[APP_LABEL] === service);
   }
 
   private async poolsOf(service: string): Promise<PoolResource[]> {
     const { projectId, region } = this.config;
-    const listed = await this.read<{ workerPools?: PoolResource[] }>(
-      `${RUN_API}/projects/${projectId}/locations/${region}/workerPools?pageSize=500`,
+    const all = await this.everyPage<PoolResource>(
+      `${RUN_API}/projects/${projectId}/locations/${region}/workerPools`,
+      "workerPools",
     );
-    return (listed?.workerPools ?? []).filter((p) => p.labels?.[APP_LABEL] === service);
+    return all.filter((p) => p.labels?.[APP_LABEL] === service);
+  }
+
+  /**
+   * Every page of a listing. One page of 500 used to be read: past that, the
+   * resources of every app are shared across one project, a running worker
+   * went unseen, and a deploy could not take down what it could not see.
+   */
+  private async everyPage<T>(base: string, key: string): Promise<T[]> {
+    const all: T[] = [];
+    let token: string | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const url = `${base}?pageSize=500${token === undefined ? "" : `&pageToken=${encodeURIComponent(token)}`}`;
+      const listed = await this.read<
+        Record<string, unknown> & { nextPageToken?: string }
+      >(url);
+      const items = listed?.[key];
+      if (Array.isArray(items)) all.push(...(items as T[]));
+      token = listed?.nextPageToken;
+      if (token === undefined || token === "") return all;
+    }
+    return all;
   }
 
   /** The container a process runs, on the build that just finished. */
@@ -700,6 +761,20 @@ export class CloudRunProcesses {
     const response = await this.fetch(url, "DELETE");
     if (response.ok || response.status === 404) return;
     throw failure(response.status, await googleReason(response));
+  }
+}
+
+/** How many process writes a deploy has in flight at once. */
+const WRITES_AT_ONCE = 4;
+
+/** Run `act` over `items`, at most `size` at a time. */
+async function inBatches<T>(
+  items: readonly T[],
+  size: number,
+  act: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(act));
   }
 }
 

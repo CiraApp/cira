@@ -9,6 +9,7 @@ import { skillCommand } from "./skill/command.js";
 import { beginUpdateCheck, finishUpdateCheck, updateCommand } from "./update/index.js";
 import { detectFramework, readProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
+import { unknownArgument } from "./args.js";
 
 const USAGE = `
   ${bold("cira")} - deploy software to your company
@@ -88,6 +89,18 @@ function status(): number {
 
 async function main(): Promise<number> {
   const command = process.argv[2];
+  const rest = process.argv.slice(3);
+
+  if (rest.includes("--help") || rest.includes("-h")) {
+    info(USAGE);
+    return 0;
+  }
+  const stray = command === undefined ? null : unknownArgument(command, rest);
+  if (stray !== null) {
+    fail(`cira ${command} does not understand ${stray}. Nothing was changed.`);
+    info(dim("  See: cira --help"));
+    return 1;
+  }
 
   switch (command) {
     case "deploy":

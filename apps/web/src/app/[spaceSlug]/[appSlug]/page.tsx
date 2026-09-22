@@ -12,7 +12,7 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { RunHistory } from "@/components/run-history";
 import { ProcessPanel } from "@/components/process-panel";
-import { monthlyCost } from "@cira/core";
+import { appMemory, monthlyCost } from "@cira/core";
 import { assertionsConfigured } from "@/lib/identity-assertion";
 import { planForSpace } from "@/lib/plan";
 import { processesForPage } from "@/lib/processes";
@@ -251,7 +251,11 @@ export default async function AppPage({
             {/* What Cloud Run gives it, from the same record the provider
                 applies, so this cannot claim more room than the app has. */}
             <Fact label="Capacity">
-              {describeAppAllowance(DEFAULT_LIMITS, services.length > 1)}
+              {describeAppAllowance(
+                DEFAULT_LIMITS,
+                services.length > 1,
+                appMemory(app, services.length > 1),
+              )}
             </Fact>
           </dl>
 
@@ -299,6 +303,7 @@ export default async function AppPage({
               relative: relativeTime(d.createdAt),
               reason:
                 d.id === deployment?.id ? deployment.failureReason : d.failureReason,
+              warning: d.id === deployment?.id ? deployment.warning : d.warning,
             }))}
           />
 
@@ -329,7 +334,27 @@ export default async function AppPage({
               canKeepWarm={plan.canKeepWarm}
               tellsWhoIsCalling={app.tellsWhoIsCalling}
               canTellWhoIsCalling={assertionsConfigured()}
-              warmMonthly={Math.round(monthlyCost({ cpu: 1, memoryMiB: 512 }))}
+              warmMonthly={Math.round(
+                monthlyCost({
+                  cpu: 1,
+                  memoryMiB:
+                    appMemory(app, services.length > 1) * Math.max(1, services.length),
+                }),
+              )}
+              memory={
+                deployment?.servesWeb === true
+                  ? {
+                      current: appMemory(app, services.length > 1),
+                      fallback: appMemory(
+                        { memoryMiB: null, declaredMemoryMiB: app.declaredMemoryMiB },
+                        services.length > 1,
+                      ),
+                      chosen: app.memoryMiB,
+                      declared: app.declaredMemoryMiB,
+                      choices: DEFAULT_LIMITS.app.memoryChoicesMiB,
+                    }
+                  : null
+              }
             />
           ) : null}
         </div>

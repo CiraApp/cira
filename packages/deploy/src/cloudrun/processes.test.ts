@@ -48,6 +48,10 @@ class FakeGoogle {
   builds = 0;
   /** Out-of-memory lines Cloud Run has logged, by worker pool. */
   outOfMemory = new Map<string, string>();
+  /** How many resources one page of a listing holds, as Google pages them. */
+  pageLimit = Infinity;
+  /** Resources Google refuses to change, the way a quota or a policy does. */
+  refused = new Set<string>();
 
   handle(url: string, method: string, body: unknown): Response {
     const u = new URL(url);
@@ -138,8 +142,16 @@ class FakeGoogle {
       ["/workerPools", this.pools, "workerPools"],
     ];
     for (const [segment, store, listKey] of kinds) {
-      if (path.endsWith(segment) && method === "GET")
-        return json({ [listKey]: [...store.values()] });
+      if (path.endsWith(segment) && method === "GET") {
+        const all = [...store.values()];
+        const from = Number(u.searchParams.get("pageToken") ?? "0");
+        const page = all.slice(from, from + this.pageLimit);
+        const next = from + page.length;
+        return json({
+          [listKey]: page,
+          ...(next < all.length ? { nextPageToken: String(next) } : {}),
+        });
+      }
       const at = path.indexOf(`${segment}/`);
       if (at === -1) continue;
       const rest = path.slice(at + segment.length + 1);
@@ -158,6 +170,8 @@ class FakeGoogle {
         return json({ name: "operations/run" });
       }
       if (method === "GET") return store.has(bare) ? json(store.get(bare)) : missing();
+      if (this.refused.has(bare))
+        return json({ error: { status: "FAILED_PRECONDITION" } }, 400);
       if (method === "DELETE") return store.delete(bare) ? json({}) : missing();
       if (method === "PATCH") {
         if (!store.has(bare) && u.searchParams.get("allowMissing") !== "true")
@@ -431,6 +445,57 @@ describe("an app that is only a scheduled run and a worker", () => {
     expect(google.jobs.has("other-11111111")).toBe(true);
   });
 
+  /**
+   * A process can keep its name and change what it is. The old code kept one
+   * set of names for both kinds, so a worker that became a scheduled run went
+   * on running as a worker too, unseen and billed.
+   */
+  it("takes down the old kind when a process changes from worker to scheduled run", async () => {
+    await provider().deploy(scriptApp([{ ...worker, name: "sync" }]));
+    expect(google.pools.has("sync-0000app1")).toBe(true);
+
+    await provider().deploy(
+      scriptApp([{ ...report, name: "sync", schedule: "*/15 * * * *" }]),
+    );
+    expect(google.jobs.has("sync-0000app1")).toBe(true);
+    expect(google.pools.has("sync-0000app1")).toBe(false);
+
+    await provider().deploy(scriptApp([{ ...worker, name: "sync" }]));
+    expect(google.pools.has("sync-0000app1")).toBe(true);
+    expect(google.jobs.has("sync-0000app1")).toBe(false);
+    expect(google.schedules.has("sync-0000app1")).toBe(false);
+  });
+
+  // One project holds every company's processes, so one page is not all.
+  it("finds its processes past the first page of a listing", async () => {
+    for (let i = 0; i < 7; i += 1) {
+      google.pools.set(`other-${i}`, {
+        name: `x/workerPools/other-${i}`,
+        labels: { "cira-app": "acme-other-11111111" },
+      });
+    }
+    google.pageLimit = 3;
+    await provider().deploy(scriptApp([worker]));
+    // Declared again with nothing: the worker must be found to be removed.
+    await provider().deploy(scriptApp([report]));
+    expect(google.pools.has("worker-0000app1")).toBe(false);
+    expect([...google.pools.keys()].filter((k) => k.startsWith("other-"))).toHaveLength(
+      7,
+    );
+  });
+
+  it("carries on past a change Google refuses, and says which it was", async () => {
+    await provider().deploy(scriptApp([worker, report]));
+    google.refused.add("worker-0000app1");
+
+    const done = provider().deploy(scriptApp([{ ...report, memoryMiB: 4096 }]));
+    await expect(done).rejects.toThrow(/removing worker worker-0000app1/);
+    // The rest of the deploy's changes were still made.
+    expect(jobContainer("report-0000app1").resources).toEqual({
+      limits: { cpu: "1", memory: "4096Mi" },
+    });
+  });
+
   it("removes every process with the app", async () => {
     const started = await provider().deploy(scriptApp([report, worker]));
     await provider().remove(started.providerDeploymentId);
@@ -490,6 +555,59 @@ describe("an app with a web service and a worker", () => {
     await provider().getStatus(second.providerDeploymentId);
     expect(poolContainer("worker-0000app1").env).toEqual([
       { name: "DATABASE_URL", value: "postgres://new" },
+    ]);
+  });
+
+  /**
+   * Beside a web service the processes are not the app, so a problem with
+   * them does not stop the deploy - but it is said, where it used to be
+   * dropped.
+   */
+  it("goes out with a warning when a worker could not be changed", async () => {
+    await provider().deploy(webApp({ set: {}, unset: [] }));
+    google.refused.add("worker-0000app1");
+    const second = await provider().deploy({
+      ...webApp({ set: {}, unset: [] }),
+      processes: [],
+    });
+    expect(second.status).toBe("building");
+    expect(second.warning).toMatch(/removing worker worker-0000app1/);
+  });
+
+  // Nothing polls a deploy after it is live, so this is the last chance to say.
+  it("says so when the web app went live and its worker could not follow", async () => {
+    const started = await provider().deploy(webApp({ set: {}, unset: [] }));
+    google.refused.add("worker-0000app1");
+    let status = await provider().getStatus(started.providerDeploymentId);
+    for (let poll = 0; poll < 5 && status.status !== "live"; poll += 1) {
+      status = await provider().getStatus(started.providerDeploymentId);
+    }
+    expect(status.status).toBe("live");
+    expect(status.warning).toMatch(/still on the previous build/);
+  });
+
+  it("takes the web service down when the Procfile stops declaring one", async () => {
+    const first = await provider().deploy(
+      webApp({ set: { DATABASE_URL: "postgres://db" }, unset: [] }),
+    );
+    await provider().getStatus(first.providerDeploymentId);
+    expect(google.service).not.toBeNull();
+
+    // Only the worker now. Its variables come from the service it replaces.
+    const second = await provider().deploy({
+      ...scriptApp([{ ...worker, enabled: true }]),
+      env: { set: {}, unset: [] },
+    });
+    // Still serving until the build is ready.
+    expect(google.service).not.toBeNull();
+    let status = await provider().getStatus(second.providerDeploymentId);
+    for (let poll = 0; poll < 5 && status.status !== "live"; poll += 1) {
+      status = await provider().getStatus(second.providerDeploymentId);
+    }
+    expect(status.status).toBe("live");
+    expect(google.service).toBeNull();
+    expect(poolContainer("worker-0000app1").env).toEqual([
+      { name: "DATABASE_URL", value: "postgres://db" },
     ]);
   });
 

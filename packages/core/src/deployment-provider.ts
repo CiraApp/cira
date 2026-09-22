@@ -120,6 +120,8 @@ export interface AppDeploymentInput {
   services: readonly DeployableService[];
   /** Instances to keep running when nobody is asking. Zero unless paid for. */
   minInstances?: number;
+  /** Memory for each web container, in MiB. The provider's default when absent. */
+  memoryMiB?: number;
   /**
    * What this deploy changes about the app's variables.
    *
@@ -215,6 +217,11 @@ export interface DeploymentResult {
    * act on. Never a provider console link or anything naming its project.
    */
   reason?: string;
+  /**
+   * What went wrong without stopping the deploy, in the same kind of words:
+   * the web app went out, and its workers or scheduled runs did not all follow.
+   */
+  warning?: string;
 }
 
 export interface DeploymentLogLine {
