@@ -42,17 +42,18 @@ the test lives. When one is deliberately left alone, it says why.
 
 ## People
 
-| ID       | Sev      | Finding                                                                                                                                                     | Status |
-| -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| PEOPLE-1 | critical | Nobody can be removed from a space, change role, or leave. Nothing can move an app to a new owner. There is only ever one owner.                            | fixed  |
-| PEOPLE-2 | medium   | Pending invites cannot be listed or revoked in the product.                                                                                                 | fixed  |
-| PEOPLE-3 | medium   | Teams cannot be created or edited in the product, so granting access to a team is impossible for a real company.                                            | fixed  |
-| PEOPLE-4 | high     | A name can produce a slug that ends in `-` or runs past 48 characters, making a space or app that cannot be opened or deleted.                              | fixed  |
-| PEOPLE-5 | high     | A space can take a slug that one of Cira's own routes already uses (`docs`, `pricing`, `legal`, `monitoring` and others), and then it can never be reached. | fixed  |
-| PEOPLE-6 | low      | Names written only in non-Latin scripts are refused.                                                                                                        | fixed  |
-| PEOPLE-7 | low      | Someone in several spaces lands in an arbitrary one.                                                                                                        | fixed  |
-| PEOPLE-8 | medium   | Over MCP, a person in two companies sees capabilities named the same in both, with nothing saying which company each belongs to.                            | fixed  |
-| PEOPLE-9 | low      | Double-clicking accept on an invite, or creating two spaces with the same name at once, shows a raw error.                                                  | fixed  |
+| ID        | Sev      | Finding                                                                                                                                                     | Status |
+| --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| PEOPLE-1  | critical | Nobody can be removed from a space, change role, or leave. Nothing can move an app to a new owner. There is only ever one owner.                            | fixed  |
+| PEOPLE-2  | medium   | Pending invites cannot be listed or revoked in the product.                                                                                                 | fixed  |
+| PEOPLE-3  | medium   | Teams cannot be created or edited in the product, so granting access to a team is impossible for a real company.                                            | fixed  |
+| PEOPLE-4  | high     | A name can produce a slug that ends in `-` or runs past 48 characters, making a space or app that cannot be opened or deleted.                              | fixed  |
+| PEOPLE-5  | high     | A space can take a slug that one of Cira's own routes already uses (`docs`, `pricing`, `legal`, `monitoring` and others), and then it can never be reached. | fixed  |
+| PEOPLE-6  | low      | Names written only in non-Latin scripts are refused.                                                                                                        | fixed  |
+| PEOPLE-7  | low      | Someone in several spaces lands in an arbitrary one.                                                                                                        | fixed  |
+| PEOPLE-8  | medium   | Over MCP, a person in two companies sees capabilities named the same in both, with nothing saying which company each belongs to.                            | fixed  |
+| PEOPLE-9  | low      | Double-clicking accept on an invite, or creating two spaces with the same name at once, shows a raw error.                                                  | fixed  |
+| PEOPLE-10 | medium   | Someone joining from an invite was never asked their name, so they were their email address everywhere - twice on the members page.                         | fixed  |
 
 ## Deploying and running
 
@@ -197,6 +198,7 @@ What changed for each finding, and where its test is.
 - **PEOPLE-7** (fixed). Spaces are listed in the order they were joined, so the landing space is always the same one.
 - **PEOPLE-8** (fixed). Every MCP result names its company, and when results span more than one the capability name carries it too (`acme/crm.list_customers`).
 - **PEOPLE-9** (fixed). Accepting an invite twice at once is a success rather than a unique-index error, and two spaces created with the same name at once get a sentence, not a stack.
+- **PEOPLE-10** (fixed). Found when the first real invite was accepted on production. The invite page now asks a person Cira has no name for to give one, with joining on the same button; the members page no longer repeats an address used as a name.
 - **SEC-4** (fixed). Tokens carry a scope (migration 0035). `cli` tokens deploy; `assistant` tokens only reach MCP. Tokens made in the app, and by `cira mcp connect` (new `/api/cli/assistant-token`), are assistant tokens, so an assistant's config no longer holds deploy rights. Every token lapses after ninety days unused, and each use moves that on. The login page asks someone arriving by link to confirm they ran `cira login` themselves. `CIRA_TOKEN` lets CI deploy without a config file. Tests: `cli-session.test.ts`.
 - **SEC-5** (fixed). Joining by domain is a setting admins turn on (`spaces.join_by_domain`, migration 0034), off for every space including existing ones. Someone removed cannot rejoin by domain until invited (`space_join_blocks`). The personal-provider list grew from 26 to around 190 domains plus academic ones. Tests: `member-actions.test.ts`, `email-domain.test.ts`.
 - **SEC-6** (fixed). Re-linking by address only happens when the old sign-in no longer exists and the account is from before production sign-in or belongs to no space. Otherwise the person lands on `/account-conflict`, which says who can fix it. A re-link revokes the old holder's tokens. An email change that collides with a stale row no longer locks the person out. Tests: `identity.test.ts`.

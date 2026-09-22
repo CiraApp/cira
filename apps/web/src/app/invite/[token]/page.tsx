@@ -97,9 +97,15 @@ export default async function InvitePage({
   return (
     <EntryFrame
       title={`Join ${row.space.name} on Cira`}
-      subtitle={`You were invited as ${row.invite.role === "admin" ? "an admin" : "a member"}.`}
+      subtitle={`You were invited as ${row.invite.role === "admin" ? "an admin" : "a member"}.${
+        user.firstName === null ? " Tell your colleagues who you are." : ""
+      }`}
     >
-      <AcceptInvite token={token} spaceName={row.space.name} />
+      <AcceptInvite
+        token={token}
+        spaceName={row.space.name}
+        needsName={user.firstName === null}
+      />
     </EntryFrame>
   );
 }

@@ -179,9 +179,13 @@ export default async function MembersPage({
                           </span>
                         ) : null}
                       </span>
-                      <span className="block truncate text-[12px] text-ink-subtle">
-                        {person.user.email}
-                      </span>
+                      {/* Someone who joined without giving a name is named
+                          by their address, which is then already said. */}
+                      {person.user.name === person.user.email ? null : (
+                        <span className="block truncate text-[12px] text-ink-subtle">
+                          {person.user.email}
+                        </span>
+                      )}
                       {memberOf.length > 0 ? (
                         <span className="mt-0.5 block truncate text-[11.5px] text-ink-subtle">
                           {memberOf.sort().join(" · ")}

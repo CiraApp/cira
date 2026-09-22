@@ -63,10 +63,11 @@ use its apps, and Cira would know if anything broke for them.
 - [x] **1.4 A record of who ran what.** `invocations`, written by the one
       path every surface shares, shown under Capability runs on each app page to whoever
       manages it; never the input or the reply (2026-09-19).
-- [ ] **1.5 Email.** Resend, sending as `notifications@cira.dev` (domain
+- [x] **1.5 Email.** Resend, sending as `notifications@cira.dev` (domain
       verified 2026-09-19, records in Cloudflare). Invitations are emailed
-      when created, with the link still shown. Done when an invite arrives by
-      email and is accepted from it - one real invite is all that is left.
+      when created, with the link still shown. A real invite was accepted from
+      its email on 2026-09-22; someone joining without a name is now asked for
+      one on the invite page.
 - [x] **1.6 Scheduled jobs and workers.** Found in a repository's Procfile,
       fly.toml or scheduled GitHub Actions workflows; scheduled runs on Cloud
       Run Jobs started by Cloud Scheduler, workers on Cloud Run worker pools;
