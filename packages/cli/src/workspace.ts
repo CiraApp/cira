@@ -72,7 +72,7 @@ function declaresWorkspace(dir: string): boolean {
 }
 
 /** By the lockfile the root keeps, which is what the build installs from. */
-function managerOf(root: string): PackageManager {
+export function managerOf(root: string): PackageManager {
   if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm";
   if (existsSync(join(root, "bun.lockb")) || existsSync(join(root, "bun.lock"))) {
     return "bun";
@@ -141,39 +141,8 @@ export function workspaceDockerfile(args: {
   const { workspace, pkg } = args;
   const node =
     pkg.nodeMajor !== null && pkg.nodeMajor >= 18 ? pkg.nodeMajor : DEFAULT_NODE;
-  const target = pkg.name ?? `./${pkg.path}`;
 
-  const install: Record<PackageManager, string> = {
-    pnpm: "pnpm install --frozen-lockfile",
-    yarn: workspace.yarnBerry
-      ? "yarn install --immutable"
-      : "yarn install --frozen-lockfile",
-    npm: "npm ci",
-    bun: "bun install --frozen-lockfile",
-  };
-  const run: Record<PackageManager, string> = {
-    pnpm: "pnpm",
-    yarn: "yarn",
-    npm: "npm run",
-    bun: "bun run",
-  };
-
-  // Turbo builds the package after what it depends on, which is exactly what
-  // a package using `packages/ui` needs. Without it, each manager's own way of
-  // saying the same; npm has none, and builds the package alone.
-  const build = !pkg.hasBuild
-    ? null
-    : workspace.turbo
-      ? `${TURBO[workspace.manager]} run build --filter=${quote(target)}`
-      : workspace.manager === "pnpm"
-        ? `pnpm --filter ${quote(`${target}...`)} run build`
-        : workspace.manager === "yarn"
-          ? pkg.name === null
-            ? `cd ${quote(pkg.path)} && yarn run build`
-            : `yarn workspace ${quote(pkg.name)} run build`
-          : workspace.manager === "bun"
-            ? `cd ${quote(pkg.path)} && bun run build`
-            : `npm run build --workspace=${quote(pkg.path)}`;
+  const build = workspaceBuildCommand(workspace, pkg);
 
   const publics = args.publicNames.flatMap((name) => [
     `ARG ${name}`,
@@ -189,14 +158,63 @@ export function workspaceDockerfile(args: {
     ...publics,
     "COPY . .",
     ...(workspace.manager === "bun" ? [] : ["RUN corepack enable"]),
-    `RUN ${install[workspace.manager]}`,
+    `RUN ${installCommand(workspace.manager, workspace.yarnBerry)}`,
     ...(build === null ? [] : [`RUN ${build}`]),
     "ENV NODE_ENV=production",
     `WORKDIR /workspace/${pkg.path}`,
-    `CMD ["sh", "-c", "${run[workspace.manager]} start"]`,
+    `CMD ["sh", "-c", "${RUN[workspace.manager]} start"]`,
     "",
   ].join("\n");
 }
+
+/**
+ * Building one package of a workspace, from its root. Null when the package
+ * has no build script.
+ */
+export function workspaceBuildCommand(
+  workspace: Workspace,
+  pkg: WorkspacePackage,
+): string | null {
+  const target = pkg.name ?? `./${pkg.path}`;
+  // Turbo builds the package after what it depends on, which is exactly what
+  // a package using `packages/ui` needs. Without it, each manager's own way of
+  // saying the same; npm has none, and builds the package alone.
+  return !pkg.hasBuild
+    ? null
+    : workspace.turbo
+      ? `${TURBO[workspace.manager]} run build --filter=${quote(target)}`
+      : workspace.manager === "pnpm"
+        ? `pnpm --filter ${quote(`${target}...`)} run build`
+        : workspace.manager === "yarn"
+          ? pkg.name === null
+            ? `cd ${quote(pkg.path)} && yarn run build`
+            : `yarn workspace ${quote(pkg.name)} run build`
+          : workspace.manager === "bun"
+            ? `cd ${quote(pkg.path)} && bun run build`
+            : `npm run build --workspace=${quote(pkg.path)}`;
+}
+
+/** Installing exactly what the lockfile says, as each manager does it. */
+export function installCommand(manager: PackageManager, yarnBerry: boolean): string {
+  switch (manager) {
+    case "pnpm":
+      return "pnpm install --frozen-lockfile";
+    case "yarn":
+      return yarnBerry ? "yarn install --immutable" : "yarn install --frozen-lockfile";
+    case "bun":
+      return "bun install --frozen-lockfile";
+    case "npm":
+      return "npm ci";
+  }
+}
+
+/** Running one of the package's scripts, as each manager does it. */
+export const RUN: Record<PackageManager, string> = {
+  pnpm: "pnpm",
+  yarn: "yarn",
+  npm: "npm run",
+  bun: "bun run",
+};
 
 /** The workspace's own turbo, as each manager runs an installed binary. */
 const TURBO: Record<PackageManager, string> = {

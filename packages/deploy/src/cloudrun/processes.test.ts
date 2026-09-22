@@ -48,6 +48,8 @@ class FakeGoogle {
   builds = 0;
   /** Out-of-memory lines Cloud Run has logged, by worker pool. */
   outOfMemory = new Map<string, string>();
+  /** Every job run started, release runs included. */
+  runs = 0;
   /** How many resources one page of a listing holds, as Google pages them. */
   pageLimit = Infinity;
   /** Resources Google refuses to change, the way a quota or a policy does. */
@@ -157,17 +159,26 @@ class FakeGoogle {
       const rest = path.slice(at + segment.length + 1);
       const [name, sub] = rest.split("/");
       const bare = (name ?? "").replace(/:run$/, "");
-      if (sub === "executions")
-        return json({ executions: this.executions.get(bare) ?? [] });
+      if (sub === "executions") {
+        const one = rest.split("/")[2];
+        const all = this.executions.get(bare) ?? [];
+        if (one === undefined) return json({ executions: all });
+        const found = all.find((e) => e.name === one);
+        return found === undefined ? missing() : json(found);
+      }
       if (name?.endsWith(":run")) {
         if (!store.has(bare)) return missing();
         const list = this.executions.get(bare) ?? [];
-        list.unshift({
-          name: `e-${list.length + 1}`,
-          createTime: new Date().toISOString(),
-        });
+        const run = `e-${list.length + 1}`;
+        list.unshift({ name: run, createTime: new Date().toISOString() });
         this.executions.set(bare, list);
-        return json({ name: "operations/run" });
+        this.runs += 1;
+        return json({
+          name: "operations/run",
+          metadata: {
+            name: `projects/proj/locations/us-central1/jobs/${bare}/executions/${run}`,
+          },
+        });
       }
       if (method === "GET") return store.has(bare) ? json(store.get(bare)) : missing();
       if (this.refused.has(bare))
@@ -624,6 +635,95 @@ describe("an app with a web service and a worker", () => {
     expect(poolContainer("worker-0000app1").env).toEqual([
       { name: "DATABASE_URL", value: "postgres://db/app" },
     ]);
+  });
+});
+
+/**
+ * The release command - almost always the migration - runs once per deploy,
+ * on the new build with the new variables, before any of it takes traffic.
+ */
+describe("a release command", () => {
+  const withRelease = (command: string | null): AppDeploymentInput => ({
+    ...scriptApp([{ ...worker, enabled: true }]),
+    services: [
+      { slug: "app", sourcePath: "", dockerfile: null, port: null, ingress: true },
+    ],
+    env: { set: { DATABASE_URL: "postgres://new" }, unset: [] },
+    release: command === null ? null : { command, service: "app" },
+  });
+  const releaseJob = () => google.jobs.get("release-0000app1");
+
+  it("holds the rollout until it has run, on the new build with the new variables", async () => {
+    const started = await provider().deploy(withRelease("alembic upgrade head"));
+    expect(releaseJob()?.labels).toMatchObject({ "cira-role": "release" });
+
+    // The build is done, and nothing moves until the release has run.
+    const waiting = await provider().getStatus(started.providerDeploymentId);
+    expect(waiting).toMatchObject({ status: "deploying", release: "needed" });
+    expect(
+      (google.service?.template as { labels: Record<string, string> }).labels[
+        "cira-build"
+      ],
+    ).toBeUndefined();
+
+    const run = await provider().startRelease(started.providerDeploymentId);
+    const container = jobContainer("release-0000app1");
+    expect(container.image).toBe(image);
+    expect(container.args).toEqual(["alembic upgrade head"]);
+    expect(container.env).toEqual([{ name: "DATABASE_URL", value: "postgres://new" }]);
+    expect(await provider().releaseState(started.providerDeploymentId, run)).toEqual({
+      state: "running",
+    });
+
+    const execution = google.executions.get("release-0000app1")![0]!;
+    execution.completionTime = new Date().toISOString();
+    expect(await provider().releaseState(started.providerDeploymentId, run)).toEqual({
+      state: "succeeded",
+    });
+
+    // Told it is done, the rollout goes ahead as it always did.
+    const rolling = await provider().getStatus(started.providerDeploymentId, {
+      releaseDone: true,
+    });
+    expect(rolling.release).toBeUndefined();
+    expect(
+      (google.service?.template as { labels: Record<string, string> }).labels[
+        "cira-build"
+      ],
+    ).toBe("b-1");
+  });
+
+  it("says why a release failed, without Google's own words", async () => {
+    const started = await provider().deploy(withRelease("python manage.py migrate"));
+    const run = await provider().startRelease(started.providerDeploymentId);
+    Object.assign(google.executions.get("release-0000app1")![0]!, {
+      completionTime: new Date().toISOString(),
+      failedCount: 1,
+      conditions: [
+        {
+          type: "Completed",
+          message:
+            "Task release-0000app1-x in project proj failed: The container exited with an exit code of 2.",
+        },
+      ],
+    });
+    const state = await provider().releaseState(started.providerDeploymentId, run);
+    expect(state).toEqual({
+      state: "failed",
+      reason:
+        "The release command failed (exit code 2). Its output is in the app's logs.",
+    });
+  });
+
+  it("is not one of the app's processes, and goes when the repository drops it", async () => {
+    await provider().deploy(withRelease("alembic upgrade head"));
+    const states = await provider().processStates(`b-1:${SERVICE}:${TAG}`, [
+      { name: "worker", kind: "worker" },
+    ]);
+    expect(states).toHaveLength(1);
+    // The swap at the end of a build moves processes, never the release.
+    await provider().deploy(withRelease(null));
+    expect(releaseJob()).toBeUndefined();
   });
 });
 

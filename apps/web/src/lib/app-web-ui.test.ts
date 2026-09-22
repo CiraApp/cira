@@ -80,6 +80,9 @@ const deployment = (
   servesWeb: true,
   failureReason: null,
   warning: null,
+  releaseStartedAt: null,
+  releaseRun: null,
+  releaseDoneAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });

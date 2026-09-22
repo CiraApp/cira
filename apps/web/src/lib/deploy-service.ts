@@ -89,6 +89,8 @@ export async function deployToSpace(args: {
    * settled to a size Cira offers. Null when it says nothing.
    */
   webMemoryMiB?: number | null;
+  /** The command the repository runs once per deploy before going live. */
+  release?: string | null;
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName } = args;
   const env = args.env ?? NO_ENV_CHANGE;
@@ -335,6 +337,15 @@ export async function deployToSpace(args: {
         parts.length > 1,
       ),
       processes: specsFor(stored),
+      // Run in the part that takes traffic, where the app's own code and
+      // migrations live; in an app of only processes, its first part.
+      release:
+        args.release === null || args.release === undefined
+          ? null
+          : {
+              command: args.release,
+              service: (parts.find((part) => part.ingress) ?? parts[0])!.slug,
+            },
     });
   } catch (error) {
     return abandon(

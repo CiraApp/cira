@@ -21,12 +21,19 @@ export type StalenessVerdict =
   | { action: "declare-failed"; reason: string };
 
 export function checkStaleness(
-  deployment: { status: DeploymentStatus; createdAt: Date },
+  deployment: {
+    status: DeploymentStatus;
+    createdAt: Date;
+    releaseStartedAt?: Date | null;
+  },
   now: Date = new Date(),
 ): StalenessVerdict {
   if (isTerminal(deployment.status)) return { action: "settled" };
 
-  const age = now.getTime() - deployment.createdAt.getTime();
+  // A release command gets the same patience again from when it started:
+  // a long migration after a long build is not a deploy that stopped.
+  const since = deployment.releaseStartedAt ?? deployment.createdAt;
+  const age = now.getTime() - since.getTime();
   if (age > DEPLOY_PATIENCE_MS) {
     return {
       action: "declare-failed",

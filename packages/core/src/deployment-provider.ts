@@ -140,9 +140,24 @@ export interface AppDeploymentInput {
    * services takes the port is only these: no service, and no address.
    */
   processes: readonly ProcessSpec[];
+  /**
+   * What runs once per deploy on the new build, with the new variables,
+   * before it takes traffic - the migration. Null when the repository has none.
+   */
+  release?: ReleaseSpec | null;
 }
 
 /** One worker or scheduled run, as the provider needs it. */
+export interface ReleaseSpec {
+  command: string;
+  /** The slug of the service whose image it runs. */
+  service: string;
+}
+
+/** How a release command went, as far as the provider can tell. */
+export type ReleaseState =
+  { state: "running" } | { state: "succeeded" } | { state: "failed"; reason: string };
+
 export interface ProcessSpec {
   name: string;
   kind: "worker" | "scheduled";
@@ -217,6 +232,8 @@ export interface DeploymentResult {
    * act on. Never a provider console link or anything naming its project.
    */
   reason?: string;
+  /** Set when the build is done and the release command must run first. */
+  release?: "needed";
   /**
    * What went wrong without stopping the deploy, in the same kind of words:
    * the web app went out, and its workers or scheduled runs did not all follow.
@@ -243,7 +260,25 @@ export interface DeploymentProvider {
    * called whenever anyone looks at the app. Implementations must therefore be
    * idempotent and safe to call concurrently.
    */
-  getStatus(deploymentId: string): Promise<DeploymentResult>;
+  getStatus(
+    deploymentId: string,
+    options?: {
+      /**
+       * Whether this deploy's release command has finished, when it has one.
+       * Until it has, a finished build is not rolled out: the provider answers
+       * `release: "needed"` and the caller, which alone can make sure only
+       * one poll does it, starts the release.
+       */
+      releaseDone?: boolean;
+    },
+  ): Promise<DeploymentResult>;
+
+  /**
+   * Start this deploy's release command on its build, with the variables it
+   * will run with. Returns the run's name, to ask `releaseState` about.
+   */
+  startRelease?(deploymentId: string): Promise<string>;
+  releaseState?(deploymentId: string, run: string): Promise<ReleaseState>;
 
   getLogs(deploymentId: string): Promise<DeploymentLogLine[]>;
 

@@ -9,8 +9,10 @@ import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
 import { resolveMissing } from "./confirm.js";
 import { discoverServices, type DiscoveredService, type Discovery } from "./services.js";
+import { NGINX_CONF, NGINX_CONFIG, staticDockerfile, staticSite } from "./static-site.js";
 import {
   readWorkspacePackage,
+  workspaceBuildCommand,
   workspaceAround,
   workspaceDockerfile,
   type WorkspacePackage,
@@ -23,6 +25,7 @@ import {
   checkBundle,
   findEnvNeeds,
   tarGzip,
+  type ArchiveEntry,
   isRootDockerfile,
   isSafeDockerfilePath,
   readDockerfile,
@@ -145,7 +148,25 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // anywhere changes which files a build expects to be sent.
   const found =
     workspace === null || focus === null ? discoverServices(root) : focusOn(focus, here);
-  if (focus !== null && found.services[0]?.dockerfile === GENERATED && !focus.hasStart) {
+  // A site with no server of its own - a Vite or Create React App build, a
+  // folder of HTML - is built and served as files. Only when nothing else
+  // says how it runs: a Dockerfile, or a start script, always wins.
+  const site =
+    focus !== null
+      ? found.services[0]?.dockerfile === GENERATED && !focus.hasStart
+        ? staticSite(here, root)
+        : null
+      : found.services.length <= 1 &&
+          found.services[0]?.dockerfile === null &&
+          readFlag(argv, "--dockerfile") === null
+        ? staticSite(root)
+        : null;
+  if (
+    focus !== null &&
+    found.services[0]?.dockerfile === GENERATED &&
+    !focus.hasStart &&
+    site === null
+  ) {
     fail(
       `${focus.path} has no start script, so there is nothing to run it with. Add one to its package.json.`,
     );
@@ -153,6 +174,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
   }
   const dockerfileNamed = readFlag(argv, "--dockerfile");
   const style =
+    site !== null ||
     dockerfileNamed !== null ||
     existsSync(join(root, "Dockerfile")) ||
     found.services.some((part) => part.dockerfile !== null)
@@ -215,7 +237,16 @@ export async function deploy(argv: string[] = []): Promise<number> {
     return 1;
   }
 
-  if (container !== null) {
+  if (site !== null) {
+    info(
+      dim(
+        site.build === null
+          ? "A static site: its files are served as they are"
+          : `A static site: built, then its ${site.output} folder is served`,
+      ),
+    );
+    if (focus === null) container = { dockerfile: STATIC_DOCKERFILE, port: 8080 };
+  } else if (container !== null) {
     const where =
       container.dockerfile === "Dockerfile" ? "" : ` (${container.dockerfile})`;
     success(
@@ -267,6 +298,10 @@ export async function deploy(argv: string[] = []): Promise<number> {
         : `internal${part.port === null ? "" : `, port ${part.port}`}`;
       success(`  ${part.slug}  ${dim(part.sourcePath)}  ${dim(`${how}, ${role}`)}`);
     }
+  }
+
+  if (declared.release !== null) {
+    info(dim(`Before going live it runs: ${declared.release}`));
   }
 
   if (servesWeb && declared.webMemoryMiB !== null) {
@@ -419,20 +454,33 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // The Dockerfile Cira writes for a workspace package, now that every name a
   // browser will be given is known: what this deploy sends, and what
   // production already has. Each needs its own ARG line to reach the build.
-  const extra = [];
-  if (
+  const extra: ArchiveEntry[] = [];
+  const publicNames = [
+    ...new Set([...Object.keys(collected.env), ...inProduction].filter(isPublicName)),
+  ].sort();
+  const written = (path: string, text: string) =>
+    extra.push({ path, mode: 0o644, body: Buffer.from(text) });
+  if (site !== null) {
+    written(NGINX_CONF, NGINX_CONFIG);
+    const buildCommand =
+      workspace !== null && focus !== null
+        ? workspaceBuildCommand(workspace, focus)
+        : null;
+    written(
+      focus === null ? STATIC_DOCKERFILE : GENERATED,
+      staticDockerfile({
+        site,
+        path: focus?.path ?? "",
+        publicNames,
+        ...(buildCommand === null ? {} : { buildCommand }),
+      }),
+    );
+  } else if (
     workspace !== null &&
     focus !== null &&
     found.services[0]?.dockerfile === GENERATED
   ) {
-    const publicNames = [
-      ...new Set([...Object.keys(collected.env), ...inProduction].filter(isPublicName)),
-    ].sort();
-    extra.push({
-      path: GENERATED,
-      mode: 0o644,
-      body: Buffer.from(workspaceDockerfile({ workspace, pkg: focus, publicNames })),
-    });
+    written(GENERATED, workspaceDockerfile({ workspace, pkg: focus, publicNames }));
   }
   const archive = tarGzip([...entries, ...extra]);
 
@@ -465,6 +513,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         ...(services === null ? {} : { services }),
         web: servesWeb,
         webMemoryMiB: servesWeb ? declared.webMemoryMiB : null,
+        release: declared.release,
         processes: declared.processes,
         env: collected.env,
         unset: collected.unset,
@@ -498,7 +547,9 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // As long as Cira itself waits before calling a deploy abandoned: a build
   // may take twenty minutes, and a CLI that gave up at ten failed CI jobs
   // whose deploys went on to succeed.
-  const deadline = Date.now() + 35 * 60 * 1000;
+  // A release command - a migration - gets the same patience again after
+  // the build, as Cira gives it.
+  const deadline = Date.now() + 70 * 60 * 1000;
   let last = "";
 
   while (Date.now() < deadline) {
@@ -572,13 +623,24 @@ export async function deploy(argv: string[] = []): Promise<number> {
           ? "The deploy did not finish. Open the app in Cira to see why."
           : `The deploy did not finish: ${status.reason}`,
       );
+      // The end of the build's own output, where the error is, rather than
+      // only a link to a page that shows it.
+      const tail = await api<{ lines: string[] }>(
+        `/api/cli/deploy/logs?id=${encodeURIComponent(started.deploymentId)}`,
+      ).catch(() => ({ lines: [] as string[] }));
+      if (status.status === "failed" && tail.lines.length > 0) {
+        info("");
+        info(dim("  The end of the build log:"));
+        for (const line of tail.lines) info(dim(`    ${line}`));
+      }
+      info("");
       info(dim(`  ${config.apiUrl}/${started.spaceSlug}/${started.appSlug}`));
       return 1;
     }
   }
 
   fail(
-    "Still not finished after 35 minutes, so Cira will treat it as stopped. Open the app in Cira to see its build.",
+    "Still not finished after 70 minutes, so Cira will treat it as stopped. Open the app in Cira to see its build.",
   );
   return 1;
 }
@@ -660,6 +722,8 @@ function readContainer(
 
 /** Where the Dockerfile Cira writes for a workspace package sits in the upload. */
 const GENERATED = ".cira/workspace.Dockerfile";
+/** And the one for a site it serves as files. */
+const STATIC_DOCKERFILE = ".cira/static.Dockerfile";
 
 /**
  * One package of a workspace, as the only part of the app: its own Dockerfile

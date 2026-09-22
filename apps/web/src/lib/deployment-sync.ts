@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, lt, ne, notInArray, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
 import { apps, db, deployments } from "@cira/db";
 import type { Deployment, DeploymentStatus } from "@cira/core";
 import { TERMINAL_STATUSES, deploymentProvider, isTerminal } from "@cira/deploy";
@@ -39,11 +39,15 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
 
   let live;
   try {
-    live = await deploymentProvider().getStatus(deployment.providerDeploymentId);
+    live = await deploymentProvider().getStatus(deployment.providerDeploymentId, {
+      releaseDone: deployment.releaseDoneAt !== null,
+    });
   } catch {
     // The provider being briefly unreachable is not news about the deploy.
     return deployment;
   }
+
+  if (live.release === "needed") return driveRelease(deployment);
 
   if (live.status === deployment.status && live.url === deployment.url) {
     return deployment;
@@ -55,6 +59,87 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
     ...(live.reason === undefined ? {} : { reason: live.reason }),
     ...(live.warning === undefined ? {} : { warning: live.warning }),
   });
+}
+
+/** How long a claim to start a release stands before another poll may retry. */
+const RELEASE_CLAIM_MS = 3 * 60_000;
+
+/**
+ * Run the release command - the migration - exactly once, then report on it.
+ *
+ * Several things poll a deploy at once, and the release must not run twice,
+ * so starting it is claimed first by a conditional write on the deploy's own
+ * row. Only the poll whose write lands starts it; a claim that never got as
+ * far as naming its run is given up after a few minutes. A failed release
+ * fails the deploy with nothing rolled out: the previous version is still
+ * what serves, on the schema it expects.
+ */
+async function driveRelease(deployment: Deployment): Promise<Deployment> {
+  const database = db();
+  const provider = deploymentProvider();
+  const now = new Date();
+
+  if (deployment.releaseRun === null) {
+    const claimed = await database
+      .update(deployments)
+      .set({ releaseStartedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(deployments.id, deployment.id),
+          isNull(deployments.releaseRun),
+          or(
+            isNull(deployments.releaseStartedAt),
+            lt(deployments.releaseStartedAt, new Date(now.getTime() - RELEASE_CLAIM_MS)),
+          ),
+        ),
+      )
+      .returning({ id: deployments.id });
+    if (claimed.length === 0 || provider.startRelease === undefined) return deployment;
+
+    let run: string;
+    try {
+      run = await provider.startRelease(deployment.providerDeploymentId);
+    } catch {
+      // Let the next poll try, rather than waiting out the claim.
+      await database
+        .update(deployments)
+        .set({ releaseStartedAt: null })
+        .where(eq(deployments.id, deployment.id));
+      return deployment;
+    }
+    await database
+      .update(deployments)
+      .set({ releaseRun: run })
+      .where(eq(deployments.id, deployment.id));
+    return { ...deployment, releaseStartedAt: now, releaseRun: run };
+  }
+
+  if (provider.releaseState === undefined) return deployment;
+  let state;
+  try {
+    state = await provider.releaseState(
+      deployment.providerDeploymentId,
+      deployment.releaseRun,
+    );
+  } catch {
+    return deployment;
+  }
+
+  if (state.state === "running") return deployment;
+  if (state.state === "failed") {
+    return recordDeploymentStatus(deployment, {
+      status: "failed",
+      url: deployment.url,
+      reason: `${state.reason} Nothing from this deploy was put live; the previous version is still serving.`,
+    });
+  }
+
+  await database
+    .update(deployments)
+    .set({ releaseDoneAt: now, updatedAt: now })
+    .where(eq(deployments.id, deployment.id));
+  // Straight on to the rollout, rather than a poll later.
+  return reconcileDeployment({ ...deployment, releaseDoneAt: now });
 }
 
 /**

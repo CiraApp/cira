@@ -27,6 +27,8 @@ export interface FoundProcesses {
   processes: FoundProcess[];
   /** Memory the repository gives its web process, in MiB. Null when it does not say. */
   webMemoryMiB: number | null;
+  /** What runs once per deploy before it goes live. Null when nothing does. */
+  release: string | null;
 }
 
 interface Part {
@@ -105,6 +107,7 @@ export function discoverProcesses(root: string, parts: readonly Part[]): FoundPr
       web: f.web,
       processes: f.processes.map((p) => ({ ...p, service: f.service! }) as FoundProcess),
       webMemoryMiB: f.webMemoryMiB ?? null,
+      release: f.release ?? null,
     })),
   );
 
@@ -128,7 +131,7 @@ export function discoverProcesses(root: string, parts: readonly Part[]): FoundPr
     [...sizes.values()].map((byName) => byName.get("web")).find((m) => m !== undefined) ??
     null;
 
-  return { web: merged.web, processes, webMemoryMiB };
+  return { web: merged.web, processes, webMemoryMiB, release: merged.release ?? null };
 }
 
 function read(path: string): string | null {

@@ -175,6 +175,12 @@ export interface Deployment {
    * would not create or take down, workers left on the previous build.
    */
   warning: string | null;
+  /** When a poll claimed the release command's start. Null: not claimed. */
+  releaseStartedAt: Date | null;
+  /** The release run started for this deploy, to ask about. */
+  releaseRun: string | null;
+  /** When the release command succeeded, which is what lets it roll out. */
+  releaseDoneAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

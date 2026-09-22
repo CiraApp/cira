@@ -52,11 +52,17 @@ export interface ProcessDeclarations {
   processes: DeclaredProcess[];
   /** Memory the file gives the web process, in MiB, when it says. */
   webMemoryMiB?: number | null;
+  /**
+   * What runs once per deploy, before the new version takes traffic: a
+   * Procfile's `release:` line or fly.toml's `release_command`, which is
+   * almost always the database migration.
+   */
+  release?: string | null;
 }
 
 /**
  * Procfile names that are not processes of their own: `web` is the app, and
- * `release` runs once per deploy, which Cira does not do yet.
+ * `release` runs once per deploy, before the new version takes traffic.
  */
 const NOT_A_PROCESS = new Set(["web", "release"]);
 
@@ -67,6 +73,7 @@ const NOT_A_PROCESS = new Set(["web", "release"]);
 export function readProcfile(text: string): ProcessDeclarations {
   const processes: DeclaredProcess[] = [];
   let web = false;
+  let release: string | null = null;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
@@ -74,6 +81,7 @@ export function readProcfile(text: string): ProcessDeclarations {
     if (match === null) continue;
     const [, name, command] = match as unknown as [string, string, string];
     if (name === "web") web = true;
+    if (name === "release") release = command.trim();
     if (NOT_A_PROCESS.has(name)) continue;
     processes.push({
       name: processName(name),
@@ -84,7 +92,7 @@ export function readProcfile(text: string): ProcessDeclarations {
       memoryMiB: null,
     });
   }
-  return { web, processes };
+  return { web, processes, release };
 }
 
 /**
@@ -109,6 +117,7 @@ export function readFlyToml(text: string): ProcessDeclarations & {
   }
   const commands = tables.get("processes") ?? new Map<string, TomlValue>();
   const dockerfile = asString(tables.get("build")?.get("dockerfile"));
+  const release = asString(tables.get("deploy")?.get("release_command"));
 
   const serving = new Set<string>();
   for (const [table, values] of entries) {
@@ -135,6 +144,7 @@ export function readFlyToml(text: string): ProcessDeclarations & {
       processes: [],
       dockerfile,
       webMemoryMiB: flyMemory(general?.[1]),
+      release,
     };
   }
   const webGroup = [...serving][0];
@@ -157,6 +167,7 @@ export function readFlyToml(text: string): ProcessDeclarations & {
     processes,
     dockerfile,
     webMemoryMiB: webGroup === undefined ? null : memoryOf(webGroup),
+    release,
   };
 }
 
@@ -358,14 +369,16 @@ export function mergeDeclarations(
   const byName = new Map<string, DeclaredProcess>();
   let web: boolean | null = null;
   let webMemoryMiB: number | null = null;
+  let release: string | null = null;
   for (const declaration of found) {
     if (declaration.web !== null) web = web === true ? true : declaration.web;
     webMemoryMiB ??= declaration.webMemoryMiB ?? null;
+    release ??= declaration.release ?? null;
     for (const process of declaration.processes) {
       if (!byName.has(process.name)) byName.set(process.name, process);
     }
   }
-  return { web, processes: [...byName.values()], webMemoryMiB };
+  return { web, processes: [...byName.values()], webMemoryMiB, release };
 }
 
 type TomlValue = string | string[] | number | boolean;

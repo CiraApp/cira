@@ -3,6 +3,8 @@ import {
   type ProcessRun,
   type ProcessSpec,
   type ProcessState,
+  type ReleaseSpec,
+  type ReleaseState,
 } from "@cira/core";
 import type { GoogleTokens } from "./auth.js";
 import type { CloudRunConfig } from "./config.js";
@@ -74,6 +76,16 @@ const OUT_OF_MEMORY_RUN = /memory limit was reached/i;
 const APP_LABEL = "cira-app";
 /** The build a resource was last moved onto, as the web service records it. */
 const BUILD_LABEL = "cira-build";
+/**
+ * Marks the job that runs an app's release command. It is not one of the
+ * app's processes: nothing switches it on, nothing moves it at the swap, and
+ * it runs only when a deploy asks it to.
+ */
+const ROLE_LABEL = "cira-role";
+const RELEASE = "release";
+
+/** How long one release may run: a large migration, and no longer. */
+const RELEASE_TIMEOUT_SECONDS = 30 * 60;
 
 /**
  * Carried on each resource because the image swap at the end of a deploy has
@@ -201,8 +213,11 @@ export class CloudRunProcesses {
     holdEnv: boolean;
     /** Per service slug: how its image is built, and its part of the image name. */
     parts: ReadonlyMap<string, { builder: Builder; imagePart: string }>;
+    /** The release command, or null to take any previous one away. */
+    release?: ReleaseSpec | null;
   }): Promise<void> {
     const env = envList(args.env);
+    await this.writeRelease(args, env);
 
     const existingJobs = await this.jobsOf(args.service);
     const existingPools = await this.poolsOf(args.service);
@@ -496,6 +511,7 @@ export class CloudRunProcesses {
 
   /** Everything this app runs besides its web service, gone. */
   async removeAll(service: string): Promise<void> {
+    await this.remove(this.jobUrl(processResourceName(service, RELEASE)));
     for (const job of await this.jobsOf(service)) {
       const name = leaf(job.name);
       await this.remove(this.schedulerUrl(name));
@@ -527,6 +543,149 @@ export class CloudRunProcesses {
   /** Whether the app has any processes at all, for an app with no service. */
   async any(service: string): Promise<boolean> {
     return (await this.jobsOf(service)).length + (await this.poolsOf(service)).length > 0;
+  }
+
+  // -- the release command ----------------------------------------------------
+
+  /**
+   * Write the job that runs the release command, or take it away when the
+   * repository no longer has one. Like a new process it starts on Google's
+   * placeholder and moves onto the build when the release is started.
+   */
+  private async writeRelease(
+    args: {
+      service: string;
+      holdEnv: boolean;
+      parts: ReadonlyMap<string, { builder: Builder; imagePart: string }>;
+      release?: ReleaseSpec | null;
+    },
+    env: Array<{ name: string; value: string }>,
+  ): Promise<void> {
+    const name = processResourceName(args.service, RELEASE);
+    const release = args.release ?? null;
+    if (release === null) {
+      await this.remove(this.jobUrl(name));
+      return;
+    }
+    const part = args.parts.get(release.service) ?? {
+      builder: "buildpacks" as const,
+      imagePart: "",
+    };
+    const existing = await this.read<JobResource>(this.jobUrl(name));
+    const current = existing?.template?.template?.containers?.[0];
+    await this.write(`${this.jobUrl(name)}?allowMissing=true`, "PATCH", {
+      labels: { "managed-by": "cira", [APP_LABEL]: args.service, [ROLE_LABEL]: RELEASE },
+      annotations: {
+        [COMMAND]: release.command,
+        [PART]: part.imagePart,
+        [BUILDER]: part.builder,
+      },
+      template: {
+        labels: existing?.template?.labels ?? {},
+        taskCount: 1,
+        template: {
+          containers: [
+            {
+              image: current?.image ?? PLACEHOLDER.job,
+              ...(current?.command !== undefined
+                ? { command: current.command, args: current.args ?? [] }
+                : {}),
+              env: args.holdEnv && current !== undefined ? (current.env ?? []) : env,
+              resources: resources(DEFAULT_LIMITS.processes.defaultMemoryMiB),
+            },
+          ],
+          timeout: `${RELEASE_TIMEOUT_SECONDS}s`,
+          // A migration that fails is not tried again unasked: a half-applied
+          // one run twice is how a database ends up somewhere nobody meant.
+          maxRetries: 0,
+        },
+      },
+    });
+  }
+
+  /** Whether this app has a release command to run before a deploy goes out. */
+  async hasRelease(service: string): Promise<boolean> {
+    return (
+      (await this.read<JobResource>(
+        this.jobUrl(processResourceName(service, RELEASE)),
+      )) !== null
+    );
+  }
+
+  /**
+   * Move the release job onto the build and start it, with the variables the
+   * new version will run with. Returns the run's name.
+   */
+  async startRelease(args: {
+    service: string;
+    tag: string;
+    buildId: string;
+    env?: Readonly<Record<string, string>>;
+  }): Promise<string> {
+    const name = processResourceName(args.service, RELEASE);
+    const job = await this.read<JobResource>(this.jobUrl(name));
+    if (job === null)
+      throw new ProcessError("This app has no release command.", "missing", 404);
+    const container = job.template?.template?.containers?.[0] ?? {};
+    await this.write(this.jobUrl(name), "PATCH", {
+      labels: job.labels,
+      annotations: job.annotations,
+      template: {
+        labels: { ...job.template?.labels, [BUILD_LABEL]: args.buildId },
+        taskCount: 1,
+        template: {
+          timeout: job.template?.template?.timeout,
+          maxRetries: 0,
+          containers: [this.onBuild(container, job.annotations, args)],
+        },
+      },
+    });
+    // The run must use what was just written, so it waits for Google to have
+    // applied it: an update is an operation, and a run started while it is
+    // still in progress would run the previous build's code.
+    for (let wait = 0; wait < 30; wait += 1) {
+      const now = await this.read<JobResource & { reconciling?: boolean }>(
+        this.jobUrl(name),
+      );
+      if (now?.reconciling !== true) break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    const started = await this.write<{ metadata?: { name?: string } }>(
+      `${this.jobUrl(name)}:run`,
+      "POST",
+      {},
+    );
+    const run = leaf(started.metadata?.name);
+    if (run === "")
+      throw new ProcessError(
+        "Google started the release but did not name it.",
+        "failed",
+        502,
+      );
+    return run;
+  }
+
+  /** How one release run is going. */
+  async releaseState(service: string, run: string): Promise<ReleaseState> {
+    const name = processResourceName(service, RELEASE);
+    const execution = await this.read<Execution>(
+      `${this.jobUrl(name)}/executions/${run}`,
+    );
+    if (execution === null) {
+      return { state: "failed", reason: "The release run could not be found." };
+    }
+    if (execution.completionTime === undefined) return { state: "running" };
+    if ((execution.failedCount ?? 0) > 0 || (execution.cancelledCount ?? 0) > 0) {
+      const said = (execution.conditions ?? []).map((c) => c.message ?? "").join(" ");
+      const code = /exit code of (\d+)/i.exec(said)?.[1];
+      return {
+        state: "failed",
+        reason: OUT_OF_MEMORY_RUN.test(said)
+          ? "The release command ran out of memory."
+          : `The release command failed${code === undefined ? "" : ` (exit code ${code})`}. Its output is in the app's logs.`,
+      };
+    }
+    return { state: "succeeded" };
   }
 
   // -- timetables --------------------------------------------------------------
@@ -653,7 +812,9 @@ export class CloudRunProcesses {
       `${RUN_API}/projects/${projectId}/locations/${region}/jobs`,
       "jobs",
     );
-    return all.filter((j) => j.labels?.[APP_LABEL] === service);
+    return all.filter(
+      (j) => j.labels?.[APP_LABEL] === service && j.labels?.[ROLE_LABEL] !== RELEASE,
+    );
   }
 
   private async poolsOf(service: string): Promise<PoolResource[]> {

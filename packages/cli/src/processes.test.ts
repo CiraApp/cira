@@ -129,7 +129,12 @@ describe("discoverProcesses", () => {
         scripts: { start: "next start" },
       }),
     });
-    expect(found).toEqual({ web: null, processes: [], webMemoryMiB: null });
+    expect(found).toEqual({
+      web: null,
+      processes: [],
+      webMemoryMiB: null,
+      release: null,
+    });
   });
 
   it("gives the web process the size an app.json formation says", () => {

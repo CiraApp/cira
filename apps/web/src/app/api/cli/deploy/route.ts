@@ -75,6 +75,8 @@ const body = z.object({
   unset: z.array(z.string().regex(ENV_NAME)).max(MAX_VARS).default([]),
   /** Whether the repository has a web process. Absent from an older CLI: yes. */
   web: z.boolean().default(true),
+  /** The command to run once per deploy before going live. Absent from an older CLI: none. */
+  release: z.string().trim().min(1).max(1000).nullable().default(null),
   /** MiB the repository gives its web process. Absent from an older CLI: none. */
   webMemoryMiB: z.number().int().positive().max(1_048_576).nullable().default(null),
   /** Workers and scheduled runs found in the repository. */
@@ -124,6 +126,7 @@ export async function POST(request: Request) {
     env: { set: parsed.data.env ?? {}, unset: parsed.data.unset },
     web: parsed.data.web,
     webMemoryMiB: settleAppMemory(parsed.data.webMemoryMiB).memoryMiB,
+    release: parsed.data.release,
     // A timetable is taken only if Cira can run it; one it cannot is dropped
     // for a person to set, rather than refusing the whole deploy.
     // Memory is rounded to a size Cira offers, so what is recorded is what

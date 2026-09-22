@@ -459,6 +459,13 @@ export const deployments = pgTable(
     failureReason: text("failure_reason"),
     /** What went wrong without stopping it, in the same kind of words. */
     warning: text("warning"),
+    /**
+     * The release command's run. Claimed by exactly one poll with a
+     * conditional write, so a migration never runs twice for one deploy.
+     */
+    releaseStartedAt: timestamp("release_started_at", { withTimezone: true }),
+    releaseRun: text("release_run"),
+    releaseDoneAt: timestamp("release_done_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

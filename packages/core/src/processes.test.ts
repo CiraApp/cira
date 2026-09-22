@@ -53,6 +53,7 @@ describe("readFlyToml", () => {
       dockerfile: "../apps/api/Dockerfile",
       // Its [[vm]] is only the worker's, so the API's size is not said.
       webMemoryMiB: null,
+      release: "alembic -c alembic.ini upgrade head",
       processes: [
         {
           name: "worker",
@@ -116,6 +117,8 @@ describe("readProcfile", () => {
           memoryMiB: null,
         },
       ],
+      // Not a process: it runs once per deploy, before going live.
+      release: "python manage.py migrate",
     });
   });
 

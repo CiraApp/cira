@@ -238,6 +238,16 @@ turbo when there is a `turbo.json`), and starts it with its `start` script
 (`packages/cli/src/workspace.ts`). From the root, a workspace with several
 apps prints the `cd <app> && cira deploy` for each.
 
+**The release command.** A Procfile `release:` line, or fly.toml's
+`[deploy] release_command`, runs once per deploy on the new build with the new
+variables, before anything takes traffic - which is where a migration belongs.
+It is a Cloud Run job of its own. When the build finishes, the provider holds
+the rollout and says a release is needed; `lib/deployment-sync.ts` claims its
+start with a conditional write on the deploy's row, so however many polls
+arrive (the CLI, the app page, the watcher) it runs once, and rolls out only
+when it succeeds. A failed release fails the deploy with nothing changed: the
+previous version keeps serving, on the schema it expects.
+
 **The build and the rollout.** `POST /api/cli/deploy` checks membership,
 creates the app or - for a redeploy - checks the deployer may manage it (its
 owner, an admin, or someone given "Can manage" in its Access panel), records

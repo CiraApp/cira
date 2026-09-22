@@ -68,8 +68,12 @@ function serve(rules: Array<[RegExp, (method: string) => unknown | Response]>): 
       body: typeof raw === "string" ? JSON.parse(raw) : undefined,
     });
 
+    // An app has no release command unless a test gives it one: the rules
+    // below answer Cloud Run broadly, and would otherwise answer for its job.
+    const releaseJob = /\/jobs\/release-[^/:]+$/.test(new URL(url).pathname);
     for (const [pattern, answer] of rules) {
       if (!pattern.test(url)) continue;
+      if (releaseJob && !pattern.source.includes("release")) continue;
       const result = answer(method);
       return Promise.resolve(
         result instanceof Response
@@ -843,6 +847,8 @@ describe("remove", () => {
 
     const deleted = calls.filter((c) => c.method === "DELETE");
     expect(deleted.map((c) => c.url)).toEqual([
+      // Its release command's job, which nothing else would ever run again.
+      expect.stringContaining("/jobs/release-0000app1"),
       expect.stringContaining(`/services/${SERVICE}`),
     ]);
   });

@@ -23,6 +23,13 @@ const hasDatabase = TEST_DATABASE_URL !== undefined && TEST_DATABASE_URL !== "";
 let database: Awaited<ReturnType<typeof migratedTestDatabase>>;
 /** What the provider was asked to deploy, most recent last. */
 const told: Array<{ processes: unknown[]; env?: EnvChange }> = [];
+/** How the provider's release command behaves, for the tests that have one. */
+const release = {
+  needed: false,
+  started: 0,
+  state: { state: "running" } as
+    { state: "running" } | { state: "succeeded" } | { state: "failed"; reason: string },
+};
 /** Which deploys the provider was asked about, which is also what rolls them out. */
 const asked: string[] = [];
 /** Flipped by a test that wants the provider to refuse. */
@@ -46,10 +53,25 @@ vi.mock("@cira/deploy", async (importOriginal) => {
       find: () => Promise.resolve({ size: 1024, object: "source.tgz" }),
     }),
     deploymentProvider: () => ({
-      getStatus: (id: string) => {
+      getStatus: (id: string, options?: { releaseDone?: boolean }) => {
         asked.push(id);
+        if (release.needed && options?.releaseDone !== true) {
+          return Promise.resolve({
+            providerDeploymentId: id,
+            status: "deploying",
+            url: null,
+            release: "needed",
+          });
+        }
         return Promise.resolve({ providerDeploymentId: id, status: "live", url: null });
       },
+      startRelease: async () => {
+        release.started += 1;
+        // Slow enough for a second poll to arrive while the first is here.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return `run-${release.started}`;
+      },
+      releaseState: () => Promise.resolve(release.state),
       deploy: (input: { processes: unknown[]; env?: EnvChange }) => {
         told.push(input);
         return providerFails
@@ -413,6 +435,82 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       const now = await reconcileDeployment(row as never);
       expect(now.status).toBe("live");
       expect(asked).toEqual(["prov_1"]);
+    });
+
+    /**
+     * The release command is a migration. Several things poll a deploy at
+     * once - the CLI, the app's page, the watcher - and it must run once.
+     */
+    describe("with a release command", () => {
+      const fresh = async (name: string) => {
+        const outcome = await deploy(name);
+        if (!outcome.ok) throw new Error(outcome.error);
+        const { deployments } = await import("@cira/db");
+        const { eq } = await import("drizzle-orm");
+        const [row] = await database
+          .select()
+          .from(deployments)
+          .where(eq(deployments.id, outcome.deploymentId));
+        return row!;
+      };
+
+      it("starts it once however many polls arrive, and goes live when it succeeds", async () => {
+        const { reconcileDeployment } = await import("./deployment-sync");
+        const { deployments } = await import("@cira/db");
+        const { eq } = await import("drizzle-orm");
+        Object.assign(release, { needed: true, started: 0, state: { state: "running" } });
+        try {
+          const row = await fresh("Migrates");
+          const polls = await Promise.all([
+            reconcileDeployment(row as never),
+            reconcileDeployment(row as never),
+            reconcileDeployment(row as never),
+          ]);
+          expect(release.started).toBe(1);
+          expect(polls.every((p) => p.status !== "live")).toBe(true);
+
+          const read = async () =>
+            (
+              await database.select().from(deployments).where(eq(deployments.id, row.id))
+            )[0]!;
+          expect((await read()).releaseRun).toBe("run-1");
+          // Still running: nothing rolls out, nothing starts again.
+          await reconcileDeployment((await read()) as never);
+          expect(release.started).toBe(1);
+
+          release.state = { state: "succeeded" };
+          const done = await reconcileDeployment((await read()) as never);
+          expect(done.status).toBe("live");
+          expect((await read()).releaseDoneAt).not.toBeNull();
+          expect(release.started).toBe(1);
+        } finally {
+          release.needed = false;
+        }
+      });
+
+      it("fails the deploy with nothing rolled out when it fails", async () => {
+        const { reconcileDeployment } = await import("./deployment-sync");
+        const { deployments } = await import("@cira/db");
+        const { eq } = await import("drizzle-orm");
+        Object.assign(release, {
+          needed: true,
+          started: 0,
+          state: { state: "failed", reason: "The release command failed (exit code 1)." },
+        });
+        try {
+          const row = await fresh("Bad Migration");
+          await reconcileDeployment(row as never);
+          const [claimed] = await database
+            .select()
+            .from(deployments)
+            .where(eq(deployments.id, row.id));
+          const failed = await reconcileDeployment(claimed as never);
+          expect(failed.status).toBe("failed");
+          expect(failed.failureReason).toContain("the previous version is still serving");
+        } finally {
+          release.needed = false;
+        }
+      });
     });
 
     it("catches an older deploy still in flight even if it was never marked", async () => {

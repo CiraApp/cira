@@ -9,6 +9,7 @@ import {
   type DeploymentResult,
   type ProcessSpec,
   type ProcessState,
+  type ReleaseState,
   type RuntimeLogPage,
   type RuntimeLogQuery,
 } from "@cira/core";
@@ -258,6 +259,7 @@ export class CloudRunProvider implements DeploymentProvider {
     const writeProcesses = this.processes.deploy({
       service,
       processes: app.processes,
+      release: app.release ?? null,
       env,
       holdEnv: current !== null,
       parts: new Map(
@@ -339,7 +341,10 @@ export class CloudRunProvider implements DeploymentProvider {
    * Where the deploy has got to - and, once the image exists, the act that
    * puts it into service.
    */
-  async getStatus(deploymentId: string): Promise<DeploymentResult> {
+  async getStatus(
+    deploymentId: string,
+    options: { releaseDone?: boolean } = {},
+  ): Promise<DeploymentResult> {
     const { buildId, service, tag, web } = parseHandle(deploymentId);
     const build = await this.getBuild(buildId);
 
@@ -352,6 +357,18 @@ export class CloudRunProvider implements DeploymentProvider {
         ...(status === "failed"
           ? { reason: explainBuildFailure(build.status, build.statusDetail) }
           : {}),
+      };
+    }
+
+    // The release command - the migration - runs on the new build before any
+    // of it takes traffic. Starting it is the caller's, which alone can make
+    // sure one poll does; until it says the release is done, nothing moves.
+    if (options.releaseDone !== true && (await this.processes.hasRelease(service))) {
+      return {
+        providerDeploymentId: deploymentId,
+        status: "deploying",
+        url: null,
+        release: "needed",
       };
     }
 
@@ -689,6 +706,26 @@ export class CloudRunProvider implements DeploymentProvider {
         },
       }),
     });
+  }
+
+  /**
+   * Start this deploy's release command on its build. A web app's next
+   * variables are the ones its service is holding for this build; an app of
+   * only processes had them written to the release job when it deployed.
+   */
+  async startRelease(deploymentId: string): Promise<string> {
+    const { buildId, service, tag, web } = parseHandle(deploymentId);
+    const held = web ? await this.getService(service) : null;
+    return this.processes.startRelease({
+      service,
+      tag,
+      buildId,
+      ...(held === null ? {} : { env: envOf(held) }),
+    });
+  }
+
+  async releaseState(deploymentId: string, run: string): Promise<ReleaseState> {
+    return this.processes.releaseState(parseHandle(deploymentId).service, run);
   }
 
   /**
