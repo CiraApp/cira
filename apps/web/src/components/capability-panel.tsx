@@ -229,8 +229,11 @@ function Row({ capability, canManage }: { capability: Capability; canManage: boo
           <span className="font-mono text-[12.5px] font-medium text-ink">
             {capability.name}
           </span>
-          <span className="eyebrow">
-            {capability.target.method} {capability.target.path}
+          {/* Not an eyebrow: paths are case-sensitive, and uppercasing one
+              showed a route the app does not serve. */}
+          <span className="font-mono text-[11px] break-all text-ink-subtle">
+            <span className="font-semibold">{capability.target.method}</span>{" "}
+            {capability.target.path}
           </span>
         </span>
         <span className="mt-0.5 block text-[12px] text-ink-muted">
