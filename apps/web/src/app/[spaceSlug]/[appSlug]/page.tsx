@@ -121,6 +121,14 @@ export default async function AppPage({
       capabilities.length,
     );
     const consolePath = consoleHref({ spaceSlug, appSlug });
+    // Said only of a build that is running; one that failed or never shipped
+    // already says why nothing answers.
+    const outageSince =
+      resolved.state === "live" ||
+      resolved.state === "no-ui" ||
+      resolved.state === "unreachable"
+        ? downSince
+        : null;
 
     return (
       <AppShell
@@ -251,7 +259,7 @@ export default async function AppPage({
                   ) : null}
                 </p>
               )}
-              {downSince === null || resolved.state !== "live" ? null : (
+              {outageSince === null ? null : (
                 <p className="mt-3.5 flex items-baseline gap-2 text-[12.5px] text-ink-muted">
                   <span
                     aria-hidden="true"
@@ -259,7 +267,7 @@ export default async function AppPage({
                   />
                   <span>
                     <span className="text-failed">Not answering</span> since{" "}
-                    <LocalTime at={downSince} />: Cira&rsquo;s checks get a server error
+                    <LocalTime at={outageSince} />: Cira&rsquo;s checks get a server error
                     or no reply.
                     {manages ? (
                       <>
