@@ -25,7 +25,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cira",
+  // Every page names itself; this is what follows, and the title of a page
+  // that says nothing.
+  title: { default: "Cira", template: "%s · Cira" },
   description: "Your company's software, in one place.",
 };
 

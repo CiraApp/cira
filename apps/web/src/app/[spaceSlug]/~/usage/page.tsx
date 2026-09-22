@@ -14,6 +14,15 @@ import { ConfirmingPayment } from "@/components/confirming-payment";
 import { noticeFor } from "@/lib/billing-rules";
 import { planSummary } from "@/lib/plan";
 import { monthSoFar, spaceUsage } from "@/lib/usage";
+import { spaceTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string }>;
+}) {
+  return spaceTitle((await params).spaceSlug, "Usage");
+}
 
 /**
  * What this company used this month, and what running it cost.

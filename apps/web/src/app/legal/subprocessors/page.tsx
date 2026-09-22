@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { SiteFrame } from "@/components/site/site-frame";
 
 export const metadata: Metadata = {
-  title: "Subprocessors · Cira",
+  title: "Subprocessors",
   description: "The companies Cira relies on, and what each one holds.",
 };
 

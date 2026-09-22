@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { SiteFrame, Section } from "@/components/site/site-frame";
 
 export const metadata: Metadata = {
-  title: "Security · Cira",
+  title: "Security",
   description: "How Cira handles access, secrets and the software it runs.",
 };
 

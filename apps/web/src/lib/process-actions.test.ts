@@ -212,6 +212,30 @@ describe.skipIf(!hasDatabase)("process actions", () => {
     expect((await stored(names[workersPerSpace]!))?.enabled).toBe(false);
   });
 
+  // Two people switching on at the same moment used to both see room.
+  it("holds the limit when several are switched on at once", async () => {
+    const { switchProcess } = await import("./process-actions");
+    // On a trial: one worker.
+    const all = await Promise.all(
+      ["worker-a", "worker-b", "worker-c"].map((name) =>
+        switchProcess("p", "sync", name, true),
+      ),
+    );
+    expect(all.filter((r) => r.ok)).toHaveLength(1);
+    const on = await Promise.all(
+      ["worker-a", "worker-b", "worker-c"].map(async (n) => (await stored(n))?.enabled),
+    );
+    expect(on.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("switches nothing on in Cira's records when Google refuses to start it", async () => {
+    const { switchProcess } = await import("./process-actions");
+    googleRefuses = true;
+    const result = await switchProcess("p", "sync", "worker-a", true);
+    expect(result.ok).toBe(false);
+    expect((await stored("worker-a"))?.enabled).toBe(false);
+  });
+
   it("gives a process more memory, and keeps it past the next deploy", async () => {
     const { setProcessMemory } = await import("./process-actions");
     expect(await setProcessMemory("p", "sync", "worker-a", 2048)).toEqual({ ok: true });

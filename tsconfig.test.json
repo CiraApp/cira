@@ -1,0 +1,16 @@
+{
+  // The packages' tests, typechecked. Each package's own tsconfig leaves its
+  // tests out so they are not built into dist, which meant nothing checked
+  // them at all: a test could go on passing stale input to a function whose
+  // type had moved on. This checks them with the code they test, emitting
+  // nothing. apps/web's tests are already in its own typecheck.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["packages/*/src/**/*.ts"]
+}

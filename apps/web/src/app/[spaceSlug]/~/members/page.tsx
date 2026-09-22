@@ -10,6 +10,15 @@ import { PendingInvites } from "@/components/pending-invites";
 import { TeamsPanel } from "@/components/teams-panel";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
 import { emailConfigured } from "@/lib/email";
+import { spaceTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string }>;
+}) {
+  return spaceTitle((await params).spaceSlug, "Members");
+}
 
 /**
  * Who is here, and how they are grouped.

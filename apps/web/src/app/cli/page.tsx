@@ -1,6 +1,9 @@
 import { CliApprove } from "@/components/cli-approve";
 import { EntryFrame } from "@/components/entry-frame";
 import { requireCurrentUser } from "@/lib/identity";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Connect the CLI" };
 
 export default async function CliPage({
   searchParams,

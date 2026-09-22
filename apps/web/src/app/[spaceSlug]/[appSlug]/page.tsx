@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
-import { listMySpaces } from "@/lib/authz";
+import { listMySpaces, movedAppFor } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { DEFAULT_LIMITS, describeAppAllowance } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
-import { appSlugMovedTo, deploymentHistory, listServicesForApp } from "@/lib/queries";
+import { deploymentHistory, listServicesForApp } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
@@ -30,6 +30,16 @@ import { appColor } from "@/lib/app-color";
 import { appDoor, consoleHref, resolveAppState } from "@/lib/app-state";
 import { appOpenPath } from "@/lib/app-open";
 import { learnWebUi } from "@/lib/app-web-ui";
+import { appTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string; appSlug: string }>;
+}) {
+  const { spaceSlug, appSlug } = await params;
+  return appTitle(spaceSlug, appSlug);
+}
 
 /**
  * Long because one of this page's actions re-reads an app's whole source and
@@ -366,7 +376,7 @@ export default async function AppPage({
       // it was renamed. A link somebody shared months ago should still arrive
       // where they meant it to, rather than at a 404 that tells them the app
       // is gone when it is sitting there under another name.
-      const moved = await appSlugMovedTo(spaceSlug, appSlug);
+      const moved = await movedAppFor(spaceSlug, appSlug);
       if (moved !== null) redirect(`/${spaceSlug}/${moved}`);
       notFound();
     }

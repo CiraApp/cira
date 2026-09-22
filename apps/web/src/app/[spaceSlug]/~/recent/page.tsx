@@ -9,6 +9,15 @@ import {
   requireSpaceMember,
 } from "@/lib/authz";
 import { recentlyOpened } from "@/lib/queries";
+import { spaceTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string }>;
+}) {
+  return spaceTitle((await params).spaceSlug, "Recent");
+}
 
 export default async function RecentPage({
   params,

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { EntryFrame } from "@/components/entry-frame";
 import { SignOutButton } from "@/components/sign-out-button";
 
-export const metadata: Metadata = { title: "This address is taken · Cira" };
+export const metadata: Metadata = { title: "This address is taken" };
 
 /**
  * Where someone lands when their verified address already belongs to another

@@ -160,6 +160,7 @@ describe("installing across agents", () => {
   it("does not let one agent's failure touch the others", async () => {
     everything();
     const broken = {
+      id: "broken",
       name: "Broken",
       detect: () => Promise.resolve(true),
       install: () => Promise.reject(new Error("permission denied")),

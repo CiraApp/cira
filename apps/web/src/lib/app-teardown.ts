@@ -47,7 +47,13 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
   if (resources.length > 0) {
     await database
       .insert(removedApps)
-      .values({ id: app.id, spaceId: app.spaceId, name: app.name, resources })
+      .values({
+        id: app.id,
+        spaceId: app.spaceId,
+        name: app.name,
+        slug: app.slug,
+        resources,
+      })
       .onConflictDoNothing();
   }
 

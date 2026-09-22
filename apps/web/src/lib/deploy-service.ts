@@ -9,12 +9,14 @@ import {
   db,
   deployments,
   memberships,
+  removedApps,
   services,
   spaces,
 } from "@cira/db";
 import {
   DEFAULT_LIMITS,
   NO_ENV_CHANGE,
+  SESSION_SECONDS,
   appMemory,
   checkDeployRate,
   checkNewApp,
@@ -440,7 +442,23 @@ async function freeSlug(spaceId: string, base: string): Promise<string> {
       .from(appSlugHistory)
       .where(and(eq(appSlugHistory.spaceId, spaceId), eq(appSlugHistory.slug, candidate)))
       .limit(1);
-    if (forwarded === undefined) return candidate;
+    if (forwarded !== undefined) continue;
+
+    // Nor an address an app was removed from while a browser session issued
+    // for it could still be valid: the proxy knows the address, not the app,
+    // so for that long the old app's users would open the new one.
+    const [recent] = await database
+      .select({ id: removedApps.id })
+      .from(removedApps)
+      .where(
+        and(
+          eq(removedApps.spaceId, spaceId),
+          eq(removedApps.slug, candidate),
+          gt(removedApps.removedAt, new Date(Date.now() - SESSION_SECONDS * 1000)),
+        ),
+      )
+      .limit(1);
+    if (recent === undefined) return candidate;
   }
 
   return slugWithSuffix(start, newId("app").slice(-6));

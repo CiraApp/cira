@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, count, eq, ne } from "drizzle-orm";
-import { db, processes } from "@cira/db";
+import { and, eq, sql } from "drizzle-orm";
+import { db, processes, spaces } from "@cira/db";
 import {
   DEFAULT_LIMITS,
   checkProcessOn,
@@ -37,27 +37,105 @@ export async function switchProcess(
 ): Promise<ProcessActionResult> {
   if (typeof on !== "boolean")
     return { ok: false, error: "That is not a change Cira knows." };
-  return change(spaceSlug, appSlug, name, async (process, spaceId) => {
-    if (on && process.kind === "scheduled" && process.schedule === null) {
-      return "Give it a timetable first, so it knows when to run.";
+  if (!on) {
+    return change(spaceSlug, appSlug, name, async (process) => ({
+      ...process,
+      enabled: false,
+    }));
+  }
+
+  const found = await locate(spaceSlug, appSlug, name);
+  if ("error" in found) return { ok: false, error: found.error };
+  const { process, spaceId } = found;
+  if (process.kind === "scheduled" && process.schedule === null) {
+    return { ok: false, error: "Give it a timetable first, so it knows when to run." };
+  }
+
+  // Written down first, and only if there is room, in one step that no one
+  // else's can interleave with; then asked of Google, and put back if Google
+  // says no. Counting first and writing after let two people switching on at
+  // the same moment both see room, and asking Google first could leave a
+  // worker running - and billing - that Cira's records said was off.
+  if (!process.enabled) {
+    const plan = await planForSpace(spaceId);
+    const most =
+      process.kind === "worker"
+        ? plan.limits.processes.workersPerSpace
+        : plan.limits.processes.scheduledPerSpace;
+    if (
+      !(await claimRoom({ processId: process.id, spaceId, kind: process.kind, most }))
+    ) {
+      const room = checkProcessOn(process.kind, most, plan.limits);
+      return { ok: false, error: room.ok ? "Try that again." : room.message };
     }
-    if (on && !process.enabled) {
-      const [row] = await db()
-        .select({ n: count() })
-        .from(processes)
-        .where(
-          and(
-            eq(processes.spaceId, spaceId),
-            eq(processes.kind, process.kind),
-            eq(processes.enabled, true),
-            ne(processes.id, process.id),
-          ),
-        );
-      const plan = await planForSpace(spaceId);
-      const room = checkProcessOn(process.kind, row?.n ?? 0, plan.limits);
-      if (!room.ok) return room.message;
+  }
+
+  const [spec] = specsFor([{ ...process, enabled: true }]);
+  try {
+    await deploymentProvider().setProcess(found.handle, spec!);
+  } catch (error) {
+    if (!process.enabled) {
+      await db()
+        .update(processes)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(eq(processes.id, process.id));
     }
-    return { ...process, enabled: on };
+    return { ok: false, error: sentence(error) };
+  }
+
+  revalidatePath(`/${spaceSlug}/${appSlug}`);
+  return { ok: true };
+}
+
+/**
+ * Switch a process on in Cira's records if its space has room for one more
+ * of its kind. Two statements in one transaction: the space's row is locked
+ * first, so the second - which counts and writes - starts only once any other
+ * switch in the same space has finished, and sees what it did.
+ */
+async function claimRoom(args: {
+  processId: string;
+  spaceId: string;
+  kind: "worker" | "scheduled";
+  most: number;
+}): Promise<boolean> {
+  const database = db();
+  const lock = (on: typeof database) =>
+    on
+      .select({ id: spaces.id })
+      .from(spaces)
+      .where(eq(spaces.id, args.spaceId))
+      .for("update");
+  const claim = (on: typeof database) =>
+    on
+      .update(processes)
+      .set({ enabled: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(processes.id, args.processId),
+          eq(processes.enabled, false),
+          sql`(select count(*) from ${processes} as others
+                where others.space_id = ${args.spaceId}
+                  and others.kind = ${args.kind}
+                  and others.enabled) < ${args.most}`,
+        ),
+      )
+      .returning({ id: processes.id });
+
+  const batching = database as unknown as {
+    batch?: (statements: readonly unknown[]) => Promise<unknown[]>;
+  };
+  if (typeof batching.batch === "function") {
+    const results = await batching.batch([lock(database), claim(database)]);
+    return ((results[1] as unknown[] | undefined) ?? []).length === 1;
+  }
+  // An ordinary Postgres connection, as the tests use: a real transaction.
+  const transacting = database as unknown as {
+    transaction: <T>(run: (tx: typeof database) => Promise<T>) => Promise<T>;
+  };
+  return transacting.transaction(async (tx) => {
+    await lock(tx);
+    return (await claim(tx)).length === 1;
   });
 }
 

@@ -136,7 +136,25 @@ describe.skipIf(!hasDatabase)("capability access", () => {
   });
 
   async function context() {
-    const capabilityRows = (await db.select().from(capabilities)) as Capability[];
+    // As Cira reads them: the method and path are one target, and only the
+    // two grades the rest of the code knows.
+    const capabilityRows: Capability[] = (await db.select().from(capabilities)).map(
+      (row) => ({
+        id: row.id,
+        spaceId: row.spaceId,
+        appId: row.appId,
+        name: row.name,
+        description: row.description,
+        inputSchema: row.inputSchema as Record<string, unknown>,
+        outputSchema: (row.outputSchema as Record<string, unknown> | null) ?? null,
+        target: { type: "http", method: row.method, path: row.path },
+        risk: row.risk === "read" ? "read" : "write",
+        enabled: row.enabled,
+        reach: row.reach,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }),
+    );
     const appRows = (await db.select().from(apps)) as App[];
     const memberRows = (await db.select().from(memberships)) as Membership[];
     const grantRows = (await db.select().from(appAccess)) as AppAccess[];

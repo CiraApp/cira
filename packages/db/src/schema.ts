@@ -912,6 +912,12 @@ export const removedApps = pgTable(
       .notNull()
       .references(() => spaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /**
+     * The address it answered on, held for a while after it went: a browser
+     * session for it lasts that long, and a new app on the same address must
+     * not inherit it.
+     */
+    slug: text("slug"),
     resources: jsonb("resources")
       .$type<Array<{ name: string; memoryMiB: number }>>()
       .notNull(),

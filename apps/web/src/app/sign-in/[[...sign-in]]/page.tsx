@@ -1,9 +1,16 @@
 import { SignIn } from "@clerk/nextjs";
+import type { Metadata } from "next";
+import { AUTH_APPEARANCE, AuthFrame } from "@/components/auth-frame";
+
+export const metadata: Metadata = { title: "Sign in" };
 
 export default function SignInPage() {
   return (
-    <main className="flex min-h-dvh items-center justify-center px-6 py-16">
-      <SignIn />
-    </main>
+    <AuthFrame
+      title="Sign in to Cira"
+      subtitle="Your company's software, and the assistants that use it, in one place."
+    >
+      <SignIn appearance={AUTH_APPEARANCE} />
+    </AuthFrame>
   );
 }

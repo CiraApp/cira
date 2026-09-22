@@ -13,6 +13,15 @@ import {
 } from "@/lib/authz";
 import { recentlyOpened } from "@/lib/queries";
 import { emailConfigured } from "@/lib/email";
+import { spaceTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string }>;
+}) {
+  return spaceTitle((await params).spaceSlug);
+}
 
 export default async function SpacePage({
   params,

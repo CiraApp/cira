@@ -2,6 +2,9 @@ import { Onboarding } from "@/components/onboarding";
 import { requireCurrentUser } from "@/lib/identity";
 import { claimableDomain } from "@/lib/email-domain";
 import { joinableSpaces } from "@/lib/join-actions";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Get started" };
 
 export default async function OnboardingPage() {
   // Onboarding is for a signed-in person with nowhere to go yet. Reading the

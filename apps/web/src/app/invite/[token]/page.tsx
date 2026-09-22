@@ -9,6 +9,9 @@ import { AcceptInvite } from "@/components/accept-invite";
 import { SwitchAccount } from "@/components/switch-account";
 import { EntryFrame } from "@/components/entry-frame";
 import { hashToken } from "@/lib/token-hash";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Invitation" };
 
 /**
  * The one screen reachable while signed out, because the person receiving an

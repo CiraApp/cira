@@ -8,6 +8,15 @@ import { apps, db } from "@cira/db";
 import { roleAtLeast } from "@cira/core";
 import { LeaveCira } from "@/components/leave-cira";
 import { SpaceSettingsForm } from "@/components/space-settings-form";
+import { spaceTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string }>;
+}) {
+  return spaceTitle((await params).spaceSlug, "Settings");
+}
 
 export default async function SettingsPage({
   params,

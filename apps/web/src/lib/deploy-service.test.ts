@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_LIMITS, newId, type EnvChange, type User } from "@cira/core";
 import type * as CiraDb from "@cira/db";
@@ -119,6 +119,16 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
 
   afterAll(async () => {
     await database?.end();
+  });
+
+  // Every test starts with the space's earlier deploys outside the hourly
+  // limit's window, in the order they were made, so no test depends on how
+  // many ran before it.
+  beforeEach(async () => {
+    const { sql } = await import("drizzle-orm");
+    await database.execute(
+      sql`update deployments set created_at = created_at - interval '2 hours'`,
+    );
   });
 
   const deploy = async (appName: string, env?: EnvChange) => {
@@ -256,6 +266,30 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
     expect(await status(never.id)).toBe("failed");
     // Still inside any request's own time: it may be deploying right now.
     expect(await status(now.id)).toBe("deploying");
+  });
+
+  /**
+   * A browser session for an app is bound to its address and lasts fifteen
+   * minutes, so a new app on an address just given up would open for the old
+   * app's users.
+   */
+  it("will not give a new app an address another app left moments ago", async () => {
+    const { removedApps } = await import("@cira/db");
+    await database.insert(removedApps).values([
+      { id: newId("app"), spaceId, name: "Ghost", slug: "ghost", resources: [] },
+      {
+        id: newId("app"),
+        spaceId,
+        name: "Relic",
+        slug: "relic",
+        resources: [],
+        removedAt: new Date(Date.now() - 60 * 60_000),
+      },
+    ]);
+    const ghost = await deploy("Ghost");
+    expect(ghost.ok && ghost.appSlug).toBe("ghost-2");
+    const relic = await deploy("Relic");
+    expect(relic.ok && relic.appSlug).toBe("relic");
   });
 
   it("records the deployment against the app it just made", async () => {

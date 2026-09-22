@@ -159,6 +159,28 @@ export interface AppContext extends SpaceContext {
 }
 
 /** The app, if this user may open it. */
+/**
+ * Where an app renamed away from `oldSlug` lives now - for someone who may
+ * open it there. Anyone else gets null, the same as for an address nothing
+ * ever answered on: telling a person who cannot see the app what it is now
+ * called was telling them it exists, and its new name.
+ */
+export async function movedAppFor(
+  spaceSlug: string,
+  oldSlug: string,
+): Promise<string | null> {
+  const { appSlugMovedTo } = await import("@/lib/queries");
+  const moved = await appSlugMovedTo(spaceSlug, oldSlug);
+  if (moved === null) return null;
+  try {
+    await requireAppAccess(spaceSlug, moved);
+    return moved;
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof ForbiddenError) return null;
+    throw error;
+  }
+}
+
 export async function requireAppAccess(
   spaceSlug: string,
   appSlug: string,

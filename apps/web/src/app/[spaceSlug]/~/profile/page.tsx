@@ -3,6 +3,15 @@ import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { ProfileForm } from "@/components/profile-form";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
+import { spaceTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string }>;
+}) {
+  return spaceTitle((await params).spaceSlug, "Profile");
+}
 
 /**
  * How Cira knows you.

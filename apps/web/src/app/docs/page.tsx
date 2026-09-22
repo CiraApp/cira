@@ -4,7 +4,7 @@ import { SiteFrame, Section } from "@/components/site/site-frame";
 import { CopyableCommand } from "@/components/copyable-command";
 
 export const metadata: Metadata = {
-  title: "Docs · Cira",
+  title: "Docs",
   description: "Deploying to Cira, opening apps, and using them from an assistant.",
 };
 

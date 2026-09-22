@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "tsc --build --pretty && tsc -p apps/web --noEmit --pretty",
+    "typecheck": "tsc --build --pretty && tsc -p apps/web --noEmit --pretty && tsc -p tsconfig.test.json --pretty",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",

@@ -4,9 +4,19 @@ import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { AppIcon } from "@/components/app-icon";
 import { CapabilityConsole } from "@/components/capability-console";
-import { listMySpaces, NotFoundError, requireAppAccess } from "@/lib/authz";
+import { listMySpaces, movedAppFor, NotFoundError, requireAppAccess } from "@/lib/authz";
 import { listConsoleCapabilities } from "@/lib/capabilities";
-import { appSlugMovedTo, latestDeployment } from "@/lib/queries";
+import { latestDeployment } from "@/lib/queries";
+import { appTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string; appSlug: string }>;
+}) {
+  const { spaceSlug, appSlug } = await params;
+  return appTitle(spaceSlug, appSlug, "Console");
+}
 
 /**
  * The capability console: every capability an app has, each a form to run.
@@ -126,7 +136,7 @@ export default async function ConsolePage({
     );
   } catch (error) {
     if (error instanceof NotFoundError) {
-      const moved = await appSlugMovedTo(spaceSlug, appSlug);
+      const moved = await movedAppFor(spaceSlug, appSlug);
       if (moved !== null) redirect(`/${spaceSlug}/${moved}/console`);
       notFound();
     }

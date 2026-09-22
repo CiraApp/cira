@@ -1,9 +1,17 @@
 import { SignUp } from "@clerk/nextjs";
+import type { Metadata } from "next";
+import { PLANS } from "@cira/core";
+import { AUTH_APPEARANCE, AuthFrame } from "@/components/auth-frame";
+
+export const metadata: Metadata = { title: "Sign up" };
 
 export default function SignUpPage() {
   return (
-    <main className="flex min-h-dvh items-center justify-center px-6 py-16">
-      <SignUp />
-    </main>
+    <AuthFrame
+      title="Start with Cira"
+      subtitle={`Your company's space is free for ${PLANS.trial.trialDays} days, with no card. Use your work email, so colleagues at your company can find it.`}
+    >
+      <SignUp appearance={AUTH_APPEARANCE} />
+    </AuthFrame>
   );
 }

@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import * as Sentry from "@sentry/nextjs";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { analysis, keepGrounded, type AnalysisResult } from "@/lib/capability-grounding";
 
@@ -272,10 +273,7 @@ export async function analyzeCapabilities(
       parsed = response.parsed_output;
       break;
     } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : "Capability analysis failed.",
-      };
+      return { ok: false, error: analysisFailure(error) };
     }
   }
 
@@ -295,4 +293,29 @@ export async function analyzeCapabilities(
     summary: parsed.summary.trim().slice(0, 140),
     capabilities: keepGrounded(parsed.capabilities),
   };
+}
+
+/**
+ * Why analysis did not happen, for the person who deployed - never the model
+ * provider's own words, which are a status code, a JSON body and a request id
+ * about Cira's account rather than their app. The raw error goes to Cira's
+ * error reports, where whoever runs Cira can act on it.
+ */
+function analysisFailure(error: unknown): string {
+  Sentry.captureException(error, { tags: { area: "capability-analysis" } });
+  const later =
+    "The app is deployed; its capabilities can be worked out again from its page.";
+  if (error instanceof Anthropic.APIError) {
+    if (error.status === 429 || error.status === 529 || error.status === 503) {
+      return `The analysis service is busy right now. ${later}`;
+    }
+    if (
+      error.status === 400 &&
+      /prompt is too long|too many tokens/i.test(error.message)
+    ) {
+      return "This app is too large to analyze in one pass.";
+    }
+    return `Cira's analysis service is unavailable right now. ${later}`;
+  }
+  return `Capability analysis did not finish. ${later}`;
 }

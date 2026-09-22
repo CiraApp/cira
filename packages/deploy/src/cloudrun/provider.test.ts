@@ -46,6 +46,7 @@ const input: AppDeploymentInput = {
     set: { DATABASE_URL: "postgres://user:hunter2@db/app", PORT: "8080" },
     unset: [],
   },
+  processes: [],
 };
 
 interface Call {
@@ -1115,6 +1116,12 @@ describe("an app that is two halves", () => {
               image: string;
               ports?: Array<{ containerPort: number }>;
               dependsOn?: string[];
+              startupProbe?: {
+                tcpSocket?: { port?: number };
+                periodSeconds?: number;
+                timeoutSeconds?: number;
+                failureThreshold?: number;
+              };
               resources: { limits: { memory: string }; cpuIdle: boolean };
             }>;
           };

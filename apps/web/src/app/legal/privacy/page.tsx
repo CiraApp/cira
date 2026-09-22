@@ -4,7 +4,7 @@ import { SiteFrame, Section } from "@/components/site/site-frame";
 import { LegalDraftNotice, UPDATED } from "@/components/site/legal-notice";
 
 export const metadata: Metadata = {
-  title: "Privacy · Cira",
+  title: "Privacy",
   description: "What Cira holds about you and your company, and what it does not.",
 };
 

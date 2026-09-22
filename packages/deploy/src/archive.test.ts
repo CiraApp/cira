@@ -213,7 +213,7 @@ describe("tarUngzip", () => {
   it("keeps the executable bit", () => {
     const read = tarUngzip(tarGzip(entries));
     const run = read.find((e) => e.path === "bin/run");
-    expect(run?.mode & 0o111).toBeTruthy();
+    expect((run?.mode ?? 0) & 0o111).toBeTruthy();
   });
 
   // The prefix split is the part most likely to be wrong in either direction,

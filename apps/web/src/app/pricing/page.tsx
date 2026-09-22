@@ -4,7 +4,7 @@ import { monthlyCost, PLANS } from "@cira/core";
 import { SiteFrame } from "@/components/site/site-frame";
 
 export const metadata: Metadata = {
-  title: "Pricing · Cira",
+  title: "Pricing",
   description: "What Cira costs, and what each plan includes.",
 };
 

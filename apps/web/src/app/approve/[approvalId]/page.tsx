@@ -5,7 +5,7 @@ import { ApprovalDecision } from "@/components/approval-decision";
 import { loadApproval } from "@/lib/approvals";
 import { requireCurrentUser } from "@/lib/identity";
 
-export const metadata: Metadata = { title: "Approve a change · Cira" };
+export const metadata: Metadata = { title: "Approve a change" };
 
 const VIA: Record<string, string> = {
   mcp: "Your assistant",

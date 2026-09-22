@@ -187,7 +187,8 @@ describe("toRuntimeLogEntry", () => {
   });
 
   it("grades by what a person does about it", () => {
-    const level = (severity?: string) => toRuntimeLogEntry({ severity }).level;
+    const level = (severity?: string) =>
+      toRuntimeLogEntry(severity === undefined ? {} : { severity }).level;
     expect(level(undefined)).toBe("default");
     expect(level("DEFAULT")).toBe("default");
     expect(level("NOTICE")).toBe("info");

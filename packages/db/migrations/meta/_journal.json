@@ -302,6 +302,13 @@
       "when": 1790058474090,
       "tag": "0042_run_the_release_command_before_going_live",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790059137998,
+      "tag": "0043_hold_a_removed_apps_address_while_sessions_last",
+      "breakpoints": true
     }
   ]
 }

@@ -7,12 +7,23 @@ import { RuntimeLogs } from "@/components/runtime-logs";
 import {
   ForbiddenError,
   listMySpaces,
+  movedAppFor,
   NotFoundError,
   requireAppManage,
 } from "@/lib/authz";
-import { appSlugMovedTo, latestDeployment } from "@/lib/queries";
+import { latestDeployment } from "@/lib/queries";
 import { listProcesses } from "@/lib/processes";
 import { fetchRuntimeLogs } from "@/lib/runtime-log-actions";
+import { appTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string; appSlug: string }>;
+}) {
+  const { spaceSlug, appSlug } = await params;
+  return appTitle(spaceSlug, appSlug, "Logs");
+}
 
 /**
  * An app's runtime logs: what it printed while it ran, and every request that
@@ -137,7 +148,7 @@ export default async function LogsPage({
     );
   } catch (error) {
     if (error instanceof NotFoundError) {
-      const moved = await appSlugMovedTo(spaceSlug, appSlug);
+      const moved = await movedAppFor(spaceSlug, appSlug);
       if (moved !== null) redirect(`/${spaceSlug}/${moved}/logs`);
       notFound();
     }

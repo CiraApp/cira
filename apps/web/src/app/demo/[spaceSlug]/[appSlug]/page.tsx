@@ -6,6 +6,16 @@ import { CiraMark } from "@/components/shell/mark";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { latestDeployment } from "@/lib/queries";
+import { appTitle } from "@/lib/page-title";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ spaceSlug: string; appSlug: string }>;
+}) {
+  const { spaceSlug, appSlug } = await params;
+  return appTitle(spaceSlug, appSlug);
+}
 
 const RISK_NOTE: Record<string, string> = {
   read: "Returns information",

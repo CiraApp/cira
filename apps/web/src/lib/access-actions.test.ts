@@ -130,4 +130,32 @@ describe.skipIf(!hasDatabase)("managing an app through a grant", () => {
     expect(outcome.ok).toBe(false);
     expect((await grants()).find((g) => g.targetId === bystander.id)?.level).toBe("use");
   });
+
+  /**
+   * An old address used to send anyone in the space to the app's new one,
+   * which told a person who could not open it that it exists and what it is
+   * called now.
+   */
+  it("follows a rename only for someone who may open the app", async () => {
+    const { apps, appSlugHistory } = await import("@cira/db");
+    const { movedAppFor } = await import("./authz");
+    const ledger = newId("app");
+    await database.insert(apps).values({
+      id: ledger,
+      spaceId,
+      name: "Ledger",
+      slug: "ledger",
+      ownerUserId: owner.id,
+    });
+    await database
+      .insert(appSlugHistory)
+      .values({ id: newId("appSlug"), appId: ledger, spaceId, slug: "books" });
+
+    signedIn = owner;
+    expect(await movedAppFor("acme", "books")).toBe("ledger");
+    signedIn = engineer;
+    expect(await movedAppFor("acme", "books")).toBeNull();
+    signedIn = person("Stranger");
+    expect(await movedAppFor("acme", "books")).toBeNull();
+  });
 });
