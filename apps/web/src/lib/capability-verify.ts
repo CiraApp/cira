@@ -219,10 +219,13 @@ async function reachOf(
       ? "callable"
       : "absent";
   }
-  if (allow.status === 404 && !hasParameters(capability.path)) return "absent";
-
-  // OPTIONS said nothing useful: no `Allow`, a redirect, or the same answer
-  // it gives a path that does not exist. A 200 with no `Allow` used to count
+  // OPTIONS said nothing useful: no `Allow`, a redirect, a 404, or the same
+  // answer it gives a path that does not exist. A 404 used to settle it as
+  // absent, but a server that never handles OPTIONS - a plain Node `http`
+  // server, measured on production - says 404 to it at every path, and a real
+  // `POST /api/notes` beside a working `GET /api/notes` was deleted as a route
+  // the app does not serve. The GET below answers 404 for a path that is
+  // really not there, so nothing is lost by asking it. A 200 with no `Allow` used to count
   // as callable, which is what a login redirect or a catch-all looks like.
   // A GET asks the same question safely - the write's handler does not run
   // for it - and a route that serves another method says 405.

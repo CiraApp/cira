@@ -383,16 +383,47 @@ export async function deploy(argv: string[] = []): Promise<number> {
     (need) => !supplied.has(need.name) && !inProduction.has(need.name),
   );
 
+  // Before the list, so the list can say what is true: a database is the one
+  // thing on it Cira can supply itself, rather than send the developer off to
+  // find, and it answers for the direct address beside the pooled one.
+  const chosen = await chooseDatabase({
+    missing: missing.map((need) => need.name),
+    supplied,
+    argv,
+    io: terminal(),
+  });
+  if ("error" in chosen) {
+    fail(chosen.error);
+    return 1;
+  }
+  const databaseEnv = chosen.envName;
+  const fromDatabase = new Set(
+    databaseEnv === null ? [] : [databaseEnv, `${databaseEnv}_UNPOOLED`],
+  );
+  missing = missing.filter((need) => !fromDatabase.has(need.name));
+
   const checklist = [
     ...needed.map((need) => ({
       name: need.name,
-      have: supplied.has(need.name) || inProduction.has(need.name),
+      have:
+        supplied.has(need.name) ||
+        inProduction.has(need.name) ||
+        fromDatabase.has(need.name),
       note: supplied.has(need.name)
         ? ""
-        : inProduction.has(need.name)
-          ? "already set in production"
-          : `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
+        : fromDatabase.has(need.name)
+          ? "from a new Postgres database, made by Cira"
+          : inProduction.has(need.name)
+            ? "already set in production"
+            : `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
     })),
+    ...[...fromDatabase]
+      .filter((name) => !needed.some((need) => need.name === name))
+      .map((name) => ({
+        name,
+        have: true,
+        note: "from a new Postgres database, made by Cira",
+      })),
     // Set, and not something the scan asked for. Still going to the app, so
     // still worth seeing - a typo in a name shows up here as a variable
     // nobody asked for sitting next to the one still missing.
@@ -417,27 +448,6 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info(`  ${mark} ${name}${note}`);
     }
     info("");
-  }
-
-  // Before the rest of what is missing: a database is the one thing on the
-  // list Cira can supply itself, rather than ask the developer to go and find.
-  const chosen = await chooseDatabase({
-    missing: missing.map((need) => need.name),
-    supplied,
-    argv,
-    io: terminal(),
-  });
-  if ("error" in chosen) {
-    fail(chosen.error);
-    return 1;
-  }
-  const databaseEnv = chosen.envName;
-  if (databaseEnv !== null) {
-    info(
-      `  ${green("✓")} ${databaseEnv}  ${dim("a new Postgres database, made by Cira")}`,
-    );
-    info("");
-    missing = missing.filter((need) => need.name !== databaseEnv);
   }
 
   if (missing.length > 0) {

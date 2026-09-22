@@ -133,7 +133,9 @@ export async function chooseDatabase(args: {
     return { envName: null };
   }
 
-  info(`  Cira can make a Postgres database for this app and set it as ${wanted}.`);
+  info("");
+  info(`  The code reads ${wanted}, and nothing sets it.`);
+  info(`  Cira can make this app a Postgres database of its own and set it.`);
   const answer = (await args.io.ask("  Make one? [Y/n] ", false)).trim().toLowerCase();
   info("");
   return { envName: answer === "" || answer === "y" || answer === "yes" ? wanted : null };

@@ -60,7 +60,7 @@ export async function GET(request: Request) {
   const live =
     settled.status === "live"
       ? {
-          access: accessOf(await grantsFor(row.app.id)),
+          access: accessOf(await grantsFor(row.app.id), row.app.ownerUserId),
           processesOff: (
             await database
               .select({ enabled: processes.enabled })
@@ -84,8 +84,17 @@ export async function GET(request: Request) {
   });
 }
 
-/** Who can open the app besides whoever owns it. */
-function accessOf(grants: readonly AppAccess[]): "everyone" | "shared" | "private" {
+/**
+ * Who can open the app besides whoever owns it. A new app carries a grant to
+ * its owner, which is not sharing it with anybody.
+ */
+function accessOf(
+  grants: readonly AppAccess[],
+  ownerId: string,
+): "everyone" | "shared" | "private" {
   if (grants.some((grant) => grant.type === "space")) return "everyone";
-  return grants.length > 0 ? "shared" : "private";
+  const others = grants.filter(
+    (grant) => !(grant.type === "user" && grant.targetId === ownerId),
+  );
+  return others.length > 0 ? "shared" : "private";
 }

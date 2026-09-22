@@ -463,6 +463,32 @@ describe("verifyCapabilities, on what real apps answer", () => {
     expect(result.absent).toEqual(["inventedThing"]);
   });
 
+  it("keeps a write on a server that never answers OPTIONS", async () => {
+    // A plain Node `http` server: 404 to OPTIONS everywhere, and to anything
+    // it has no handler for. Measured on production, where the real
+    // `POST /api/notes` was deleted as a route the app did not serve.
+    const fetcher = async (url: string, init: RequestInit): Promise<Response> => {
+      const { pathname } = new URL(url);
+      const method = (init.method ?? "GET").toUpperCase();
+      if (pathname === "/api/notes" && (method === "GET" || method === "POST")) {
+        return new Response("{}", { status: 200 });
+      }
+      return new Response('{"error":"not found"}', { status: 404 });
+    };
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [
+        write("createNote", "POST", "/api/notes"),
+        write("archiveNote", "POST", "/api/archive"),
+      ],
+    });
+
+    expect(result.callable).toEqual(["createNote"]);
+    expect(result.absent).toEqual(["archiveNote"]);
+  });
+
   it("does not record a refusal given to one person as a refusal for everyone", async () => {
     const fetcher = async (url: string): Promise<Response> =>
       new URL(url).pathname === "/api/mine"
