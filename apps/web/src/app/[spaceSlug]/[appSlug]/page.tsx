@@ -185,7 +185,10 @@ export default async function AppPage({
                 canManage={manages}
               >
                 <div className="mt-2.5">
-                  <StatusDot status={resolved.state} label={resolved.label} />
+                  <StatusDot
+                    status={outageSince === null ? resolved.state : "failed"}
+                    label={outageSince === null ? resolved.label : "Not answering"}
+                  />
                 </div>
               </AppIdentity>
             </div>
@@ -284,7 +287,9 @@ export default async function AppPage({
                 </p>
               )}
               {resolved.notice === undefined ? null : (
-                <p className="mt-3.5 flex items-baseline gap-2 text-[12.5px] text-ink-muted">
+                <p
+                  className={`${outageSince === null ? "mt-3.5" : "mt-1.5"} flex items-baseline gap-2 text-[12.5px] text-ink-muted`}
+                >
                   <span
                     aria-hidden="true"
                     className={`relative top-[-1px] h-[6px] w-[6px] shrink-0 rounded-full ${
