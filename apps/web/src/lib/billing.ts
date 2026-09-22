@@ -602,11 +602,14 @@ export async function ensureStripeSetup(
       target: stripeSetup.mode,
       set: { webhookEndpointId: endpointId, webhookSecret: secret, checkedAt: now },
     });
-  // Names and ids only: what whoever runs Cira needs to see it happened.
-  console.info(
-    `stripe setup (${mode}): prices made [${report.pricesCreated.join(", ")}], ` +
-      `webhook ${report.webhook}${report.eventsAdded.length > 0 ? ` +[${report.eventsAdded.join(", ")}]` : ""}`,
-  );
+  // Names only, and only when Stripe was changed: whoever runs Cira should see
+  // that it happened, and nothing when it did not.
+  if (report.pricesCreated.length > 0 || report.webhook !== "kept") {
+    console.warn(
+      `stripe setup (${mode}): prices made [${report.pricesCreated.join(", ")}], ` +
+        `webhook ${report.webhook}${report.eventsAdded.length > 0 ? ` +[${report.eventsAdded.join(", ")}]` : ""}`,
+    );
+  }
   return report;
 }
 
