@@ -127,6 +127,16 @@ user = find_user_by_email(claims["email"])`}
         </p>
       </Section>
 
+      <Section title="Sign in through your company">
+        <p>
+          An admin can send everyone at your domain through Okta, Microsoft Entra or
+          Google Workspace instead of an emailed code, from the space&rsquo;s Settings.
+          The same page gives your provider a SCIM address and token, so people are added
+          as you assign them, taken out the moment they are deactivated, and your groups
+          arrive as teams.
+        </p>
+      </Section>
+
       <Section title="Keep an eye on it">
         <p>
           Each app has its runtime logs, its recent runs, and a record of who ran what.

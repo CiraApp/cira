@@ -135,12 +135,22 @@ what it uses.
 
 ## Phase 3 - Larger companies
 
-- [ ] **3.1 Enterprise sign-in.** SAML SSO and SCIM provisioning, through
-      Clerk's enterprise features.
+- [x] **3.1 Enterprise sign-in.** SAML single sign-on through Clerk's
+      enterprise connections, set up by a space's admin from Settings: Cira
+      makes the connection for the company's domain, shows what the identity
+      provider needs, and turns it on with the provider's metadata. SCIM 2.0 is
+      Cira's own (`/api/scim/v2`, a bearer token per space): people are added
+      as assigned, removed and kept out when deactivated, and groups are kept
+      as teams, so access follows them. Okta's and Entra's dialects are both
+      tested (2026-09-22).
+  - [ ] _You:_ single sign-on in production needs Clerk's Pro plan (the first
+        connection is included). Until then an admin who tries is told so;
+        SCIM works on any plan. Verified against Clerk's development instance.
 - [ ] **3.2 A Google project per company.** Real isolation of compute,
       quotas, logs and bills, instead of one shared project and one service
       account that can reach every app.
-- [ ] **3.3 SOC 2.** Through a compliance platform (Vanta or Drata). _You._
+- [ ] **3.3 SOC 2.** Not pursued for now (your call, 2026-09-22): the readiness
+      work - controls mapped to what Cira does - is in `docs/soc2-readiness.md`.
 - [ ] **3.4 Databases and caches.** Provision through providers such as Neon
       and Upstash rather than hosting data, which keeps Cira out of the
       business of holding customers' data.

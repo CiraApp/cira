@@ -9,6 +9,10 @@ import { roleAtLeast } from "@cira/core";
 import { LeaveCira } from "@/components/leave-cira";
 import { SpaceSettingsForm } from "@/components/space-settings-form";
 import { spaceTitle } from "@/lib/page-title";
+import { appOrigin } from "@/lib/email";
+import { CompanySignIn } from "@/components/company-sign-in";
+import { ssoFor } from "@/lib/sso";
+import { SCIM_PATH, scimStatus } from "@/lib/scim";
 
 export async function generateMetadata({
   params,
@@ -32,6 +36,13 @@ export default async function SettingsPage({
       db().select({ n: count() }).from(apps).where(eq(apps.spaceId, ctx.space.id)),
     ]);
     const appCount = counted?.n ?? 0;
+    // How the company's people get in, for the admins who decide it.
+    const admin = roleAtLeast(ctx.role, "admin")
+      ? {
+          sso: await ssoFor(ctx.space.id),
+          scim: await scimStatus(ctx.space.id),
+        }
+      : null;
 
     // `capitalize` is per fact, not on the whole list: a slug is an address and
     // a sentence is a sentence, and title-casing either turns a true statement
@@ -93,6 +104,23 @@ export default async function SettingsPage({
               name={ctx.space.name}
               domain={ctx.space.domain}
               joinByDomain={ctx.space.joinByDomain}
+            />
+          ) : null}
+
+          {admin !== null ? (
+            <CompanySignIn
+              spaceSlug={spaceSlug}
+              domain={ctx.space.domain}
+              sso={admin.sso}
+              scim={
+                admin.scim === null
+                  ? null
+                  : {
+                      lastUsedAt: admin.scim.lastUsedAt?.toISOString() ?? null,
+                      people: admin.scim.people,
+                    }
+              }
+              scimBase={`${appOrigin()}${SCIM_PATH}`}
             />
           ) : null}
 

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
+import { claimProvisioned } from "@/lib/scim";
 import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { cliTokens, db, memberships, users } from "@cira/db";
@@ -84,6 +85,9 @@ export async function getCurrentUser(): Promise<User | null> {
   if (existing === undefined) {
     try {
       existing = await relink(identity);
+      if (existing !== undefined) {
+        await claimProvisioned(toUser(existing)).catch(() => undefined);
+      }
     } catch (error) {
       // Said on a page of its own: an error thrown from here would reach the
       // person as "something went wrong", with no way to learn what or why.
@@ -150,7 +154,13 @@ export async function getCurrentUser(): Promise<User | null> {
     .onConflictDoNothing()
     .returning();
 
-  if (created !== undefined) return toUser(created);
+  if (created !== undefined) {
+    const user = toUser(created);
+    // A company's directory may have provisioned this person before they had
+    // an account; their first sign-in is when that is kept.
+    await claimProvisioned(user).catch(() => undefined);
+    return user;
+  }
 
   // Lost a race with a concurrent first request; the row exists now.
   const [raced] = await database

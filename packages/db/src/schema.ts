@@ -962,6 +962,105 @@ export const appCaches = pgTable("app_caches", {
 });
 
 /**
+ * A company signing in through its own identity provider: the Clerk
+ * enterprise connection that sends everyone at `domain` to it.
+ */
+export const spaceSso = pgTable("space_sso", {
+  spaceId: text("space_id")
+    .primaryKey()
+    .references(() => spaces.id, { onDelete: "cascade" }),
+  /** Clerk's id for the enterprise connection. */
+  connectionId: text("connection_id").notNull(),
+  domain: text("domain").notNull(),
+  /** Where the identity provider publishes its metadata, once given. */
+  idpMetadataUrl: text("idp_metadata_url"),
+  active: boolean("active").notNull().default(false),
+  createdByUserId: text("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A company's identity provider keeping its people in step with Cira over
+ * SCIM. The token is kept only as a hash, like every credential Cira hands
+ * out.
+ */
+export const spaceScim = pgTable("space_scim", {
+  spaceId: text("space_id")
+    .primaryKey()
+    .references(() => spaces.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+});
+
+/**
+ * A person the identity provider says works at the company. Linked to a Cira
+ * user once there is one with this address; until then it is a promise that
+ * their first sign-in makes them a member.
+ */
+export const scimUsers = pgTable(
+  "scim_users",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    /** The identity provider's own id for them. */
+    externalId: text("external_id"),
+    /** Their sign-in address, lowercased. */
+    userName: text("user_name").notNull(),
+    givenName: text("given_name"),
+    familyName: text("family_name"),
+    active: boolean("active").notNull().default(true),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("scim_users_space_user_name_idx").on(t.spaceId, t.userName),
+    index("scim_users_user_name_idx").on(t.userName),
+  ],
+);
+
+/** A group the identity provider pushes, kept as a Cira team. */
+export const scimGroups = pgTable(
+  "scim_groups",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    externalId: text("external_id"),
+    displayName: text("display_name").notNull(),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("scim_groups_space_idx").on(t.spaceId)],
+);
+
+/** Who is in a pushed group, by the provider's people rather than Cira's. */
+export const scimGroupMembers = pgTable(
+  "scim_group_members",
+  {
+    groupId: text("group_id")
+      .notNull()
+      .references(() => scimGroups.id, { onDelete: "cascade" }),
+    scimUserId: text("scim_user_id")
+      .notNull()
+      .references(() => scimUsers.id, { onDelete: "cascade" }),
+  },
+  (t) => [uniqueIndex("scim_group_members_idx").on(t.groupId, t.scimUserId)],
+);
+
+/**
  * A company's own hostname for an app - `tools.acme.com` - served through a
  * Cloudflare custom hostname on Cira's zone. Unique across every company: a
  * name can only point at one app.

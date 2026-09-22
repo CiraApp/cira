@@ -622,6 +622,24 @@ set up by Cira itself when the first name is added - the fallback origin, its
 DNS record, and a `*/*` Worker route - and a name never pointed at Cira is let
 go after a week, so nobody can hold another company's name.
 
+### 13. A company's own sign-in and directory
+
+An admin sets up single sign-on from the space's Settings (`lib/sso.ts`): Cira
+creates a Clerk enterprise connection for the company's domain - only someone
+with an address there may - shows the ACS URL and entity ID the identity
+provider needs, and switches it on with the provider's metadata URL. From then
+on Clerk sends anyone at the domain to their company to sign in. Deleting the
+space deletes the connection.
+
+SCIM 2.0 is Cira's own, at `/api/scim/v2` with a bearer token made in
+Settings and kept only as a hash (`lib/scim.ts`, `lib/scim-protocol.ts`). A
+pushed person becomes a member at once if Cira knows them, or at their first
+sign-in if not (`claimProvisioned`); a deactivated one leaves through the same
+path as a removal (`lib/departure.ts`), losing grants and team seats and
+blocked from rejoining by domain, except that the last owner is never
+removed. Pushed groups are kept as teams. Okta's and Entra's PATCH dialects
+are both handled and tested.
+
 ## Design principles
 
 - **The app was not written for Cira.** A repository deploys as it is. Services,

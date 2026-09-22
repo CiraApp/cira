@@ -337,6 +337,13 @@
       "when": 1790078266634,
       "tag": "0047_let_cira_make_a_cache_for_an_app",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1790078833996,
+      "tag": "0048_let_a_company_bring_its_own_sign_in",
+      "breakpoints": true
     }
   ]
 }

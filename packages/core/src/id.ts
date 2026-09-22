@@ -36,6 +36,10 @@ export const ID_PREFIXES = {
   cliLogin: "lgn",
   /** An uploaded source archive. Not a row: it names an object in a bucket. */
   source: "src",
+  /** A person a company's identity provider keeps in step over SCIM. */
+  scimUser: "scu",
+  /** A group it pushes, kept as a team. */
+  scimGroup: "scg",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

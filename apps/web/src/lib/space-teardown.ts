@@ -3,6 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { apps, db, spaces } from "@cira/db";
 import type { App, Space } from "@cira/core";
+import { removeSso } from "@/lib/sso";
 import { tearDownApp } from "@/lib/app-teardown";
 
 /**
@@ -36,6 +37,17 @@ export async function tearDownSpace(space: Space): Promise<SpaceTeardown> {
         error: `${app.name} could not be taken down, so nothing was deleted. ${result.error}`,
       };
     }
+  }
+
+  // The company's sign-in connection lives in Clerk, not here: left behind,
+  // it would go on sending everyone at the domain to a provider for a space
+  // that no longer exists.
+  const sso = await removeSso(space.id);
+  if (!sso.ok) {
+    return {
+      ok: false,
+      error: `Its apps are gone, but its company sign-in was not: ${sso.error}`,
+    };
   }
 
   // Members, teams, invitations, notifications and everything else that hangs
