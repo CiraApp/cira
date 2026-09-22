@@ -137,7 +137,12 @@ export async function removeAppCache(
 }
 
 function cacheFailure(error: unknown): string {
-  if (error instanceof UpstashError && /limit/i.test(error.message)) {
+  // Upstash's own words for a full plan, as measured: "You cannot have more
+  // than 1 database(s). You can add a payment method ..." - no "limit" in it.
+  if (
+    error instanceof UpstashError &&
+    /limit|more than \d+ database|payment method/i.test(error.message)
+  ) {
     return "Cira has made as many caches as its Upstash plan allows. Tell whoever runs Cira.";
   }
   return "Upstash, where Cira makes caches, did not answer. Try again in a minute.";

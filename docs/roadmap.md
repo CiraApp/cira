@@ -167,9 +167,12 @@ what it uses.
         nobody set, makes the app its own Upstash Redis on Google Cloud in the
         apps' region and sets it; `cira cache url`; deleted with the app
         (2026-09-22).
-  - [ ] _You:_ an Upstash account for Cira and a management API key, stored
-        as `UPSTASH_EMAIL` and `UPSTASH_API_KEY` in Vercel. Until then a
-        deploy asking for a cache is told this Cira cannot make one yet.
+  - [x] Cira's Upstash account (akirtania17@gmail.com) and its key are in
+        Vercel (2026-09-22).
+  - [ ] _You:_ add a payment method in Upstash. The free plan allows one
+        database per account and `wave-test` holds it, so a deploy asking for
+        a cache is told the plan is full until then. Pay as you go is billed
+        per request.
 - [x] **3.5 Custom domains** for apps. A manager adds `tools.acme.com` on the
       app page; Cira makes it a Cloudflare custom hostname, shows the CNAME to
       make, and the app proxy serves it once the certificate is issued, behind

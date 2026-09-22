@@ -79,6 +79,22 @@ describe("UpstashCaches", () => {
   });
 });
 
+describe("a full Upstash plan", () => {
+  it("comes back in Upstash's own words, which the app layer turns into advice", async () => {
+    const full = new UpstashCaches(
+      config,
+      fake(() => ({
+        status: 400,
+        body: '"You cannot have more than 1 database(s). You can add a payment method to create more in pay as you go plan."',
+      })).impl,
+    );
+    await expect(full.create("x")).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining("more than 1 database"),
+    });
+  });
+});
+
 describe("upstashConfigFromEnv", () => {
   it("is null until the account and its key are both set", () => {
     expect(upstashConfigFromEnv({ UPSTASH_EMAIL: "a" })).toBeNull();
