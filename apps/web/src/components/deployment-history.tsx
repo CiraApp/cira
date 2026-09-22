@@ -11,6 +11,8 @@ export interface DeployRow {
   status: string;
   createdAt: string;
   relative: string;
+  /** Why it failed, in plain words, when that is known. */
+  reason: string | null;
 }
 
 /** Keyed by every status, so a new one cannot reach this list unlabelled. */
@@ -93,7 +95,10 @@ export function DeploymentHistory({
                 aria-expanded={isOpen}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-sunken/50"
               >
-                <StatusDot status={d.status} label={LABEL[d.status as DeploymentStatus] ?? d.status} />
+                <StatusDot
+                  status={d.status}
+                  label={LABEL[d.status as DeploymentStatus] ?? d.status}
+                />
                 <span className="flex-1" />
                 <span className="tabular text-[12px] text-ink-subtle">{d.relative}</span>
                 <svg
@@ -111,6 +116,12 @@ export function DeploymentHistory({
                   <path d="m4.5 2.5 3.5 3.5-3.5 3.5" />
                 </svg>
               </button>
+
+              {d.reason !== null && d.status === "failed" ? (
+                <p className="-mt-1 px-4 pb-3 pl-[34px] text-[12.5px] leading-relaxed text-ink-muted">
+                  {d.reason}
+                </p>
+              ) : null}
 
               {isOpen ? (
                 <div className="enter-fade border-t border-line bg-sunken/60 px-4 py-3.5">

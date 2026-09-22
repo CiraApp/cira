@@ -93,11 +93,10 @@ export async function updateAppDetails(
     // leaves both alone.
     let slug = ctx.app.slug;
 
-    if (name !== undefined) {
+    // A name with nothing to make an address from - one written only in
+    // another script - keeps the address it has, rather than being refused.
+    if (name !== undefined && slugify(name) !== "") {
       slug = slugify(name);
-      if (slug === "") {
-        return { ok: false, error: "Use at least a couple of letters or numbers." };
-      }
 
       const [clash] = await database
         .select({ id: apps.id })

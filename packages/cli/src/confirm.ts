@@ -117,10 +117,20 @@ function persist(
 
   appendFileSync(
     path,
-    `\n# Added by cira deploy\n${names.map((n) => `${n}=${added[n]}`).join("\n")}\n`,
+    `\n# Added by cira deploy\n${names.map((n) => `${n}=${dotenvValue(added[n] ?? "")}`).join("\n")}\n`,
   );
   info(dim(`  Saved to ${envFile ?? ".env"}.`));
   return {};
+}
+
+/**
+ * A value written so that reading the file back gives exactly it: quoted
+ * whenever it has anything a dotenv reader would treat specially - spaces,
+ * `#`, quotes, or more than one line.
+ */
+export function dotenvValue(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]*$/.test(value)) return value;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
 }
 
 /** The real one: a readline over this terminal, opened per question. */

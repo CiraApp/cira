@@ -16,14 +16,19 @@ const USAGE = `
   ${bold("Commands")}
     deploy     Deploy this folder to your company
                --space <slug>   which space, when you are in more than one
-               --env-file <p>   read variables from this file instead
+               --env-file <p>   read variables from this file instead of .env files
                --env K=V        set one variable (repeatable, wins over a file)
-               --no-env         deploy with no variables, clearing any set
+               --unset NAME     take a variable away from the app (repeatable)
+               --no-env         send no variables; production keeps its own
                --dockerfile <p>  build with this Dockerfile, for a monorepo
                                  where it sits apart from the workspace root
+               --yes            deploy without asking about missing variables
+               A deploy only changes the variables it sends. Everything else
+               stays as it is in production.
     remove     Take this folder's app down and delete what it left behind
                --space <slug>   which space, when the folder is not linked
                --app <slug>     which app, when the folder is not linked
+               --confirm <name> the app's name, to remove without being asked
     login      Connect this machine to your Cira account
     skill      install    Add the Cira Skill to your coding agents
     mcp        connect    Point this machine's assistants at your company

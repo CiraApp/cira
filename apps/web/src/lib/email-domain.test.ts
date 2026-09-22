@@ -44,6 +44,29 @@ describe("claimableDomain", () => {
     }
   });
 
+  it("refuses the providers the first list missed, which the review found", () => {
+    for (const email of [
+      "a@hotmail.co.uk",
+      "a@web.de",
+      "a@btinternet.com",
+      "a@qq.com",
+      "a@163.com",
+      "a@comcast.net",
+      "a@orange.fr",
+      "a@mail.ru",
+    ]) {
+      expect(claimableDomain(email)).toBeNull();
+    }
+  });
+
+  it("refuses a university's addresses, which prove study rather than employment", () => {
+    for (const email of ["s@stanford.edu", "s@cs.ox.ac.uk", "s@unimelb.edu.au"]) {
+      expect(claimableDomain(email)).toBeNull();
+    }
+    // A company that merely has "edu" in its name is still a company.
+    expect(claimableDomain("a@eduflow.com")).toBe("eduflow.com");
+  });
+
   it("refuses malformed addresses rather than guessing", () => {
     expect(claimableDomain("nope")).toBeNull();
     expect(claimableDomain("nope@")).toBeNull();

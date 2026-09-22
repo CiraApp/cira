@@ -14,3 +14,4 @@ export * from "./schedule.js";
 export * from "./plans.js";
 export * from "./pricing.js";
 export * from "./processes.js";
+export * from "./membership-rules.js";

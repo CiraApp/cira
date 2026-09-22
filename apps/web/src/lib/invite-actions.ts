@@ -2,7 +2,15 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { atomically, db, invites, memberships, spaces, users } from "@cira/db";
+import {
+  atomically,
+  db,
+  invites,
+  memberships,
+  spaceJoinBlocks,
+  spaces,
+  users,
+} from "@cira/db";
 import { isInviteToken, newId, newInviteToken } from "@cira/core";
 import { hashToken } from "@/lib/token-hash";
 import type { Role } from "@cira/core";
@@ -191,18 +199,33 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
   await atomically(database, (on) => [
     ...(already === undefined
       ? [
-          on.insert(memberships).values({
-            id: newId("membership"),
-            userId: user.id,
-            spaceId: row.space.id,
-            role: row.invite.role,
-          }),
+          // A double click, or two tabs, can both get here; the second is
+          // already in, which is the outcome both wanted.
+          on
+            .insert(memberships)
+            .values({
+              id: newId("membership"),
+              userId: user.id,
+              spaceId: row.space.id,
+              role: row.invite.role,
+            })
+            .onConflictDoNothing(),
         ]
       : []),
     on
       .update(invites)
       .set({ acceptedAt: new Date() })
       .where(eq(invites.id, row.invite.id)),
+    // Invited back by an admin: whatever kept them out by domain no longer
+    // speaks for the space.
+    on
+      .delete(spaceJoinBlocks)
+      .where(
+        and(
+          eq(spaceJoinBlocks.spaceId, row.space.id),
+          eq(spaceJoinBlocks.email, user.email.toLowerCase()),
+        ),
+      ),
   ]);
 
   return { ok: true, spaceSlug: row.space.slug, spaceName: row.space.name };

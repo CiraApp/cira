@@ -29,8 +29,15 @@ import {
 } from "./runtime-logs.js";
 import { CloudRunProcesses } from "./processes.js";
 import { CloudRunUsage, type UsageTotals } from "./usage.js";
+import { isPublicEnvName } from "../public-env.js";
 import { imageTag, parseArchiveUri, type ParsedArchive } from "./source.js";
-import { buildSucceeded, toDeploymentStatus, toReadiness } from "./status.js";
+import {
+  buildSucceeded,
+  explainBuildFailure,
+  explainStartFailure,
+  toDeploymentStatus,
+  toReadiness,
+} from "./status.js";
 
 /**
  * Deploys through Google.
@@ -130,6 +137,8 @@ interface RunService {
 interface Build {
   id?: string;
   status?: string;
+  /** Cloud Build's one-line summary of how it ended. */
+  statusDetail?: string;
   logsBucket?: string;
   createTime?: string;
   startTime?: string;
@@ -214,11 +223,6 @@ export class CloudRunProvider implements DeploymentProvider {
       };
     });
 
-    // One build, not one per service. They share an upload, they succeed or
-    // fail as a unit, and one build id is one thing to poll - which is what
-    // lets the rest of the deploy stay exactly as it was.
-    const buildId = await this.startBuild(archive, planned);
-
     // An app none of whose parts takes the port is only workers and
     // scheduled runs. It has no service to write, and no address.
     const web = app.services.some((part) => part.ingress);
@@ -230,6 +234,16 @@ export class CloudRunProvider implements DeploymentProvider {
     const had =
       current !== null ? envOf(current) : await this.processes.currentEnv(service);
     const env = applyEnvChange(had, app.env);
+
+    // One build, not one per service. They share an upload, they succeed or
+    // fail as a unit, and one build id is one thing to poll - which is what
+    // lets the rest of the deploy stay exactly as it was.
+    //
+    // It is given the browser-public variables and nothing else: a frontend
+    // build compiles those into its JavaScript, and without them there a
+    // Next.js app ships `undefined` to every browser. They are public by
+    // definition, so nothing secret reaches the build (docs/secrets.md).
+    const buildId = await this.startBuild(archive, planned, publicOnly(env));
 
     // Beside a web service, the next variables wait on that service (below)
     // and reach the processes with the new build; with none, they have
@@ -316,10 +330,14 @@ export class CloudRunProvider implements DeploymentProvider {
     const build = await this.getBuild(buildId);
 
     if (!buildSucceeded(build.status)) {
+      const status = toDeploymentStatus(build.status);
       return {
         providerDeploymentId: deploymentId,
-        status: toDeploymentStatus(build.status),
+        status,
         url: null,
+        ...(status === "failed"
+          ? { reason: explainBuildFailure(build.status, build.statusDetail) }
+          : {}),
       };
     }
 
@@ -405,10 +423,17 @@ export class CloudRunProvider implements DeploymentProvider {
   private readiness(service: RunService): {
     status: DeploymentResult["status"];
     url: string | null;
+    reason?: string;
   } {
     const state = toReadiness(service.terminalCondition?.state);
 
-    if (state === "failed") return { status: "failed", url: null };
+    if (state === "failed") {
+      return {
+        status: "failed",
+        url: null,
+        reason: explainStartFailure(service.terminalCondition?.message),
+      };
+    }
 
     if (
       state === "ready" &&
@@ -729,6 +754,7 @@ export class CloudRunProvider implements DeploymentProvider {
   private async startBuild(
     archive: ParsedArchive,
     parts: ReadonlyArray<DeployableService & { image: string; entrypoint?: string }>,
+    publicEnv: Readonly<Record<string, string>> = {},
   ): Promise<string> {
     const { projectId, region, serviceAccountEmail, sourceBucket } = this.config;
 
@@ -750,8 +776,8 @@ export class CloudRunProvider implements DeploymentProvider {
           // outcome for two halves of one app.
           steps: parts.flatMap((part) =>
             part.dockerfile === null
-              ? buildpackStep(part.image, part.sourcePath, part.entrypoint)
-              : dockerSteps(part.image, part.dockerfile),
+              ? buildpackStep(part.image, part.sourcePath, part.entrypoint, publicEnv)
+              : dockerSteps(part.image, part.dockerfile, publicEnv),
           ),
           // Both paths push the image themselves - `pack --publish` directly,
           // and docker with an explicit push step. Naming it under `images` as
@@ -1011,6 +1037,7 @@ function buildpackStep(
   image: string,
   sourcePath: string,
   entrypoint?: string,
+  publicEnv: Readonly<Record<string, string>> = {},
 ): unknown[] {
   return [
     {
@@ -1036,9 +1063,23 @@ function buildpackStep(
         // A command, never a secret: nothing from the environment reaches a
         // build (docs/secrets.md).
         ...(entrypoint === undefined ? [] : ["--env", `GOOGLE_ENTRYPOINT=${entrypoint}`]),
+        // What the frontend compiles in. Public by name, so safe here.
+        ...Object.entries(publicEnv).flatMap(([name, value]) => [
+          "--env",
+          `${name}=${literal(value)}`,
+        ]),
       ],
     },
   ];
+}
+
+/**
+ * A value as Cloud Build will pass it on unchanged. Cloud Build treats `$` in
+ * a step's arguments as the start of a substitution, and refuses a build with
+ * one it does not recognise, so every `$` is doubled.
+ */
+function literal(value: string): string {
+  return value.replace(/\$/g, "$$$$");
 }
 
 /**
@@ -1049,7 +1090,11 @@ function buildpackStep(
  * recognise. Wave's build installed 53 packages and then failed for want of an
  * entrypoint that was written down in a file Cira was ignoring.
  */
-function dockerSteps(image: string, dockerfile: string): unknown[] {
+function dockerSteps(
+  image: string,
+  dockerfile: string,
+  publicEnv: Readonly<Record<string, string>> = {},
+): unknown[] {
   return [
     {
       name: "gcr.io/cloud-builders/docker",
@@ -1057,7 +1102,22 @@ function dockerSteps(image: string, dockerfile: string): unknown[] {
       // it, because those are separate facts in any monorepo. Wave keeps its
       // Dockerfile in `apps/api` and says plainly that the context must be the
       // workspace.
-      args: ["build", "-f", dockerfile, "-t", image, "."],
+      //
+      // Browser-public variables as build arguments, which is the only way a
+      // Dockerfile is given anything: one that declares `ARG NEXT_PUBLIC_X`
+      // receives it, and one that does not is unaffected.
+      args: [
+        "build",
+        "-f",
+        dockerfile,
+        "-t",
+        image,
+        ...Object.entries(publicEnv).flatMap(([name, value]) => [
+          "--build-arg",
+          `${name}=${literal(value)}`,
+        ]),
+        ".",
+      ],
       // BuildKit, because a Dockerfile written any time recently assumes it.
       // `RUN --mount=type=cache` is the common one and it is not an extension
       // people opt into - it is the default everywhere the file was tested,
@@ -1069,7 +1129,6 @@ function dockerSteps(image: string, dockerfile: string): unknown[] {
   ];
 }
 
-/** The environment a service is already running with. */
 /**
  * The revision answering requests right now, by its short name, or null when
  * that cannot be told - in which case the newest revision is the safe answer,
@@ -1087,6 +1146,16 @@ export function servingRevision(service: RunService): string | null {
   return name.split("/").pop() ?? null;
 }
 
+/** Only the variables a browser is meant to see. */
+function publicOnly(env: Readonly<Record<string, string>>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env)
+      .filter(([name]) => isPublicEnvName(name))
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+/** The environment a service is already running with. */
 function envOf(service: RunService): Record<string, string> {
   const entries = service.template?.containers?.[0]?.env ?? [];
   const env: Record<string, string> = {};

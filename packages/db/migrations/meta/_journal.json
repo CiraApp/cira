@@ -232,6 +232,27 @@
       "when": 1790050661203,
       "tag": "0032_mark_a_replaced_deploy_superseded",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790051532443,
+      "tag": "0033_remember_why_a_deploy_failed",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790052201313,
+      "tag": "0034_choose_who_joins_by_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790052711052,
+      "tag": "0035_scope_tokens_and_let_them_lapse",
+      "breakpoints": true
     }
   ]
 }

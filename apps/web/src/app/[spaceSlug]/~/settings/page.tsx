@@ -7,6 +7,7 @@ import { count, eq } from "drizzle-orm";
 import { apps, db } from "@cira/db";
 import { roleAtLeast } from "@cira/core";
 import { LeaveCira } from "@/components/leave-cira";
+import { SpaceSettingsForm } from "@/components/space-settings-form";
 
 export default async function SettingsPage({
   params,
@@ -32,9 +33,9 @@ export default async function SettingsPage({
       {
         label: "Joining",
         value:
-          ctx.space.domain === null
-            ? "By invite only"
-            : `Anyone with a verified @${ctx.space.domain} address`,
+          ctx.space.domain !== null && ctx.space.joinByDomain
+            ? `By invite, or with a verified @${ctx.space.domain} address`
+            : "By invite only",
       },
       { label: "Your role", value: ctx.role, capitalize: true },
     ];
@@ -77,9 +78,24 @@ export default async function SettingsPage({
             </p>
           ) : null}
 
-          <p className="mt-3 text-[12px] leading-relaxed text-ink-subtle">
-            Renaming a space and changing who may join are not built yet. An app&rsquo;s
-            own settings live on its page.
+          {roleAtLeast(ctx.role, "admin") ? (
+            <SpaceSettingsForm
+              spaceSlug={spaceSlug}
+              name={ctx.space.name}
+              domain={ctx.space.domain}
+              joinByDomain={ctx.space.joinByDomain}
+            />
+          ) : null}
+
+          <p className="mt-6 text-[12px] leading-relaxed text-ink-subtle">
+            An app&rsquo;s own settings live on its page. People, roles and teams are on{" "}
+            <Link
+              href={`/${spaceSlug}/~/members`}
+              className="text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Members
+            </Link>
+            .
           </p>
 
           <LeaveCira

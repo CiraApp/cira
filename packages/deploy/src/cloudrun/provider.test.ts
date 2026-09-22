@@ -160,6 +160,61 @@ describe("deploy", () => {
     expect(build).not.toContain("DATABASE_URL");
   });
 
+  it("gives the build what a browser is meant to see, and nothing else", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy({
+      ...input,
+      env: {
+        set: {
+          DATABASE_URL: "postgres://user:hunter2@db/app",
+          NEXT_PUBLIC_API_URL: "https://api.acme.test",
+          VITE_PRICE: "$5",
+        },
+        unset: [],
+      },
+    });
+
+    const build = JSON.stringify(calls.find((c) => c.url.includes("cloudbuild"))?.body);
+    expect(build).toContain("NEXT_PUBLIC_API_URL=https://api.acme.test");
+    // Cloud Build reads a lone `$` as a substitution; doubled, it is a dollar.
+    expect(build).toContain("VITE_PRICE=$$5");
+    expect(build).not.toContain("hunter2");
+  });
+
+  it("passes the same to a Dockerfile as build arguments", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy({
+      ...input,
+      services: [{ ...oneService, dockerfile: "Dockerfile" }],
+      env: {
+        set: { NEXT_PUBLIC_API_URL: "https://api.acme.test", SECRET: "s" },
+        unset: [],
+      },
+    });
+
+    const build = calls.find((c) => c.url.includes("cloudbuild"))?.body as {
+      steps: Array<{ args: string[] }>;
+    };
+    expect(build.steps[0]?.args).toEqual([
+      "build",
+      "-f",
+      "Dockerfile",
+      "-t",
+      expect.any(String),
+      "--build-arg",
+      "NEXT_PUBLIC_API_URL=https://api.acme.test",
+      ".",
+    ]);
+  });
+
   it("carries the environment to the service instead", async () => {
     serve([
       [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
@@ -426,6 +481,7 @@ describe("getStatus", () => {
       providerDeploymentId: handle,
       status: "failed",
       url: null,
+      reason: "The build failed. Its logs, on the app's page, say where.",
     });
   });
 
@@ -531,7 +587,12 @@ describe("getStatus", () => {
       ],
     ]);
 
-    expect((await provider().getStatus(handle)).status).toBe("failed");
+    const result = await provider().getStatus(handle);
+    expect(result.status).toBe("failed");
+    // Said plainly, and without Google's console or project in it.
+    expect(result.reason).toBe(
+      "It built, but never started listening. An app has to listen on the port in its PORT variable, and start within four minutes.",
+    );
   });
 
   it("says removed when the app was deleted mid-build", async () => {

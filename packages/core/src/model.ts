@@ -34,6 +34,8 @@ export interface Space {
    * space created from a personal address.
    */
   domain: string | null;
+  /** Whether a verified address at `domain` joins without an invite. */
+  joinByDomain: boolean;
   /** Which plan it is on; what each allows and costs is in plans.ts. */
   plan: string;
   /** What Stripe knows it as, and how its subscription is doing. Null until it pays. */
@@ -162,6 +164,8 @@ export interface Deployment {
   url: string | null;
   /** False for an app that is only workers or scheduled runs: nothing to open. */
   servesWeb: boolean;
+  /** Why it failed, in plain words, when that is known. */
+  failureReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

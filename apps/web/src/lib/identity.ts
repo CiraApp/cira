@@ -1,9 +1,9 @@
 import "server-only";
 
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
-import { db, users } from "@cira/db";
+import { and, eq, isNull } from "drizzle-orm";
+import { cliTokens, db, memberships, users } from "@cira/db";
 import { newId } from "@cira/core";
 import type { User } from "@cira/core";
 
@@ -80,7 +80,17 @@ export async function getCurrentUser(): Promise<User | null> {
     .where(eq(users.externalId, identity.externalId))
     .limit(1);
 
-  const existing = known ?? (await relink(identity));
+  let existing = known;
+  if (existing === undefined) {
+    try {
+      existing = await relink(identity);
+    } catch (error) {
+      // Said on a page of its own: an error thrown from here would reach the
+      // person as "something went wrong", with no way to learn what or why.
+      if (error instanceof AddressTakenError) redirect("/account-conflict");
+      throw error;
+    }
+  }
 
   if (existing !== undefined) {
     // Keep the profile fresh, but never move the Cira id: access grants and app
@@ -96,15 +106,27 @@ export async function getCurrentUser(): Promise<User | null> {
       existing.imageUrl !== identity.imageUrl;
 
     if (changed) {
-      const [updated] = await database
-        .update(users)
-        .set({
-          name,
-          email: identity.email,
-          imageUrl: identity.imageUrl,
-        })
-        .where(eq(users.id, existing.id))
-        .returning();
+      let updated: UserRow | undefined;
+      try {
+        [updated] = await database
+          .update(users)
+          .set({
+            name,
+            email: identity.email,
+            imageUrl: identity.imageUrl,
+          })
+          .where(eq(users.id, existing.id))
+          .returning();
+      } catch {
+        // The new address is still held by another Cira row - a person who
+        // left, most likely. Keeping the address this person had is better
+        // than locking them out of every page until someone notices.
+        [updated] = await database
+          .update(users)
+          .set({ name, imageUrl: identity.imageUrl })
+          .where(eq(users.id, existing.id))
+          .returning();
+      }
 
       if (updated !== undefined) return toUser(updated);
     }
@@ -141,27 +163,96 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 /**
+ * When Cira's production sign-in went live. People who signed in before it did
+ * so on Clerk's development instance, whose ids production does not know.
+ */
+const PRODUCTION_SIGN_IN_SINCE = new Date("2026-09-19T00:00:00Z");
+
+/**
  * The Cira user this person already is, arriving under a new provider id.
  *
  * A sign-in provider's id for a person is only stable within one instance of
- * it. Moving Clerk from its development instance to a production one gives
- * everybody a new id, and without this every existing person would arrive as a
- * stranger - worse, as a stranger whose email is already taken, which the
- * unique index refuses. So a person whose verified address is already a Cira
- * user is that user, and the row is moved to the new id in one update.
+ * it. Moving Clerk from its development instance to production gave everybody
+ * a new id, and without this every existing person would have arrived as a
+ * stranger whose email was already taken. So a person whose verified address
+ * is already a Cira user can become that user.
  *
- * Only a verified address is ever used (see `readProviderIdentity`), and an
- * email is already what Cira trusts for invites and for joining a space by
- * domain, so this admits nobody that a verified address would not. It also
- * works in reverse, so pointing Cira back at the old instance is safe.
+ * But an address is not a person forever. When alice@acme.com leaves, the
+ * company may give the address to someone else, and that someone signing up
+ * must not become Alice - with every membership, role and app she had, in
+ * every company that invited her. So the move happens only when it is plainly
+ * the same person under a new id:
+ *
+ * - the id the row holds does not exist in this sign-in instance any more,
+ *   so no living account is being displaced; and
+ * - the row is from before production sign-in, which is exactly the move this
+ *   is for, or it belongs to no space at all, so there is nothing to inherit.
+ *
+ * Anything else is refused, and the person is told who can sort it out.
  */
 async function relink(identity: ProviderIdentity): Promise<UserRow | undefined> {
-  const [moved] = await db()
+  const database = db();
+  const [holder] = await database
+    .select()
+    .from(users)
+    .where(eq(users.email, identity.email))
+    .limit(1);
+  if (holder === undefined) return undefined;
+
+  if (await accountStillExists(holder.externalId)) {
+    throw new AddressTakenError();
+  }
+
+  const fromBeforeProduction = holder.createdAt < PRODUCTION_SIGN_IN_SINCE;
+  if (!fromBeforeProduction) {
+    const [anyMembership] = await database
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(eq(memberships.userId, holder.id))
+      .limit(1);
+    if (anyMembership !== undefined) throw new AddressTakenError();
+  }
+
+  // Whatever the old sign-in left running stops: a terminal still holding its
+  // token must not go on acting as whoever holds this row from now on.
+  await database
+    .update(cliTokens)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(cliTokens.userId, holder.id), isNull(cliTokens.revokedAt)));
+
+  const [moved] = await database
     .update(users)
     .set({ externalId: identity.externalId })
-    .where(eq(users.email, identity.email))
+    .where(eq(users.id, holder.id))
     .returning();
   return moved;
+}
+
+/** Whether the sign-in provider still has an account with this id. */
+async function accountStillExists(externalId: string): Promise<boolean> {
+  try {
+    const client = await clerkClient();
+    await client.users.getUser(externalId);
+    return true;
+  } catch (error) {
+    // Only a clear "no such user" counts as gone. Anything else - the provider
+    // briefly unreachable - is not evidence, and refusing is the safe answer.
+    const status = (error as { status?: number }).status;
+    return status !== 404;
+  }
+}
+
+/**
+ * A verified address that already belongs to a different Cira account. Shown
+ * to the person on the sign-in error page rather than silently merging them.
+ */
+export class AddressTakenError extends Error {
+  constructor() {
+    super(
+      "This email address already belongs to another Cira account. If it used to be someone else's, ask an admin of your company to remove that person and invite you.",
+    );
+    this.name = "AddressTakenError";
+  }
 }
 
 /**

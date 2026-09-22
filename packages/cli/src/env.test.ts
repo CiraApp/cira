@@ -51,6 +51,28 @@ describe("parseDotenv", () => {
   it("is empty for an empty file", () => {
     expect(parseDotenv("")).toEqual({});
   });
+
+  it("reads a double-quoted value across lines, the way a private key is kept", () => {
+    const text = 'KEY="-----BEGIN KEY-----\nabc\n-----END KEY-----"\nNEXT=1';
+    expect(parseDotenv(text)).toEqual({
+      KEY: "-----BEGIN KEY-----\nabc\n-----END KEY-----",
+      NEXT: "1",
+    });
+  });
+
+  it("turns \\n into a newline inside double quotes only", () => {
+    expect(parseDotenv("A=\"one\\ntwo\"\nB='one\\ntwo'")).toEqual({
+      A: "one\ntwo",
+      B: "one\\ntwo",
+    });
+  });
+
+  it("leaves a trailing comment out of an unquoted value", () => {
+    expect(parseDotenv("PORT=8080 # the default\nHASH=abc#def")).toEqual({
+      PORT: "8080",
+      HASH: "abc#def",
+    });
+  });
 });
 
 describe("isPublicName", () => {
@@ -68,26 +90,20 @@ describe("isPublicName", () => {
 describe("collectEnv", () => {
   const scratch = (): string => mkdtempSync(join(tmpdir(), "cira-env-"));
 
-  it("reads the first candidate file that exists", () => {
+  it("layers the files the way a production build reads them", () => {
     const root = scratch();
-    writeFileSync(join(root, ".env"), "FROM=env");
-    writeFileSync(join(root, ".env.local"), "FROM=local");
+    writeFileSync(join(root, ".env"), "SHARED=env\nFROM=env");
+    writeFileSync(join(root, ".env.production"), "FROM=production");
+    writeFileSync(join(root, ".env.local"), "FROM=local\nLOCAL_ONLY=1");
 
-    // .env.local outranks .env, so a developer's overrides win over defaults
-    // checked into the repo.
+    // Each overrides the one before, and nothing in an earlier file is lost
+    // for being overridden elsewhere - reading only the first file that
+    // existed used to drop everything in `.env`.
     const collected = collectEnv(root, []);
-    expect(collected.env).toEqual({ FROM: "local" });
-    expect(collected.source).toBe(".env.local");
-  });
-
-  it("does not merge across files", () => {
-    // One file is the environment. Merging would make which value won depend
-    // on which files happen to exist, which is not something to debug.
-    const root = scratch();
-    writeFileSync(join(root, ".env"), "ONLY_IN_ENV=1");
-    writeFileSync(join(root, ".env.local"), "ONLY_IN_LOCAL=1");
-
-    expect(collectEnv(root, []).env).toEqual({ ONLY_IN_LOCAL: "1" });
+    expect(collected.env).toEqual({ SHARED: "env", FROM: "local", LOCAL_ONLY: "1" });
+    expect(collected.source).toBe(".env, .env.production, .env.local");
+    // A value typed at the prompt goes into the most specific file read.
+    expect(collected.file).toBe(".env.local");
   });
 
   it("takes an explicit file over any candidate", () => {
@@ -119,15 +135,32 @@ describe("collectEnv", () => {
     expect(collected.env).toEqual({ A: "1", B: "2" });
   });
 
-  it("sends nothing when told to", () => {
+  it("reads no files and sends no values when told to", () => {
     const root = scratch();
     writeFileSync(join(root, ".env.local"), "KEY=value");
 
-    // --no-env is how a developer clears variables an app no longer needs, so
-    // it has to beat both the file and any explicit pair.
+    // Sending nothing now changes nothing: production keeps what it has.
     const collected = collectEnv(root, ["--no-env", "--env", "A=1"]);
     expect(collected.env).toEqual({});
     expect(collected.source).toBeNull();
+  });
+
+  it("takes a variable away only when asked, and never one it is also setting", () => {
+    const collected = collectEnv(scratch(), [
+      "--unset",
+      "OLD_FLAG",
+      "--unset=LEGACY_URL",
+      "--env",
+      "LEGACY_URL=kept",
+    ]);
+    expect(collected.unset).toEqual(["OLD_FLAG"]);
+    expect(collected.env).toEqual({ LEGACY_URL: "kept" });
+  });
+
+  it("reads flags written with an equals sign", () => {
+    const root = scratch();
+    writeFileSync(join(root, "other.env"), "FROM=other");
+    expect(collectEnv(root, ["--env-file=other.env"]).env).toEqual({ FROM: "other" });
   });
 
   it("is empty and sourceless when there is no file", () => {

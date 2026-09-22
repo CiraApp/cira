@@ -3,6 +3,7 @@ import { z } from "zod";
 import { newId } from "@cira/core";
 import { MAX_BUNDLE_BYTES, sourceStore } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
+import { principalFor } from "@/lib/principal";
 
 export const maxDuration = 60;
 
@@ -42,6 +43,16 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Bad request" },
       { status: 400 },
+    );
+  }
+
+  // Somewhere to deploy to comes first. An upload is only ever the first half
+  // of a deploy, and anyone with a sign-in and no company used to be able to
+  // keep asking for 100 MB of Cira's storage with nowhere for it to go.
+  if ((await principalFor(user)) === null) {
+    return NextResponse.json(
+      { error: "You are not in a space yet. Open Cira and join or create one first." },
+      { status: 403 },
     );
   }
 

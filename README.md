@@ -117,11 +117,21 @@ check runs on the server; ids a client sends are never trusted.
 ### 1. Joining a company
 
 A person signs in through Clerk. On first sign-in, onboarding either creates a
-space for their company or joins one. A space founded with a company email
-records that domain, and anyone who later signs in with a verified address on
-it joins automatically as a member. Everyone else arrives through an invite
-link. Admins and owners manage members, teams and roles from the space's
-members page.
+space for their company or joins one. People arrive through an invite link,
+which only the invited address can use. A space founded with a company email
+records that domain, and an admin can choose, in the space's settings, to let
+anyone with a verified address there join as a member without an invite; it is
+off until someone turns it on. Personal providers (Gmail, Outlook, web.de, QQ
+and about 190 more) and university addresses never count as a company domain.
+
+The members page is where a company looks after its people. Admins change
+roles, remove people, revoke invites that are out and make teams; anyone can
+leave. A space can have several owners, only an owner makes or changes one,
+and the last owner cannot leave until there is another. Removing someone takes
+away their access everywhere at once - including their CLI and any assistant
+they connected, since every token is checked against membership - hands the
+apps they owned to whoever removed them, and stops them rejoining by domain
+until they are invited again.
 
 ### 2. Connecting a machine
 
@@ -134,9 +144,14 @@ cira login ──▶ POST /api/cli/auth/start      gets a device code and a shor
            ──▶ POST /api/cli/auth/poll       returns a token once approved
 ```
 
-The token is stored in `~/.cira/config.json`. It is the one credential the CLI
-uses for everything, and the same one an agent uses over MCP - so revoking it
-cuts off both.
+The token is stored in `~/.cira/config.json` (or given as `CIRA_TOKEN`, which
+is how a CI job deploys). It deploys and removes the apps its owner manages.
+Assistants never get it: `cira mcp connect`, and the Connect your assistant
+panel in the app, give them a token of their own that reaches MCP and nothing
+else, as the same person. Every token lapses after ninety days unused, and each
+use moves that on, so a machine or a CI job in regular use never notices. The
+panel lists every token that can act as a person, marked terminal or
+assistants, each with a Revoke.
 
 ### 3. Deploying an app
 
@@ -165,38 +180,59 @@ the browser-facing half (Next.js before a bare Node server) is chosen to take
 the public port. Whether each service has a **Dockerfile**: if so it is built
 with it, otherwise Cloud Build's buildpacks detect the language.
 
-**The environment.** The CLI reads the first of `.env.production.local`,
-`.env.local`, `.env.production` or `.env` that exists, and scans the source
-for variables the code reads with no default, or with a default pointing at
-`localhost`. It prints one checklist, marking each variable ✓ or ✗:
+**The environment.** A deploy changes the variables it sends and leaves every
+other one as it is in production, so a teammate's fresh clone or a CI job with
+no `.env` changes nothing. The CLI layers `.env`, `.env.production`,
+`.env.local` and `.env.production.local`, each overriding the one before, the
+way Next.js and Vite read them for a production build, and then any `--env
+KEY=value`. It scans the source for variables the code reads with no default,
+or with a default pointing at `localhost`, asks Cira which names production
+already has, and prints one checklist, marking each variable ✓ or ✗:
 
 ```text
-Environment (from .env.local)
+Environment (from .env, .env.local)
   ✓ DATABASE_URL
-  ✓ S3_ACCESS_KEY
+  ✓ S3_ACCESS_KEY  already set in production
   ✗ REDIS_URL      defaults to localhost, in apps/api/app/config.py
 ```
 
 For anything missing, it asks for the value in the terminal (masked), and
-going without one means typing `skip` - pressing Enter does not. It also
-lists every `NEXT_PUBLIC_` variable separately, because those are compiled into
-the JavaScript a browser downloads and are readable by anyone who opens the app.
+going without one means typing `skip` - pressing Enter does not. Taking a
+variable away is explicit: `cira deploy --unset OLD_NAME`. It also lists every
+variable a frontend build compiles into the JavaScript a browser downloads
+(`NEXT_PUBLIC_`, `VITE_`, `REACT_APP_`, `PUBLIC_`, `EXPO_PUBLIC_`,
+`NUXT_PUBLIC_`, `GATSBY_`), because anyone who opens the app can read those.
+They are also the only variables the build itself is given - as `--env` to
+buildpacks, or as `--build-arg` to a Dockerfile that declares the `ARG` - so
+they are in the bundle rather than `undefined`.
 
 Values are never stored by Cira. They travel with the deploy request, are
-written straight onto the Cloud Run service, and are forgotten. Cira keeps
-each variable's name, an 8-character fingerprint and who set it, so the app
-page can show what is configured and when it changed. The full design is in
-[`docs/secrets.md`](docs/secrets.md).
+written onto the Cloud Run service in a revision that takes no traffic, and go
+live together with the new build; a build that fails leaves the app as it was.
+Cira keeps each variable's name, an 8-character fingerprint and who set it, so
+the app page can show what is configured and when it changed. The full design
+is in [`docs/secrets.md`](docs/secrets.md).
 
-**The upload.** The source is packed into one archive, without local `.env`
-files (`.env.example` is kept), `node_modules` or `.git`, and sent straight from the CLI to Cloud Storage with
-a signed URL that allows writing one object once. It never passes through Cira,
-which is what lets a real project deploy at all: Vercel caps request bodies far
-below the size of one.
+**The upload.** What is sent is what the build would be sent anyway: for a
+Dockerfile, `docker build`'s view of the folder, so `.dockerignore` decides;
+otherwise the repository's `.gitignore` files, each for its own directory.
+`.ciraignore`, in the same syntax, applies to both and has the last word.
+Dependencies, caches, virtual environments (found by their `pyvenv.cfg`,
+whatever they are called), `.git` and `.env` files are never sent. Neither is
+anything that holds a credential by convention - `.streamlit/secrets.toml`,
+`config/master.key`, `credentials.json`, `.npmrc`, a `.pem` with a private key
+in it - which the CLI names as it holds them back; a `!path` line in
+`.ciraignore` sends one anyway. The archive goes straight from the CLI to Cloud
+Storage with a signed URL that allows writing one object once. It never passes
+through Cira, which is what lets a real project deploy at all: Vercel caps
+request bodies far below the size of one.
 
 **The build and the rollout.** `POST /api/cli/deploy` checks membership,
-creates or finds the app, records its services and starts one Cloud Build with
-a step per service. Each service becomes a container in a single Cloud Run
+creates the app or - for a redeploy - checks the deployer may manage it (its
+owner, an admin, or someone given "Can manage" in its Access panel), records
+its services and starts one Cloud Build with a step per service. Starting a
+deploy supersedes any older one of the same app still in flight, so a build
+that finishes late never replaces newer code. Each service becomes a container in a single Cloud Run
 service:
 
 ```text
@@ -373,10 +409,12 @@ One rule decides who may open an app, and everything else follows from it:
 4. Otherwise, an access rule must name you, one of your teams, or the space.
 
 Capabilities have no permissions of their own: you may discover and call a
-capability exactly when you may open its app. Managing an app - settings,
-access, environment, deletion, turning capabilities on - is for its owner and
-the space's admins. The rules live in `packages/core/src/permissions.ts` as
-pure functions and are tested there.
+capability exactly when you may open its app. Managing an app - deploying it,
+settings, access, environment, deletion, turning capabilities on - is for its
+owner, the space's admins, and anyone its Access panel says "Can manage" for,
+directly or through a team. "Can manage" is never given to the whole space.
+The rules live in `packages/core/src/permissions.ts` as pure functions and are
+tested there.
 
 ### 8. Reaching Google without keys
 
@@ -720,7 +758,8 @@ cover.
 
 ### Telling people when something breaks
 
-Whoever manages an app - its owner and the space's admins - is emailed when a
+Whoever manages an app - its owner, the space's admins and anyone given
+"Can manage" on it - is emailed when a
 deploy of it fails, when it stops answering, when a worker keeps stopping,
 when a scheduled run fails, and when a capability that worked stops letting
 Cira in. And when an app or worker that stopped is back. Invitations to a

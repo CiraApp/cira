@@ -1,11 +1,12 @@
 "use server";
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { cliTokens, db } from "@cira/db";
 import { newId } from "@cira/core";
 import { newCliToken } from "@/lib/cli-auth";
 import { hashToken } from "@/lib/token-hash";
+import { tokenExpiry } from "@/lib/cli-session";
 import { requireCurrentUser } from "@/lib/identity";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -13,6 +14,8 @@ export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string
 export interface TokenSummary {
   id: string;
   label: string;
+  /** A terminal's token deploys; an assistant's only reaches MCP. */
+  scope: "cli" | "assistant";
   createdAt: string;
   lastUsedAt: string | null;
 }
@@ -20,10 +23,12 @@ export interface TokenSummary {
 /**
  * The tokens that let a person's assistants reach Cira.
  *
- * One kind of credential, whether it was issued by `cira login`, by
- * `cira mcp connect` or from the panel in the app. That is what makes the list
- * here the whole truth about who can act as you, and the revoke beside each
- * row the only place anyone has to look.
+ * Every credential that can act as this person, whether issued by
+ * `cira login`, by `cira mcp connect` or from the panel in the app - so the
+ * list is the whole truth about who can act as you, and the revoke beside each
+ * row the only place anyone has to look. A terminal's token deploys; an
+ * assistant's reaches MCP only. One unused for ninety days has lapsed and is
+ * not listed, because it no longer opens anything.
  */
 export async function listAssistantTokens(): Promise<TokenSummary[]> {
   const user = await requireCurrentUser();
@@ -32,16 +37,24 @@ export async function listAssistantTokens(): Promise<TokenSummary[]> {
     .select({
       id: cliTokens.id,
       label: cliTokens.label,
+      scope: cliTokens.scope,
       createdAt: cliTokens.createdAt,
       lastUsedAt: cliTokens.lastUsedAt,
     })
     .from(cliTokens)
-    .where(and(eq(cliTokens.userId, user.id), isNull(cliTokens.revokedAt)))
+    .where(
+      and(
+        eq(cliTokens.userId, user.id),
+        isNull(cliTokens.revokedAt),
+        or(isNull(cliTokens.expiresAt), gt(cliTokens.expiresAt, new Date())),
+      ),
+    )
     .orderBy(desc(cliTokens.createdAt));
 
   return rows.map((row) => ({
     id: row.id,
     label: row.label,
+    scope: row.scope,
     createdAt: row.createdAt.toISOString(),
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
   }));
@@ -79,6 +92,10 @@ export async function createAssistantToken(
       userId: user.id,
       tokenHash: hashToken(token),
       label: parsed.data.label,
+      // For MCP and nothing else: a config file an assistant reads is not a
+      // place for the right to deploy or remove apps.
+      scope: "assistant",
+      expiresAt: tokenExpiry(),
     });
 
   return { ok: true, data: { token, label: parsed.data.label } };

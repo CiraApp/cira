@@ -1,6 +1,6 @@
 {
   "name": "@cira-app/cli",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Deploy internal software to your company with Cira.",
   "keywords": [
     "cira",
@@ -44,6 +44,7 @@
     "@cira/core": "workspace:*",
     "@cira/deploy": "workspace:*",
     "@cira/skill": "workspace:*",
-    "esbuild": "^0.25.12"
+    "esbuild": "^0.25.12",
+    "ignore": "^7.0.9"
   }
 }

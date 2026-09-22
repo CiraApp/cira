@@ -5,6 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { appEnvVars, db } from "@cira/db";
 import { newId, type EnvChange } from "@cira/core";
+import { isPublicEnvName } from "@cira/deploy/packaging";
 
 /**
  * Environment variables on the way to a deployment.
@@ -52,9 +53,9 @@ export function fingerprint(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex").slice(0, 8);
 }
 
-/** Next.js compiles these into the browser bundle. */
+/** A frontend build compiles these into the JavaScript a browser downloads. */
 export function isPublicName(key: string): boolean {
-  return key.startsWith("NEXT_PUBLIC_");
+  return isPublicEnvName(key);
 }
 
 /**

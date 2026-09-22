@@ -157,8 +157,13 @@ async function searchTool(
     };
   }
 
+  const several = new Set(found.map((c) => c.spaceSlug)).size > 1;
   return {
-    content: JSON.stringify({ capabilities: found.map(brief) }, null, 2),
+    content: JSON.stringify(
+      { capabilities: found.map((capability) => brief(capability, several)) },
+      null,
+      2,
+    ),
     isError: false,
   };
 }
@@ -239,12 +244,17 @@ const UNAVAILABLE: Record<"pending" | "refused", string> = {
  * The risk grade is included deliberately: an agent deciding whether to ask
  * its human first should be able to see that something writes.
  */
-function brief(capability: CapabilityWithApp) {
+function brief(capability: CapabilityWithApp, severalCompanies = false) {
   return {
     capabilityId: capability.id,
-    name: `${capability.appSlug}.${capability.name}`,
+    // Someone in two companies can have a `crm` app in both. The company is
+    // then part of the name, so an agent cannot pick the wrong one's.
+    name: severalCompanies
+      ? `${capability.spaceSlug}/${capability.appSlug}.${capability.name}`
+      : `${capability.appSlug}.${capability.name}`,
     description: capability.description,
     app: capability.appName,
+    company: capability.spaceSlug,
     risk: capability.risk,
     enabled: capability.enabled,
     ...(capability.reach === "callable"

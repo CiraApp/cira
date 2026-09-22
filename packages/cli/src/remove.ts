@@ -46,13 +46,33 @@ export async function remove(argv: string[] = []): Promise<number> {
 
   info("");
   info(`This removes ${bold(`${spaceSlug}/${appSlug}`)} and everything it left behind:`);
-  info(dim("  the running app, its images, and what Cira recorded about it."));
+  info(
+    dim(
+      "  the running app, its workers and scheduled runs, its images, and what Cira recorded about it.",
+    ),
+  );
   info(dim("  It cannot be undone."));
   info("");
 
-  const confirm =
-    readFlag(argv, "--yes") ?? (await ask(`Type the app's name to confirm: `));
-  if (confirm === null || confirm.trim() === "") {
+  // `--confirm NAME` is how a script says it. `--yes` on its own, which is
+  // what `cira deploy --yes` takes, is not enough here: removing is the one
+  // command where the app's name has to be typed back, and quietly treating a
+  // bare `--yes` as "no" used to leave a CI job thinking it had removed
+  // something it had not.
+  const named = readFlag(argv, "--confirm") ?? readFlag(argv, "--yes");
+  if (named === null && (argv.includes("--yes") || argv.includes("-y"))) {
+    fail("Removing needs the app's name, not only --yes.");
+    info(`  ${dim("For example:")} cira remove --confirm "${appSlug}"`);
+    return 1;
+  }
+  if (named === null && process.stdin.isTTY !== true) {
+    fail(
+      "Nothing was removed. With nobody at a terminal, pass the app's name with --confirm.",
+    );
+    return 1;
+  }
+  const confirm = named ?? (await ask(`Type the app's name to confirm: `)) ?? "";
+  if (confirm.trim() === "") {
     fail("Nothing was removed.");
     return 1;
   }
@@ -91,7 +111,11 @@ export async function remove(argv: string[] = []): Promise<number> {
 function readFlag(argv: string[], flag: string): string | null {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === flag) return argv[i + 1] ?? null;
+    if (arg === flag) {
+      const next = argv[i + 1];
+      // The next flag is not this one's value.
+      return next === undefined || next.startsWith("-") ? null : next;
+    }
     if (arg !== undefined && arg.startsWith(`${flag}=`))
       return arg.slice(flag.length + 1);
   }

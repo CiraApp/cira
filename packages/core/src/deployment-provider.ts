@@ -210,6 +210,11 @@ export interface DeploymentResult {
   providerDeploymentId: string;
   status: DeploymentStatus;
   url: string | null;
+  /**
+   * For a failed deploy, why, in words a person deploying their own app can
+   * act on. Never a provider console link or anything naming its project.
+   */
+  reason?: string;
 }
 
 export interface DeploymentLogLine {

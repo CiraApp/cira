@@ -107,6 +107,9 @@ importers:
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
+      ignore:
+        specifier: ^7.0.9
+        version: 7.0.9
 
   packages/core: {}
 

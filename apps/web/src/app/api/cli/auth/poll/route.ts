@@ -5,6 +5,7 @@ import { cliAuthRequests, cliTokens, db, users } from "@cira/db";
 import { newId } from "@cira/core";
 import { loginState, newCliToken } from "@/lib/cli-auth";
 import { hashToken } from "@/lib/token-hash";
+import { tokenExpiry } from "@/lib/cli-session";
 
 const body = z.object({ deviceCode: z.string().min(32).max(128) });
 
@@ -54,6 +55,8 @@ export async function POST(request: Request) {
     userId: row.approvedByUserId,
     tokenHash: hashToken(token),
     label: row.label,
+    scope: "cli",
+    expiresAt: tokenExpiry(),
   });
 
   const [account] = await database

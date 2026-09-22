@@ -43,6 +43,7 @@ function deployment(
     status,
     url,
     servesWeb,
+    failureReason: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };

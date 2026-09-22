@@ -30,7 +30,11 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
   }
 
   if (verdict.action === "declare-failed") {
-    return recordDeploymentStatus(deployment, { status: "failed", url: deployment.url });
+    return recordDeploymentStatus(deployment, {
+      status: "failed",
+      url: deployment.url,
+      reason: verdict.reason,
+    });
   }
 
   let live;
@@ -45,7 +49,11 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
     return deployment;
   }
 
-  return recordDeploymentStatus(deployment, live);
+  return recordDeploymentStatus(deployment, {
+    status: live.status,
+    url: live.url,
+    ...(live.reason === undefined ? {} : { reason: live.reason }),
+  });
 }
 
 /**
@@ -60,14 +68,15 @@ export async function reconcileDeployment(deployment: Deployment): Promise<Deplo
  */
 export async function recordDeploymentStatus(
   deployment: Deployment,
-  next: { status: DeploymentStatus; url: string | null },
+  next: { status: DeploymentStatus; url: string | null; reason?: string },
 ): Promise<Deployment> {
   const database = db();
   const now = new Date();
+  const failureReason = next.status === "failed" ? (next.reason ?? null) : null;
 
   const moved = await database
     .update(deployments)
-    .set({ status: next.status, url: next.url, updatedAt: now })
+    .set({ status: next.status, url: next.url, failureReason, updatedAt: now })
     .where(
       and(
         eq(deployments.id, deployment.id),
@@ -106,11 +115,12 @@ export async function recordDeploymentStatus(
           app,
           startedAt: deployment.createdAt,
           stillRunningEarlier: earlier !== undefined,
+          reason: failureReason,
         }),
     });
   }
 
-  return { ...deployment, status: next.status, url: next.url };
+  return { ...deployment, status: next.status, url: next.url, failureReason };
 }
 
 /** Whether a newer deploy of the same app has started since this one. */

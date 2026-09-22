@@ -8,6 +8,10 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // A code that arrived already filled in came from a link, and a link is how
+  // someone else would get a person to approve a login that is not theirs.
+  // Typed by hand, it came from their own terminal.
+  const [sure, setSure] = useState(initialCode === "");
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -53,7 +57,26 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
         </p>
       ) : null}
 
-      <button type="submit" disabled={pending} className="btn btn-primary btn-lg">
+      {initialCode !== "" ? (
+        <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-relaxed text-ink-muted">
+          <input
+            type="checkbox"
+            checked={sure}
+            onChange={(e) => setSure(e.target.checked)}
+            className="mt-[3px] h-3.5 w-3.5 accent-[var(--color-accent)]"
+          />
+          <span>
+            I just ran <code className="font-mono">cira login</code> on a computer I am
+            using, and it shows this code. Nobody sent me this link.
+          </span>
+        </label>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={pending || !sure}
+        className="btn btn-primary btn-lg"
+      >
         {pending ? "Connecting..." : "Connect"}
       </button>
 

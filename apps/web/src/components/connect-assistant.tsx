@@ -220,7 +220,15 @@ function TokenRow({ token, onRevoked }: { token: TokenSummary; onRevoked: () => 
   return (
     <li className="flex items-center gap-3 py-1 text-[12px]">
       <span className="min-w-0 flex-1 truncate text-ink-muted">{token.label}</span>
-      <span className="shrink-0 text-[11.5px] text-ink-subtle">
+      <span
+        className="shrink-0 text-[11.5px] text-ink-subtle"
+        title={
+          token.scope === "cli"
+            ? "A terminal: can deploy and remove apps you manage"
+            : "Assistants: can use apps as you, and nothing else"
+        }
+      >
+        {token.scope === "cli" ? "terminal" : "assistants"} ·{" "}
         {token.lastUsedAt === null ? "unused" : `used ${ago(token.lastUsedAt)}`}
       </span>
       <form action={revoke}>

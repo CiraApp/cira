@@ -1,4 +1,5 @@
 import type { ArchiveEntry } from "./archive.js";
+import { isSecretFile } from "./bundle.js";
 
 /**
  * A repository, as one thing a model can read.
@@ -92,6 +93,11 @@ function priority(path: string): number {
 
 function worthReading(entry: ArchiveEntry): boolean {
   const name = entry.path.split("/").pop() ?? "";
+  // Never shown to the model, whatever uploaded it. The CLI already refuses to
+  // send these, but a CLI installed before it did still can.
+  if (isSecretFile(entry.path, entry.body.subarray(0, 64 * 1024).toString("utf8"))) {
+    return false;
+  }
   if (LOCKFILES.has(name)) return false;
   if (OPAQUE.test(entry.path) || GENERATED.test(entry.path)) return false;
   if (entry.body.length === 0 || entry.body.length > MAX_FILE_BYTES) return false;

@@ -52,5 +52,9 @@ export async function GET(request: Request) {
   // the CLI cannot roll out a deploy that a newer one replaced, and cannot
   // disagree with the app page about how it went.
   const settled = await reconcileDeployment(row.deployment as Deployment);
-  return NextResponse.json({ status: settled.status, url: settled.url });
+  return NextResponse.json({
+    status: settled.status,
+    url: settled.url,
+    reason: settled.failureReason,
+  });
 }

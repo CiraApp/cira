@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { appAccess, apps, db, memberships, spaces, teamMembers } from "@cira/db";
 import {
   canAccessApp,
@@ -106,11 +106,14 @@ export async function listMySpaces(): Promise<Array<Space & { role: Role }>> {
   const user = await requireCurrentUser();
   const database = db();
 
+  // In the order they were joined, so someone in several always lands in the
+  // same one - the first - rather than whichever the database returned first.
   const rows = await database
     .select({ space: spaces, role: memberships.role })
     .from(memberships)
     .innerJoin(spaces, eq(memberships.spaceId, spaces.id))
-    .where(eq(memberships.userId, user.id));
+    .where(eq(memberships.userId, user.id))
+    .orderBy(asc(memberships.createdAt));
 
   return rows.map((r) => ({ ...r.space, role: r.role }));
 }

@@ -1,17 +1,15 @@
-import { eq } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { db, memberships, teamMembers, teams, users } from "@cira/db";
+import { apps, db, invites, memberships, teamMembers, teams, users } from "@cira/db";
+import { roleAtLeast } from "@cira/core";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { InviteDialog } from "@/components/invite-dialog";
+import { MemberControls } from "@/components/member-controls";
+import { PendingInvites } from "@/components/pending-invites";
+import { TeamsPanel } from "@/components/teams-panel";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
 import { emailConfigured } from "@/lib/email";
-
-const ROLE_NOTE: Record<string, string> = {
-  owner: "Full control of this space",
-  admin: "Can manage apps and invite people",
-  member: "Can use the apps they are given",
-};
 
 /**
  * Who is here, and how they are grouped.
@@ -20,6 +18,10 @@ const ROLE_NOTE: Record<string, string> = {
  * the page top to bottom answers "who would this grant reach" before it
  * answers "who works here", which is the question someone on this page is
  * usually holding.
+ *
+ * Admins change roles, remove people and look after teams here; everyone can
+ * leave. The rules are in core and enforced by the actions, not by what this
+ * page chooses to show.
  */
 export default async function MembersPage({
   params,
@@ -31,42 +33,59 @@ export default async function MembersPage({
   try {
     const ctx = await requireSpaceMember(spaceSlug);
     const spaces = await listMySpaces();
-    const canInvite = ctx.role === "admin" || ctx.role === "owner";
+    const canInvite = roleAtLeast(ctx.role, "admin");
+    const database = db();
 
-    const rows = await db()
-      .select({ user: users, role: memberships.role, joined: memberships.createdAt })
-      .from(memberships)
-      .innerJoin(users, eq(users.id, memberships.userId))
-      .where(eq(memberships.spaceId, ctx.space.id));
-
-    // One query for the whole grouping. A left join keeps a team that has not
-    // hired anyone yet, which is exactly the team someone is most likely to be
-    // looking for.
-    const teamRows = await db()
-      .select({ team: teams, userId: teamMembers.userId })
-      .from(teams)
-      .leftJoin(teamMembers, eq(teamMembers.teamId, teams.id))
-      .where(eq(teams.spaceId, ctx.space.id));
-
-    const byName = new Map(rows.map((r) => [r.user.id, r.user.name]));
+    const [rows, teamRows, owned, outstanding] = await Promise.all([
+      database
+        .select({ user: users, role: memberships.role, joined: memberships.createdAt })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(eq(memberships.spaceId, ctx.space.id))
+        .orderBy(asc(memberships.createdAt)),
+      // A left join keeps a team that has not hired anyone yet, which is
+      // exactly the team someone is most likely to be looking for.
+      database
+        .select({ team: teams, userId: teamMembers.userId })
+        .from(teams)
+        .leftJoin(teamMembers, eq(teamMembers.teamId, teams.id))
+        .where(eq(teams.spaceId, ctx.space.id)),
+      database
+        .select({ ownerUserId: apps.ownerUserId, n: count() })
+        .from(apps)
+        .where(eq(apps.spaceId, ctx.space.id))
+        .groupBy(apps.ownerUserId),
+      canInvite
+        ? database
+            .select({ invite: invites, inviter: users.name })
+            .from(invites)
+            .innerJoin(users, eq(users.id, invites.invitedByUserId))
+            .where(
+              and(
+                eq(invites.spaceId, ctx.space.id),
+                isNull(invites.acceptedAt),
+                gt(invites.expiresAt, new Date()),
+              ),
+            )
+            .orderBy(asc(invites.createdAt))
+        : Promise.resolve([]),
+    ]);
 
     const teamList = new Map<
       string,
-      { name: string; description: string | null; members: string[] }
+      { name: string; description: string | null; memberIds: string[] }
     >();
     for (const row of teamRows) {
       const entry = teamList.get(row.team.id) ?? {
         name: row.team.name,
         description: row.team.description,
-        members: [],
+        memberIds: [],
       };
-      const name = row.userId === null ? undefined : byName.get(row.userId);
-      if (name !== undefined) entry.members.push(name);
+      if (row.userId !== null) entry.memberIds.push(row.userId);
       teamList.set(row.team.id, entry);
     }
-
     const teamsByName = [...teamList.entries()]
-      .map(([id, team]) => ({ id, ...team, members: team.members.sort() }))
+      .map(([id, team]) => ({ id, ...team }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     const teamsFor = new Map<string, string[]>();
@@ -75,10 +94,17 @@ export default async function MembersPage({
       teamsFor.set(row.userId, [...(teamsFor.get(row.userId) ?? []), row.team.name]);
     }
 
+    const appsOwned = new Map(owned.map((o) => [o.ownerUserId, o.n]));
+
+    // Who takes a person's apps if they leave: the longest-standing owner who
+    // is not them, which is what `leaveSpace` does.
+    const heirFor = (userId: string): string | null =>
+      rows.find((r) => r.role === "owner" && r.user.id !== userId)?.user.name ?? null;
+
     // Owners first, then admins, then everyone alphabetically: the list answers
     // "who do I ask" before it answers "who is here".
     const rank = { owner: 0, admin: 1, member: 2 } as const;
-    const people = rows.sort(
+    const people = [...rows].sort(
       (a, b) => rank[a.role] - rank[b.role] || a.user.name.localeCompare(b.user.name),
     );
 
@@ -89,10 +115,10 @@ export default async function MembersPage({
         title={
           <PageTitle
             title="Members"
-            detail={`${count(people.length, "person", "people")}${
+            detail={`${plural(people.length, "person", "people")}${
               teamsByName.length === 0
                 ? ""
-                : ` across ${count(teamsByName.length, "team", "teams")}`
+                : ` across ${plural(teamsByName.length, "team", "teams")}`
             } in ${ctx.space.name}`}
           />
         }
@@ -103,48 +129,18 @@ export default async function MembersPage({
         }
       >
         <div className="max-w-[760px]">
-          {teamsByName.length > 0 ? (
-            <section className="enter-up">
-              <div className="flex items-baseline justify-between gap-4">
-                <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
-                  Teams
-                </h2>
-                <p className="hidden text-[12px] text-ink-subtle sm:block">
-                  What apps are given to, so access follows the roster
-                </p>
-              </div>
+          <TeamsPanel
+            spaceSlug={spaceSlug}
+            canEdit={canInvite}
+            teams={teamsByName}
+            people={people.map((p) => ({
+              userId: p.user.id,
+              name: p.user.name,
+              email: p.user.email,
+            }))}
+          />
 
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {teamsByName.map((team) => (
-                  <li
-                    key={team.id}
-                    className="rounded-[var(--radius-edge)] border border-line bg-surface p-3.5 transition-colors duration-150 hover:border-line-strong"
-                  >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h3 className="min-w-0 truncate text-[13px] font-medium text-ink">
-                        {team.name}
-                      </h3>
-                      <span className="tabular shrink-0 text-[11.5px] text-ink-subtle">
-                        {team.members.length}
-                      </span>
-                    </div>
-
-                    {team.description !== null ? (
-                      <p className="mt-1 text-[12px] leading-relaxed text-ink-subtle">
-                        {team.description}
-                      </p>
-                    ) : null}
-
-                    <p className="mt-2 truncate text-[11.5px] text-ink-muted">
-                      {team.members.length === 0 ? "Nobody yet" : team.members.join(", ")}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          <section className={teamsByName.length > 0 ? "enter-up mt-9" : "enter-up"}>
+          <section className="enter-up mt-9">
             <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
               People
             </h2>
@@ -168,6 +164,11 @@ export default async function MembersPage({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium text-ink">
                         {person.user.name}
+                        {person.user.id === ctx.user.id ? (
+                          <span className="ml-1.5 text-[11.5px] font-normal text-ink-subtle">
+                            you
+                          </span>
+                        ) : null}
                       </span>
                       <span className="block truncate text-[12px] text-ink-subtle">
                         {person.user.email}
@@ -179,19 +180,40 @@ export default async function MembersPage({
                       ) : null}
                     </span>
 
-                    <span className="hidden text-right sm:block">
-                      <span className="block text-[12px] font-medium text-ink capitalize">
-                        {person.role}
-                      </span>
-                      <span className="block text-[11px] text-ink-subtle">
-                        {ROLE_NOTE[person.role]}
-                      </span>
-                    </span>
+                    <MemberControls
+                      spaceSlug={spaceSlug}
+                      spaceName={ctx.space.name}
+                      person={{
+                        userId: person.user.id,
+                        name: person.user.name,
+                        role: person.role,
+                      }}
+                      viewer={{
+                        userId: ctx.user.id,
+                        name: ctx.user.name,
+                        role: ctx.role,
+                      }}
+                      ownedApps={appsOwned.get(person.user.id) ?? 0}
+                      heirName={heirFor(person.user.id)}
+                    />
                   </li>
                 );
               })}
             </ul>
           </section>
+
+          {canInvite ? (
+            <PendingInvites
+              spaceSlug={spaceSlug}
+              invites={outstanding.map(({ invite, inviter }) => ({
+                id: invite.id,
+                email: invite.email,
+                role: invite.role,
+                invitedBy: inviter,
+                expires: inDays(invite.expiresAt),
+              }))}
+            />
+          ) : null}
         </div>
       </AppShell>
     );
@@ -201,6 +223,13 @@ export default async function MembersPage({
   }
 }
 
-function count(n: number, one: string, many: string): string {
+function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** When an invite stops working, in the words a person would use. */
+function inDays(when: Date): string {
+  const days = Math.ceil((when.getTime() - Date.now()) / 86_400_000);
+  if (days <= 1) return "within a day";
+  return `in ${days} days`;
 }

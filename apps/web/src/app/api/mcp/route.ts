@@ -32,7 +32,8 @@ interface JsonRpcRequest {
 }
 
 export async function POST(request: Request) {
-  const user = await userFromRequest(request);
+  // Either kind of token: an assistant is exactly who MCP is for.
+  const user = await userFromRequest(request, "assistant");
   if (user === null) {
     // MCP clients look for this header to know how to authenticate.
     return NextResponse.json(

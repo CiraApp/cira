@@ -121,11 +121,15 @@ export const spaces = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     /**
-     * The company's email domain, when its creator had one. Anyone with a
-     * verified address here can join without an individual invite, the way a
-     * company Slack works. Null for spaces created from a personal address.
+     * The company's email domain, when its creator had one. Null for spaces
+     * created from a personal address.
      */
     domain: text("domain"),
+    /**
+     * Whether anyone with a verified address at `domain` may join without an
+     * invite, the way a company Slack works. Off until an admin turns it on.
+     */
+    joinByDomain: boolean("join_by_domain").notNull().default(false),
     /**
      * Which plan it is on: `trial` until somebody pays. What each allows and
      * costs lives in core's plans.ts, not here.
@@ -144,6 +148,24 @@ export const spaces = pgTable(
     uniqueIndex("spaces_slug_idx").on(t.slug),
     index("spaces_domain_idx").on(t.domain),
   ],
+);
+
+/**
+ * Someone removed from a space, by address, so that joining by domain cannot
+ * quietly undo the removal. Cleared when they are invited back.
+ */
+export const spaceJoinBlocks = pgTable(
+  "space_join_blocks",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    /** Lowercased. */
+    email: text("email").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("space_join_blocks_space_email_idx").on(t.spaceId, t.email)],
 );
 
 export const memberships = pgTable(
@@ -428,6 +450,8 @@ export const deployments = pgTable(
     servesWeb: boolean("serves_web").notNull().default(true),
     status: deploymentStatusEnum("status").notNull().default("queued"),
     url: text("url"),
+    /** Why it failed, in plain words, when the provider said. Never logs. */
+    failureReason: text("failure_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -530,7 +554,14 @@ export const cliTokens = pgTable(
     tokenHash: text("token_hash").notNull(),
     /** Shown when listing or revoking, e.g. the machine it was created on. */
     label: text("label").notNull(),
+    /**
+     * `cli` deploys and removes apps; `assistant` only reaches MCP, as the
+     * person. An assistant's config file is not somewhere deploy rights belong.
+     */
+    scope: text("scope").$type<"cli" | "assistant">().notNull().default("cli"),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Ninety days after it was last used. Every use moves it on. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

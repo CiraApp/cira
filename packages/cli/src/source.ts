@@ -51,25 +51,40 @@ export async function uploadSource(archive: Buffer): Promise<string> {
     body: { size: archive.byteLength },
   });
 
-  let response: Response;
-  try {
-    response = await fetch(ticket.uploadUrl, {
-      method: "PUT",
-      // No authorization header, deliberately. The URL *is* the authorisation:
-      // Cira obtained it as itself and delegated exactly this one write. The
-      // CLI has no standing with Google and does not need any.
-      headers: {
-        "content-type": "application/gzip",
-        "content-length": String(archive.byteLength),
-      },
-      body: new Uint8Array(archive),
-    });
-  } catch {
-    throw new ApiError("Could not reach storage to upload this project.", 0);
+  // A stalled connection used to hang the deploy for good. The allowance is
+  // generous - a minute, plus ten seconds a megabyte, so a slow line still
+  // finishes - and one dropped attempt is tried again before giving up.
+  const allowance = 60_000 + Math.ceil(archive.byteLength / 1_048_576) * 10_000;
+  let response: Response | null = null;
+  for (let attempt = 1; attempt <= 2 && response === null; attempt += 1) {
+    try {
+      response = await fetch(ticket.uploadUrl, {
+        method: "PUT",
+        // No authorization header, deliberately. The URL *is* the
+        // authorisation: Cira obtained it as itself and delegated exactly this
+        // one write. The CLI has no standing with Google and does not need any.
+        headers: {
+          "content-type": "application/gzip",
+          "content-length": String(archive.byteLength),
+        },
+        body: new Uint8Array(archive),
+        signal: AbortSignal.timeout(allowance),
+      });
+    } catch (error) {
+      if (attempt === 2) {
+        throw new ApiError(
+          error instanceof Error && error.name === "TimeoutError"
+            ? "The upload stalled and did not finish. Check the connection and deploy again."
+            : "Could not reach storage to upload this project.",
+          0,
+        );
+      }
+    }
   }
 
-  if (!response.ok) {
-    throw new ApiError(`The upload was rejected (${response.status}).`, response.status);
+  if (response === null || !response.ok) {
+    const status = response?.status ?? 0;
+    throw new ApiError(`The upload was rejected (${status}).`, status);
   }
 
   return ticket.sourceId;

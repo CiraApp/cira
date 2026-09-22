@@ -1,7 +1,7 @@
 "use server";
 
 import { and, eq } from "drizzle-orm";
-import { db, memberships, spaces } from "@cira/db";
+import { db, memberships, spaceJoinBlocks, spaces } from "@cira/db";
 import { isSlug, newId } from "@cira/core";
 import type { Space } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
@@ -23,10 +23,12 @@ export async function joinableSpaces(): Promise<Space[]> {
 
   const database = db();
 
+  // Only spaces whose admins chose to let their domain in. It used to be every
+  // space with a company-looking founder, with no way to say no.
   const candidates = await database
     .select()
     .from(spaces)
-    .where(eq(spaces.domain, domain));
+    .where(and(eq(spaces.domain, domain), eq(spaces.joinByDomain, true)));
 
   if (candidates.length === 0) return [];
 
@@ -34,9 +36,13 @@ export async function joinableSpaces(): Promise<Space[]> {
     .select({ spaceId: memberships.spaceId })
     .from(memberships)
     .where(eq(memberships.userId, user.id));
+  const blocked = await database
+    .select({ spaceId: spaceJoinBlocks.spaceId })
+    .from(spaceJoinBlocks)
+    .where(eq(spaceJoinBlocks.email, user.email.toLowerCase()));
 
-  const joined = new Set(mine.map((m) => m.spaceId));
-  return candidates.filter((s) => !joined.has(s.id));
+  const out = new Set([...mine.map((m) => m.spaceId), ...blocked.map((b) => b.spaceId)]);
+  return candidates.filter((s) => !out.has(s.id));
 }
 
 /**
@@ -62,8 +68,27 @@ export async function joinSpaceByDomain(spaceSlug: string): Promise<JoinResult> 
     .where(eq(spaces.slug, spaceSlug))
     .limit(1);
 
-  if (space === undefined || space.domain !== domain) {
+  if (space === undefined || space.domain !== domain || !space.joinByDomain) {
     return { ok: false, error: "That space does not exist." };
+  }
+
+  // Someone an admin removed does not get back in by having the address.
+  // Being invited again is how they return.
+  const [blocked] = await database
+    .select({ id: spaceJoinBlocks.id })
+    .from(spaceJoinBlocks)
+    .where(
+      and(
+        eq(spaceJoinBlocks.spaceId, space.id),
+        eq(spaceJoinBlocks.email, user.email.toLowerCase()),
+      ),
+    )
+    .limit(1);
+  if (blocked !== undefined) {
+    return {
+      ok: false,
+      error: `You were removed from ${space.name}. Ask one of its admins to invite you back.`,
+    };
   }
 
   const [already] = await database

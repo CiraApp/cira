@@ -116,16 +116,19 @@ export function deployFailedMessage(args: {
   startedAt: Date;
   /** Whether an earlier deploy is still serving, so the app is still up. */
   stillRunningEarlier: boolean;
+  /** Why, in plain words, when that is known. */
+  reason?: string | null;
 }): Message {
   const { app } = args;
   return letter({
     subject: `${app.name}: a deploy failed`,
     paragraphs: [
       `The deploy of ${app.name} started ${utc(args.startedAt)} did not finish.`,
+      ...(args.reason === undefined || args.reason === null ? [] : [args.reason]),
       args.stillRunningEarlier
         ? "The version that was running before is still running, so nothing changed for the people using it."
         : `${app.name} has never been deployed successfully, so it is not running yet.`,
-      "Its page in Cira has the build's own logs, which say what went wrong.",
+      "Its page in Cira has the build's logs and the app's own, which say more.",
     ],
     action: { label: `Open ${app.name}`, href: app.page },
     because: manager(app),

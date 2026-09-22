@@ -18,6 +18,7 @@ import {
   checkDeployRate,
   checkNewApp,
   newId,
+  slugWithSuffix,
   slugify,
 } from "@cira/core";
 import type { EnvChange } from "@cira/core";
@@ -382,7 +383,7 @@ async function freeSlug(spaceId: string, base: string): Promise<string> {
   const start = base === "" ? "app" : base;
 
   for (let attempt = 1; attempt <= 25; attempt += 1) {
-    const candidate = attempt === 1 ? start : `${start}-${attempt}`;
+    const candidate = attempt === 1 ? start : slugWithSuffix(start, String(attempt));
 
     const [live] = await database
       .select({ id: apps.id })
@@ -399,7 +400,7 @@ async function freeSlug(spaceId: string, base: string): Promise<string> {
     if (forwarded === undefined) return candidate;
   }
 
-  return `${start}-${newId("app").slice(-6)}`;
+  return slugWithSuffix(start, newId("app").slice(-6));
 }
 
 /**

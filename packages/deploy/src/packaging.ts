@@ -15,3 +15,4 @@ export * from "./bundle.js";
 export * from "./source-pack.js";
 export * from "./dockerfile.js";
 export * from "./env-needs.js";
+export * from "./public-env.js";

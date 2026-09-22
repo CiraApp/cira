@@ -6,7 +6,9 @@ import {
   isSlug,
   newId,
   newInviteToken,
+  RESERVED_SPACE_SLUGS,
   slugify,
+  slugWithSuffix,
 } from "./id.js";
 
 describe("newId", () => {
@@ -49,6 +51,38 @@ describe("slugify", () => {
 
   it("collapses to empty for input with nothing usable", () => {
     expect(slugify("!!!")).toBe("");
+  });
+
+  it("never ends in a dash when a long name is cut", () => {
+    // Fifty-three characters, cut at forty-eight between "authority" and "inc".
+    const slug = slugify("Greater Northwestern Regional Transit Authority, Inc.");
+    expect(slug).toBe("greater-northwestern-regional-transit-authority");
+    expect(isSlug(slug)).toBe(true);
+  });
+});
+
+describe("slugWithSuffix", () => {
+  it("keeps the whole within the limit, so a second space of a long name opens", () => {
+    const base = slugify("a".repeat(48));
+    const second = slugWithSuffix(base, "2");
+    expect(second.length).toBeLessThanOrEqual(48);
+    expect(second.endsWith("-2")).toBe(true);
+    expect(isSlug(second)).toBe(true);
+  });
+
+  it("does not leave a dash before the suffix when the cut lands on one", () => {
+    expect(isSlug(slugWithSuffix(`${"b".repeat(45)}-cd`, "12"))).toBe(true);
+  });
+});
+
+describe("RESERVED_SPACE_SLUGS", () => {
+  it("covers every page Cira itself has at the top level", () => {
+    for (const route of ["api", "cli", "demo", "docs", "enter", "invite", "legal"]) {
+      expect(RESERVED_SPACE_SLUGS.has(route)).toBe(true);
+    }
+    for (const route of ["onboarding", "pricing", "sign-in", "sign-up", "monitoring"]) {
+      expect(RESERVED_SPACE_SLUGS.has(route)).toBe(true);
+    }
   });
 });
 

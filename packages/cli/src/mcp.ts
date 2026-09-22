@@ -1,19 +1,22 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { readConfig } from "./config.js";
+import { api, ApiError } from "./api.js";
+import { readConfig, writeConfig } from "./config.js";
 import { bold, dim, fail, info, success } from "./ui.js";
 
 /**
  * Point this machine's assistants at Cira.
  *
- * The credential is the one `cira login` already stored, not a fresh one: an
- * agent acting for you should be the same principal as the terminal acting for
- * you, and one token per machine means `cira mcp disconnect` and a revoke in
- * the app both cut the same thing off. That is also why nothing here talks to
- * the server - the token is already on disk, and the endpoint is derived from
- * the host it was issued by.
+ * They act as the same person as the terminal - an agent acting for you
+ * should be you, with your permissions - but with a token of their own that
+ * reaches MCP and nothing else. The terminal's token deploys and removes
+ * apps, and it used to be written into every assistant's config, which made
+ * any assistant, and anything able to read that file, able to take down
+ * every app its owner managed. One assistant token per machine, kept in the
+ * CLI's config and reused, so revoking it in Cira cuts all of them off at
+ * once without logging the terminal out.
  */
 
 const SERVER_NAME = "cira";
@@ -165,7 +168,7 @@ function endpointFor(apiUrl: string): string {
   return `${apiUrl.replace(/\/+$/, "")}/api/mcp`;
 }
 
-export function mcpConnect(): number {
+export async function mcpConnect(): Promise<number> {
   const config = readConfig();
 
   if (config.token === undefined) {
@@ -174,6 +177,28 @@ export function mcpConnect(): number {
   }
 
   const endpoint = endpointFor(config.apiUrl);
+
+  // The assistants get a token of their own, which reaches MCP and nothing
+  // else. The CLI's token deploys and removes apps, and an assistant's config
+  // file is not a place for that.
+  let assistantToken = config.assistantToken;
+  if (assistantToken === undefined) {
+    try {
+      const minted = await api<{ token: string }>("/api/cli/assistant-token", {
+        method: "POST",
+        body: { machine: hostname().slice(0, 60) || "this machine" },
+      });
+      assistantToken = minted.token;
+      writeConfig({ ...config, assistantToken });
+    } catch (error) {
+      fail(
+        error instanceof ApiError
+          ? error.message
+          : "Cira could not give this machine's assistants a token. Nothing was changed.",
+      );
+      return 1;
+    }
+  }
 
   info("");
   info(`  ${bold("Cira")}`);
@@ -191,7 +216,7 @@ export function mcpConnect(): number {
 
   for (const target of found) {
     try {
-      target.connect(endpoint, config.token);
+      target.connect(endpoint, assistantToken);
       success(`${target.name} ${dim(target.where)}`);
     } catch (error) {
       fail(`${target.name} - ${error instanceof Error ? error.message : "failed"}`);
@@ -224,11 +249,15 @@ export function mcpDisconnect(): number {
     }
   }
 
-  info(dim("  The token itself is still valid. Revoke it in Cira, or `cira logout`."));
+  info(
+    dim(
+      "  Their token still works until it is revoked. Revoke it in Cira, under Connect your assistant.",
+    ),
+  );
   return 0;
 }
 
-export function mcpCommand(args: string[]): number {
+export async function mcpCommand(args: string[]): Promise<number> {
   switch (args[0]) {
     case "connect":
       return mcpConnect();

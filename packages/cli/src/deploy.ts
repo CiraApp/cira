@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { api, ApiError } from "./api.js";
 import { readConfig } from "./config.js";
@@ -37,6 +37,8 @@ interface DeployResponse {
 interface StatusResponse {
   status: string;
   url: string | null;
+  /** Why it failed, in the provider's words, when it said. */
+  reason?: string | null;
 }
 
 interface CapabilitiesResponse {
@@ -121,10 +123,38 @@ export async function deploy(argv: string[] = []): Promise<number> {
     return 1;
   }
 
-  const files = collectFiles(root);
+  // Whether this repository is one thing or two. Nobody writes this down: each
+  // half already carries whatever its own toolchain needs, which is the same
+  // evidence a person would use. Read before the files, because a Dockerfile
+  // anywhere changes which files a build expects to be sent.
+  const found = discoverServices(root);
+  const dockerfileNamed = readFlag(argv, "--dockerfile");
+  const style =
+    dockerfileNamed !== null ||
+    existsSync(join(root, "Dockerfile")) ||
+    found.services.some((part) => part.dockerfile !== null)
+      ? "dockerfile"
+      : "buildpacks";
+
+  const walked = collectFiles(root, style);
+  const files = walked.files;
   if (files.length === 0) {
     fail("There is nothing to deploy in this folder.");
     return 1;
+  }
+
+  // Said out loud, because a file quietly left out is a build that fails for
+  // a reason nobody can see - and a file quietly sent is worse.
+  if (walked.withheld.length > 0) {
+    warn(
+      `Not uploading ${walked.withheld.length === 1 ? "a file that looks" : `${walked.withheld.length} files that look`} like ${walked.withheld.length === 1 ? "a credential" : "credentials"}:`,
+    );
+    for (const path of walked.withheld) info(`    ${path}`);
+    info(
+      dim(
+        "  Put what they hold in .env, which travels as variables. To ship one anyway, add it to .ciraignore as !path.",
+      ),
+    );
   }
 
   // Checked here rather than only on the server, because the server never sees
@@ -143,7 +173,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // is where a great deal of real software stops.
   let container;
   try {
-    container = readContainer(root, files, readFlag(argv, "--dockerfile"));
+    container = readContainer(root, files, dockerfileNamed);
   } catch (error) {
     fail(error instanceof Error ? error.message : "Could not read that Dockerfile.");
     return 1;
@@ -159,10 +189,6 @@ export async function deploy(argv: string[] = []): Promise<number> {
     );
   }
 
-  // Whether this repository is one thing or two. Nobody writes this down: each
-  // half already carries whatever its own toolchain needs, which is the same
-  // evidence a person would use.
-  const found = discoverServices(root);
   let services = null;
 
   // What else the app runs, from the files that already say so. A repository
@@ -217,7 +243,9 @@ export async function deploy(argv: string[] = []): Promise<number> {
   }
 
   const bytes = files.reduce((n, f) => n + f.size, 0);
-  info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)})...`)}`);
+  const honoured =
+    walked.ignoreFiles.length === 0 ? "" : `, honouring ${walked.ignoreFiles.join(", ")}`;
+  info(`${dim(`Packaging ${files.length} files (${formatBytes(bytes)}${honoured})...`)}`);
 
   const packed = archiveProject(root, files);
 
@@ -239,13 +267,24 @@ export async function deploy(argv: string[] = []): Promise<number> {
   // Names only, here and everywhere. See docs/secrets.md.
   const needed = findEnvNeeds(packed.entries);
   const supplied = new Set(Object.keys(collected.env));
-  const missing = needed.filter((need) => !supplied.has(need.name));
+  // What production already has counts. A deploy changes only what it sends,
+  // so a clone with no `.env` is not missing anything production is set with.
+  const inProduction = new Set(
+    link === null ? [] : await productionNames(link.appId, collected.unset),
+  );
+  const missing = needed.filter(
+    (need) => !supplied.has(need.name) && !inProduction.has(need.name),
+  );
 
   const checklist = [
     ...needed.map((need) => ({
       name: need.name,
-      have: supplied.has(need.name),
-      note: `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
+      have: supplied.has(need.name) || inProduction.has(need.name),
+      note: supplied.has(need.name)
+        ? ""
+        : inProduction.has(need.name)
+          ? "already set in production"
+          : `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
     })),
     // Set, and not something the scan asked for. Still going to the app, so
     // still worth seeing - a typo in a name shows up here as a variable
@@ -266,7 +305,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
       const mark = row.have ? green("✓") : amber("✗");
       // Padded only when something follows it, so a line with nothing to say
       // ends at its own name rather than trailing whitespace across the column.
-      const note = row.have || row.note === "" ? "" : `  ${dim(row.note)}`;
+      const note = row.note === "" ? "" : `  ${dim(row.note)}`;
       const name = note === "" ? row.name : row.name.padEnd(column);
       info(`  ${mark} ${name}${note}`);
     }
@@ -286,7 +325,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         note: `${need.reason}, in ${need.file.replace(/^\.\//, "")}`,
       })),
       argv,
-      collected.source,
+      collected.file,
     );
 
     // Whatever was typed goes to this deploy, the same as anything from a file.
@@ -298,6 +337,11 @@ export async function deploy(argv: string[] = []): Promise<number> {
     }
   }
 
+  if (collected.unset.length > 0) {
+    info(`  ${bold("Taking away:")} ${collected.unset.join(", ")}`);
+    info("");
+  }
+
   // Worth interrupting for: the build inlines these into the JavaScript the
   // browser downloads, so a secret here is published the moment it ships and
   // rotating is the only fix.
@@ -305,7 +349,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
     info("");
     info(`  ${bold("Public to anyone who opens the app:")}`);
     for (const name of collected.publicNames) info(`    ${name}`);
-    info(`  ${dim("NEXT_PUBLIC_ variables are compiled into the browser bundle.")}`);
+    info(`  ${dim("These are compiled into the JavaScript the browser downloads.")}`);
     info("");
   }
 
@@ -337,6 +381,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         web: servesWeb,
         processes: declared.processes,
         env: collected.env,
+        unset: collected.unset,
       },
     });
   } catch (error) {
@@ -364,7 +409,10 @@ export async function deploy(argv: string[] = []): Promise<number> {
     body: { appId: started.appId, sourceId },
   }).catch((error: unknown) => (error instanceof Error ? error : new Error("failed")));
 
-  const deadline = Date.now() + 10 * 60 * 1000;
+  // As long as Cira itself waits before calling a deploy abandoned: a build
+  // may take twenty minutes, and a CLI that gave up at ten failed CI jobs
+  // whose deploys went on to succeed.
+  const deadline = Date.now() + 35 * 60 * 1000;
   let last = "";
 
   while (Date.now() < deadline) {
@@ -375,7 +423,18 @@ export async function deploy(argv: string[] = []): Promise<number> {
       status = await api<StatusResponse>(
         `/api/cli/deploy/status?id=${encodeURIComponent(started.deploymentId)}`,
       );
-    } catch {
+    } catch (error) {
+      // A network blip is worth waiting through. Being signed out, or the app
+      // being removed while it deployed, is not going to change by waiting.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
+        info("");
+        fail(
+          error.status === 401
+            ? "Cira stopped accepting this login while the deploy ran. Run cira login, then check the app in Cira."
+            : "This app was removed while it was deploying.",
+        );
+        return 1;
+      }
       continue;
     }
 
@@ -408,15 +467,49 @@ export async function deploy(argv: string[] = []): Promise<number> {
       return 0;
     }
 
+    if (status.status === "superseded") {
+      info("");
+      fail(
+        "A newer deploy of this app started, so this one stopped. That one is the one going out.",
+      );
+      return 1;
+    }
+
     if (status.status === "failed" || status.status === "removed") {
       info("");
-      fail("The deploy did not finish. Open the app in Cira to see why.");
+      fail(
+        status.reason === undefined || status.reason === null
+          ? "The deploy did not finish. Open the app in Cira to see why."
+          : `The deploy did not finish: ${status.reason}`,
+      );
+      info(dim(`  ${config.apiUrl}/${started.spaceSlug}/${started.appSlug}`));
       return 1;
     }
   }
 
-  fail("Timed out waiting for the deploy to finish.");
+  fail(
+    "Still not finished after 35 minutes, so Cira will treat it as stopped. Open the app in Cira to see its build.",
+  );
   return 1;
+}
+
+/**
+ * The names an app is already set with in production, minus any this deploy
+ * takes away. Empty when Cira cannot say - an older Cira, or an app this
+ * person may not manage, which the deploy itself will refuse with a reason.
+ */
+async function productionNames(
+  appId: string,
+  unset: readonly string[],
+): Promise<string[]> {
+  try {
+    const { names } = await api<{ names: string[] }>(
+      `/api/cli/env?appId=${encodeURIComponent(appId)}`,
+    );
+    return names.filter((name) => !unset.includes(name));
+  } catch {
+    return [];
+  }
 }
 
 /** A timetable in words, or as written when it cannot be read. */

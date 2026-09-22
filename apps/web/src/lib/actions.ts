@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { atomically, db, memberships, spaces } from "@cira/db";
-import { newId, slugify } from "@cira/core";
+import { RESERVED_SPACE_SLUGS, newId, slugWithSuffix, slugify } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
 import { claimableDomain } from "@/lib/email-domain";
 
@@ -38,12 +38,11 @@ export async function createSpace(
   const user = await requireCurrentUser();
   const database = db();
 
+  // A name written only in a script with no Latin letters - Японский, 株式会社 -
+  // has nothing to make an address from. It keeps its name, and the address is
+  // a plain one that can be read aloud, rather than the company being refused.
   const base = slugify(parsed.data.name);
-  if (base === "") {
-    return { ok: false, error: "Use at least a couple of letters or numbers." };
-  }
-
-  const slug = await findFreeSlug(base);
+  const slug = await findFreeSlug(base === "" ? "space" : base);
 
   const spaceId = newId("space");
   // The founder's company domain becomes the space's, so colleagues can join
@@ -52,20 +51,30 @@ export async function createSpace(
   // Together, because a space whose owner never landed is worse than no space
   // at all: nobody is a member, so nobody can open it, invite anyone to it or
   // delete it, and its slug is taken for good.
-  await atomically(database, (on) => [
-    on.insert(spaces).values({
-      id: spaceId,
-      name: parsed.data.name,
-      slug,
-      domain: claimableDomain(user.email),
-    }),
-    on.insert(memberships).values({
-      id: newId("membership"),
-      userId: user.id,
-      spaceId,
-      role: "owner",
-    }),
-  ]);
+  try {
+    await atomically(database, (on) => [
+      on.insert(spaces).values({
+        id: spaceId,
+        name: parsed.data.name,
+        slug,
+        domain: claimableDomain(user.email),
+      }),
+      on.insert(memberships).values({
+        id: newId("membership"),
+        userId: user.id,
+        spaceId,
+        role: "owner",
+      }),
+    ]);
+  } catch {
+    // Two people creating the same name at the same moment: the slug was free
+    // when looked for and taken when written. Said plainly, not as a stack.
+    return {
+      ok: false,
+      error:
+        "Someone took that address a moment ago. Try again and Cira will pick the next one.",
+    };
+  }
 
   return { ok: true, data: { slug } };
 }
@@ -75,7 +84,8 @@ async function findFreeSlug(base: string): Promise<string> {
   const database = db();
 
   for (let attempt = 1; attempt <= 25; attempt += 1) {
-    const candidate = attempt === 1 ? base : `${base}-${attempt}`;
+    const candidate = attempt === 1 ? base : slugWithSuffix(base, String(attempt));
+    if (RESERVED_SPACE_SLUGS.has(candidate)) continue;
     const [taken] = await database
       .select({ id: spaces.id })
       .from(spaces)
@@ -85,5 +95,5 @@ async function findFreeSlug(base: string): Promise<string> {
     if (taken === undefined) return candidate;
   }
 
-  return `${base}-${newId("space").slice(-6)}`;
+  return slugWithSuffix(base, newId("space").slice(-6));
 }

@@ -8,38 +8,183 @@
  */
 
 /**
- * Providers where an address proves nothing about an employer. Not exhaustive
- * and never will be; it is a floor, not a wall, and the consequence of a gap
- * is one over-eager join offer that still needs a click.
+ * Providers where an address proves nothing about an employer.
+ *
+ * Joining by domain is now something an admin switches on, so a gap here no
+ * longer opens a company to strangers by itself. It still decides whether a
+ * space may claim a domain at all, and a space founded from a personal
+ * address must not be offered to everyone else at that provider - which is
+ * what happened with every provider this list did not know. So it covers the
+ * providers people actually use around the world, their country variants,
+ * and the large ISPs that hand out addresses with a connection.
  */
 const PUBLIC_EMAIL_DOMAINS = new Set([
+  // Google, Microsoft, Apple, Yahoo, AOL, and their country variants.
   "gmail.com",
   "googlemail.com",
   "outlook.com",
+  "outlook.co.uk",
+  "outlook.de",
+  "outlook.fr",
+  "outlook.es",
+  "outlook.it",
+  "outlook.jp",
+  "outlook.com.au",
+  "outlook.com.br",
   "hotmail.com",
+  "hotmail.co.uk",
+  "hotmail.de",
+  "hotmail.fr",
+  "hotmail.es",
+  "hotmail.it",
+  "hotmail.nl",
+  "hotmail.ca",
+  "hotmail.com.au",
+  "hotmail.com.br",
   "live.com",
+  "live.co.uk",
+  "live.de",
+  "live.fr",
+  "live.nl",
+  "live.ca",
+  "live.com.au",
   "msn.com",
-  "yahoo.com",
-  "yahoo.co.uk",
-  "ymail.com",
+  "passport.com",
   "icloud.com",
   "me.com",
   "mac.com",
+  "yahoo.com",
+  "yahoo.co.uk",
+  "yahoo.de",
+  "yahoo.fr",
+  "yahoo.es",
+  "yahoo.it",
+  "yahoo.ca",
+  "yahoo.co.in",
+  "yahoo.co.jp",
+  "yahoo.com.au",
+  "yahoo.com.br",
+  "yahoo.com.mx",
+  "ymail.com",
+  "rocketmail.com",
   "aol.com",
+  "aim.com",
+  // Privacy and independent providers.
   "proton.me",
   "protonmail.com",
+  "protonmail.ch",
   "pm.me",
+  "tutanota.com",
+  "tutanota.de",
+  "tuta.io",
+  "tutamail.com",
+  "fastmail.com",
+  "fastmail.fm",
+  "hey.com",
+  "duck.com",
+  "mailbox.org",
+  "posteo.de",
+  "posteo.net",
+  "runbox.com",
+  "zoho.com",
+  "zohomail.com",
+  "mail.com",
+  "email.com",
+  "usa.com",
+  "inbox.com",
+  "hushmail.com",
+  "skiff.com",
+  // Europe.
   "gmx.com",
   "gmx.net",
-  "zoho.com",
+  "gmx.de",
+  "gmx.at",
+  "gmx.ch",
+  "web.de",
+  "freenet.de",
+  "t-online.de",
+  "arcor.de",
+  "orange.fr",
+  "wanadoo.fr",
+  "free.fr",
+  "sfr.fr",
+  "laposte.net",
+  "libero.it",
+  "virgilio.it",
+  "tiscali.it",
+  "alice.it",
+  "seznam.cz",
+  "wp.pl",
+  "o2.pl",
+  "onet.pl",
+  "interia.pl",
+  "btinternet.com",
+  "virginmedia.com",
+  "sky.com",
+  "talktalk.net",
+  "blueyonder.co.uk",
+  "ntlworld.com",
+  "telenet.be",
+  "ziggo.nl",
+  "kpnmail.nl",
+  "bluewin.ch",
   "yandex.com",
-  "mail.com",
-  "fastmail.com",
-  "hey.com",
-  "tutanota.com",
-  "duck.com",
+  "yandex.ru",
+  "ya.ru",
+  "mail.ru",
+  "bk.ru",
+  "inbox.ru",
+  "list.ru",
+  "rambler.ru",
+  "ukr.net",
+  // Asia and elsewhere.
+  "qq.com",
+  "foxmail.com",
+  "163.com",
+  "126.com",
+  "yeah.net",
+  "sina.com",
+  "sina.cn",
+  "sohu.com",
+  "aliyun.com",
+  "naver.com",
+  "daum.net",
+  "hanmail.net",
+  "nate.com",
+  "rediffmail.com",
+  "uol.com.br",
+  "bol.com.br",
+  "terra.com.br",
+  "ig.com.br",
+  "bigpond.com",
+  "optusnet.com.au",
+  // North American ISPs.
+  "comcast.net",
+  "verizon.net",
+  "att.net",
+  "sbcglobal.net",
+  "bellsouth.net",
+  "cox.net",
+  "charter.net",
+  "earthlink.net",
+  "juno.com",
+  "shaw.ca",
+  "rogers.com",
+  "sympatico.ca",
+  "videotron.ca",
+  // Never a real company.
   "example.com",
+  "example.org",
+  "example.net",
+  "test.com",
+  "mailinator.com",
 ]);
+
+/**
+ * Addresses a university gives to everyone who studies or works there. A
+ * student's address is not a claim on a company, whatever the domain.
+ */
+const ACADEMIC = /(^|\.)(edu|ac\.[a-z]{2}|edu\.[a-z]{2})$/;
 
 export function emailDomain(email: string): string | null {
   const at = email.lastIndexOf("@");
@@ -57,7 +202,8 @@ export function emailDomain(email: string): string | null {
 }
 
 export function isPublicEmailDomain(domain: string): boolean {
-  return PUBLIC_EMAIL_DOMAINS.has(domain.trim().toLowerCase());
+  const d = domain.trim().toLowerCase();
+  return PUBLIC_EMAIL_DOMAINS.has(d) || ACADEMIC.test(d);
 }
 
 /**

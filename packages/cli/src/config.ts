@@ -13,6 +13,12 @@ export interface CliConfig {
   apiUrl: string;
   token?: string;
   email?: string;
+  /**
+   * The token this machine's assistants are given: MCP only, never the right
+   * to deploy or remove. Kept so connecting again reuses it rather than
+   * leaving a trail of tokens behind.
+   */
+  assistantToken?: string;
 }
 
 export const DEFAULT_API_URL = "https://cira.dev";
@@ -48,11 +54,18 @@ export function readConfig(): CliConfig {
         process.env["CIRA_API_URL"] ??
         (raw.apiUrl === PREVIOUS_API_URL ? DEFAULT_API_URL : raw.apiUrl) ??
         DEFAULT_API_URL,
-      ...(raw.token !== undefined ? { token: raw.token } : {}),
+      // A CI job has no config file to keep a token in; it is given one.
+      ...(process.env["CIRA_TOKEN"] !== undefined && process.env["CIRA_TOKEN"] !== ""
+        ? { token: process.env["CIRA_TOKEN"] }
+        : raw.token !== undefined
+          ? { token: raw.token }
+          : {}),
       ...(raw.email !== undefined ? { email: raw.email } : {}),
+      ...(raw.assistantToken !== undefined ? { assistantToken: raw.assistantToken } : {}),
     };
   } catch {
-    return { apiUrl };
+    const token = process.env["CIRA_TOKEN"];
+    return token !== undefined && token !== "" ? { apiUrl, token } : { apiUrl };
   }
 }
 

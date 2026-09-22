@@ -297,6 +297,8 @@ export default async function AppPage({
               status: d.id === deployment?.id ? deployment.status : d.status,
               createdAt: d.createdAt.toISOString(),
               relative: relativeTime(d.createdAt),
+              reason:
+                d.id === deployment?.id ? deployment.failureReason : d.failureReason,
             }))}
           />
 
