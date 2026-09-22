@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { apps, db, deployments } from "@cira/db";
-import { canAccessApp, type Deployment } from "@cira/core";
+import { apps, db, deployments, processes } from "@cira/db";
+import { canAccessApp, type AppAccess, type Deployment } from "@cira/core";
 import { grantsFor } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { reconcileDeployment } from "@/lib/deployment-sync";
@@ -52,7 +52,26 @@ export async function GET(request: Request) {
   // the CLI cannot roll out a deploy that a newer one replaced, and cannot
   // disagree with the app page about how it went.
   const settled = await reconcileDeployment(row.deployment as Deployment);
+
+  // What the terminal says once it is live, from what is true of the app
+  // rather than of a first deploy: it used to tell someone redeploying an app
+  // shared with the whole company that only they could see it, and that
+  // workers already running were off.
+  const live =
+    settled.status === "live"
+      ? {
+          access: accessOf(await grantsFor(row.app.id)),
+          processesOff: (
+            await database
+              .select({ enabled: processes.enabled })
+              .from(processes)
+              .where(eq(processes.appId, row.app.id))
+          ).filter((p) => !p.enabled).length,
+        }
+      : {};
+
   return NextResponse.json({
+    ...live,
     status: settled.status,
     url: settled.url,
     reason: settled.failureReason,
@@ -63,4 +82,10 @@ export async function GET(request: Request) {
       settled.releaseDoneAt === null &&
       (settled.status === "deploying" || settled.status === "building"),
   });
+}
+
+/** Who can open the app besides whoever owns it. */
+function accessOf(grants: readonly AppAccess[]): "everyone" | "shared" | "private" {
+  if (grants.some((grant) => grant.type === "space")) return "everyone";
+  return grants.length > 0 ? "shared" : "private";
 }

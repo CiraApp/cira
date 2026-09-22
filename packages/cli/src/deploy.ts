@@ -53,6 +53,10 @@ interface StatusResponse {
   warning?: string | null;
   /** The release command is running, between the build and the rollout. */
   releasing?: boolean;
+  /** Once live: who can open it besides its owner. */
+  access?: "everyone" | "shared" | "private";
+  /** Once live: how many of its workers and scheduled runs are switched off. */
+  processesOff?: number;
 }
 
 interface CapabilitiesResponse {
@@ -590,15 +594,27 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info("");
       info(`  ${bold(`${config.apiUrl}/${started.spaceSlug}/${started.appSlug}`)}`);
       info("");
-      info(dim("  Only you can see it. Give people access from that page."));
+      info(
+        dim(
+          status.access === "everyone"
+            ? "  Everyone in the space can open it."
+            : status.access === "shared"
+              ? "  The people given access on that page can open it."
+              : "  Only you can see it. Give people access from that page.",
+        ),
+      );
       if (typeof status.warning === "string" && status.warning !== "") {
         info("");
         warn(status.warning);
       }
-      if (declared.processes.length > 0) {
+      // Older Cira did not say, and every process a first deploy finds is off.
+      const off = status.processesOff ?? declared.processes.length;
+      if (off > 0) {
         info(
           dim(
-            "  Its workers and scheduled runs are off until someone who manages it turns them on there.",
+            off === declared.processes.length
+              ? "  Its workers and scheduled runs are off until someone who manages it turns them on there."
+              : `  ${off} of its workers and scheduled runs ${off === 1 ? "is" : "are"} off until someone who manages it turns ${off === 1 ? "it" : "them"} on there.`,
           ),
         );
       }
