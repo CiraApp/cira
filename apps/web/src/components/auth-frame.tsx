@@ -60,6 +60,8 @@ export const AUTH_APPEARANCE = {
     rootBox: "w-full",
     cardBox: "w-full shadow-none",
     card: "w-full shadow-none",
-    header: "hidden",
+    // A style rather than a class: Clerk's own stylesheet sets this one's
+    // display and wins over a utility class.
+    header: { display: "none" },
   },
 } as const;

@@ -4,6 +4,13 @@ import { deploymentProvider } from "@cira/deploy";
 import type { Deployment } from "@cira/core";
 
 /**
+ * Google's own records of changing the job - "google.cloud.run.v2.Jobs.UpdateJob"
+ * - which share the job's log with what the command printed and mean nothing
+ * to the person reading why their migration failed.
+ */
+const GOOGLE_OWN = /^google\.cloud\.[\w.]+$|^\/Jobs\.\w+:/;
+
+/**
  * What to show for a deploy: the output of the step it stopped at.
  *
  * Usually the build's. For a deploy that failed at its release command - the
@@ -46,7 +53,7 @@ export async function deployOutput(
     return {
       step: "release",
       lines: page.entries
-        .filter((entry) => entry.message !== "")
+        .filter((entry) => entry.message !== "" && !GOOGLE_OWN.test(entry.message))
         .map((entry) => ({ timestamp: entry.timestamp, message: entry.message })),
     };
   }

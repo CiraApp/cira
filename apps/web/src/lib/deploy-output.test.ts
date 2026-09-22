@@ -23,6 +23,13 @@ vi.mock("@cira/deploy", async (importOriginal) => {
         asked.push({ what: "runtime", process: query.process });
         return Promise.resolve({
           entries: [
+            // As Google writes them beside the command's own output.
+            { timestamp: new Date(0), message: "google.cloud.run.v2.Jobs.UpdateJob" },
+            {
+              timestamp: new Date(0),
+              message:
+                "/Jobs.UpdateJob: Ready condition status changed to True for Job release-x.",
+            },
             {
               timestamp: new Date(1),
               message: "alembic.util.exc.CommandError: bad revision",
