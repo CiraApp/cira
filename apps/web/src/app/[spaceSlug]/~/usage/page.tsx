@@ -10,6 +10,7 @@ import {
   roleAtLeast,
 } from "@cira/core";
 import { BillingButton } from "@/components/billing-button";
+import { ConfirmingPayment } from "@/components/confirming-payment";
 import { noticeFor } from "@/lib/billing-rules";
 import { planSummary } from "@/lib/plan";
 import { monthSoFar, spaceUsage } from "@/lib/usage";
@@ -23,10 +24,12 @@ import { monthSoFar, spaceUsage } from "@/lib/usage";
  */
 export default async function UsagePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ spaceSlug: string }>;
+  searchParams: Promise<{ paid?: string }>;
 }) {
-  const { spaceSlug } = await params;
+  const [{ spaceSlug }, { paid }] = await Promise.all([params, searchParams]);
 
   try {
     const ctx = await requireSpaceMember(spaceSlug);
@@ -68,7 +71,17 @@ export default async function UsagePage({
             </p>
           </div>
           <div className="mt-3">
-            <BillingButton spaceSlug={spaceSlug} subscribed={plan.subscribed} />
+            {paid === "1" && !plan.subscribed ? (
+              // Back from checkout before Stripe's word has arrived. Saying
+              // "Trial" with a Subscribe button here invited a second payment.
+              <ConfirmingPayment />
+            ) : (
+              <BillingButton
+                spaceSlug={spaceSlug}
+                subscribed={plan.subscribed}
+                customer={plan.customer}
+              />
+            )}
           </div>
 
           <p className="mt-3 text-[12px] text-ink-subtle">
@@ -77,7 +90,7 @@ export default async function UsagePage({
             {plan.workers} {plan.workers === 1 ? "worker" : "workers"} switched on
             {plan.trialEndsAt === null
               ? ""
-              : `. Trial runs to ${plan.trialEndsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`}
+              : `. ${plan.plan.id === "lapsed" ? "The trial ended on" : "Trial runs to"} ${plan.trialEndsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`}
             .
           </p>
         </section>
@@ -122,12 +135,18 @@ export default async function UsagePage({
                     key={app.appId}
                     className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-3 transition-colors duration-150 hover:bg-sunken/40"
                   >
-                    <Link
-                      href={`/${spaceSlug}/${app.slug}`}
-                      className="min-w-0 flex-1 truncate text-[13px] text-ink underline-offset-4 hover:underline"
-                    >
-                      {app.name}
-                    </Link>
+                    {app.slug === null ? (
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">
+                        {app.name} <span className="text-ink-subtle">(removed)</span>
+                      </span>
+                    ) : (
+                      <Link
+                        href={`/${spaceSlug}/${app.slug}`}
+                        className="min-w-0 flex-1 truncate text-[13px] text-ink underline-offset-4 hover:underline"
+                      >
+                        {app.name}
+                      </Link>
+                    )}
                     <span className="tabular w-[92px] text-right text-[12.5px] text-ink-muted">
                       {describeInstanceTime(app.instanceSeconds)}
                     </span>

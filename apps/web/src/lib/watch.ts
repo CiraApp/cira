@@ -1,10 +1,21 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
-import { appWatch, db, deployments, spaces } from "@cira/db";
+import { and, count, desc, eq, gt, inArray, notInArray } from "drizzle-orm";
 import {
+  appOpens,
+  appWatch,
+  apps,
+  db,
+  deployments,
+  invocations,
+  services,
+  spaces,
+} from "@cira/db";
+import {
+  effectivePlan,
   nextRuns,
   parseSchedule,
+  trialEndsAt,
   type Deployment,
   type ProcessState,
   type StoredProcess,
@@ -15,9 +26,13 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import {
   answeringAgainMessage,
   notAnsweringMessage,
+  planEnforcedMessage,
   runFailedMessage,
+  trialEndedMessage,
+  trialEndingMessage,
 } from "@/lib/messages";
-import { notifyManagers } from "@/lib/notify";
+import { notifyAdmins, notifyManagers, retryUnsent } from "@/lib/notify";
+import { enforcePlan } from "@/lib/plan-enforcement";
 import { listProcesses } from "@/lib/processes";
 import {
   nextWatch,
@@ -47,7 +62,18 @@ export interface WatchReport {
   problems: number;
   /** Subscriptions whose seat or worker count was brought up to date. */
   billingSynced: number;
+  /** Workers, runs and warm apps switched off because a plan no longer covers them. */
+  switchedOff: number;
+  /** Notices that failed before and went this time. */
+  retried: number;
 }
+
+/**
+ * How long one pass may spend before it stops starting new checks. The cron
+ * function is given 300 seconds; stopping short leaves room to finish the
+ * checks already running, rather than being cut off in the middle of them.
+ */
+const BUDGET_MS = 240_000;
 
 /** Apps checked at once: enough to finish quickly, few enough to be polite. */
 const AT_ONCE = 4;
@@ -55,11 +81,14 @@ const AT_ONCE = 4;
 const ANSWER_TIMEOUT_MS = 25_000;
 
 export async function watchEverything(now = new Date()): Promise<WatchReport> {
+  const started = Date.now();
   const report: WatchReport = {
     deploysSettled: 0,
     appsChecked: 0,
     problems: 0,
     billingSynced: 0,
+    switchedOff: 0,
+    retried: 0,
   };
 
   // Deploys still in flight that nobody is polling: the CLI was closed, the
@@ -74,8 +103,34 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
       report.deploysSettled += 1;
   }
 
+  // Anything that failed to reach people last time goes first, while it is
+  // still news.
+  report.retried = await retryUnsent(now).catch(() => 0);
+
+  // Every space before any app: its trial, what its plan still allows, and
+  // what it is billed for. These are quick, and they used to run last, where
+  // a pass slowed by apps that would not answer never reached them.
+  const everySpace = await db()
+    .select({
+      id: spaces.id,
+      plan: spaces.plan,
+      createdAt: spaces.createdAt,
+      status: spaces.subscriptionStatus,
+      subscriptionId: spaces.stripeSubscriptionId,
+    })
+    .from(spaces);
+  for (const space of everySpace) {
+    const outcome = await watchSpace(space, now).catch(() => ({
+      switchedOff: 0,
+      synced: false,
+    }));
+    report.switchedOff += outcome.switchedOff;
+    if (outcome.synced) report.billingSynced += 1;
+  }
+
   const serving = await servingDeployments();
   for (let i = 0; i < serving.length; i += AT_ONCE) {
+    if (Date.now() - started > BUDGET_MS) break;
     const batch = serving.slice(i, i + AT_ONCE);
     const problems = await Promise.all(
       batch.map((deployment) => watchApp(deployment, now).catch(() => 0)),
@@ -84,18 +139,120 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
     report.problems += problems.reduce((a, b) => a + b, 0);
   }
 
-  // What a company is billed for should follow what it has, without anyone
-  // remembering to change it: people who joined or left, workers switched on.
-  const paying = await db()
-    .select({ id: spaces.id })
-    .from(spaces)
-    .where(isNotNull(spaces.stripeSubscriptionId));
-  for (const space of paying) {
-    const synced = await syncQuantities(space.id).catch(() => "skipped" as const);
-    if (synced === "changed") report.billingSynced += 1;
+  return report;
+}
+
+/** How long before a trial ends its admins are told it is ending. */
+const TRIAL_WARNING_MS = 3 * 86_400_000;
+
+/**
+ * One space's own checks: tell its admins a trial is ending or has ended,
+ * switch off what its plan no longer covers, and keep its bill in step with
+ * what it has - people who joined or left, workers switched on.
+ */
+async function watchSpace(
+  space: {
+    id: string;
+    plan: string;
+    createdAt: Date;
+    status: string | null;
+    subscriptionId: string | null;
+  },
+  now: Date,
+): Promise<{ switchedOff: number; synced: boolean }> {
+  const plan = effectivePlan(space.plan, space.createdAt, now);
+  const ends = trialEndsAt(space.createdAt);
+  const neverPaid = space.status === null;
+
+  if (plan.id === "trial" && ends.getTime() - now.getTime() <= TRIAL_WARNING_MS) {
+    await notifyAdmins({
+      spaceId: space.id,
+      kind: "trial-ending",
+      subject: ends.toISOString().slice(0, 10),
+      compose: (s) => trialEndingMessage({ space: s, endsAt: ends }),
+    });
+  }
+  if (plan.id === "lapsed" && neverPaid) {
+    await notifyAdmins({
+      spaceId: space.id,
+      kind: "trial-ended",
+      subject: ends.toISOString().slice(0, 10),
+      compose: (s) => trialEndedMessage({ space: s }),
+    });
   }
 
-  return report;
+  const enforced = await enforcePlan(space.id);
+  const changed = enforced.switchedOff.length + enforced.cooled.length;
+  if (changed > 0) {
+    await notifyAdmins({
+      spaceId: space.id,
+      kind: "plan-enforced",
+      subject: `${now.toISOString().slice(0, 16)}:${[...enforced.switchedOff, ...enforced.cooled].join("|")}`,
+      compose: (s) =>
+        planEnforcedMessage({
+          space: s,
+          switchedOff: enforced.switchedOff,
+          cooled: enforced.cooled,
+        }),
+    });
+  }
+
+  const synced =
+    space.subscriptionId === null
+      ? false
+      : (await syncQuantities(space.id).catch(() => "skipped" as const)) === "changed";
+  return { switchedOff: changed, synced };
+}
+
+/**
+ * Whether asking this app if it answers is worth what the asking costs.
+ *
+ * An app of one container is billed only while it handles a request, so the
+ * check costs a second of compute and is always worth it. An app with a
+ * sidecar keeps its CPU on and is billed for as long as an instance exists;
+ * Cloud Run keeps one for about fifteen minutes after its last request, so a
+ * check every five minutes kept every such app running - and billed - around
+ * the clock, for nobody. Those are checked only when someone would notice:
+ * kept warm, opened in the last hour, or called in the last fifteen minutes.
+ */
+async function worthProbing(deployment: Deployment, now: Date): Promise<boolean> {
+  const database = db();
+  const [parts] = await database
+    .select({ n: count() })
+    .from(services)
+    .where(eq(services.appId, deployment.appId));
+  if ((parts?.n ?? 1) <= 1) return true;
+
+  const [app] = await database
+    .select({ minInstances: apps.minInstances })
+    .from(apps)
+    .where(eq(apps.id, deployment.appId))
+    .limit(1);
+  if ((app?.minInstances ?? 0) > 0) return true;
+
+  const [opened] = await database
+    .select({ id: appOpens.id })
+    .from(appOpens)
+    .where(
+      and(
+        eq(appOpens.appId, deployment.appId),
+        gt(appOpens.openedAt, new Date(now.getTime() - 3600_000)),
+      ),
+    )
+    .limit(1);
+  if (opened !== undefined) return true;
+
+  const [called] = await database
+    .select({ id: invocations.id })
+    .from(invocations)
+    .where(
+      and(
+        eq(invocations.appId, deployment.appId),
+        gt(invocations.createdAt, new Date(now.getTime() - 15 * 60_000)),
+      ),
+    )
+    .limit(1);
+  return called !== undefined;
 }
 
 /**
@@ -128,7 +285,11 @@ async function servingDeployments(): Promise<Deployment[]> {
 async function watchApp(deployment: Deployment, now: Date): Promise<number> {
   let problems = 0;
 
-  if (deployment.servesWeb && deployment.url !== null) {
+  if (
+    deployment.servesWeb &&
+    deployment.url !== null &&
+    (await worthProbing(deployment, now))
+  ) {
     const answering = await answers(deployment.url);
     if (answering !== null) {
       if (!answering) problems += 1;
@@ -253,6 +414,7 @@ async function observe(
       appId,
       kind: "app-down",
       subject,
+      topic: target,
       compose: (app) =>
         notAnsweringMessage({
           app,
@@ -270,6 +432,7 @@ async function observe(
       appId,
       kind: "app-back",
       subject,
+      topic: target,
       compose: (app) => answeringAgainMessage({ app, worker, since: event.since, now }),
     });
   }
@@ -297,6 +460,7 @@ async function tellFailedRuns(
       appId,
       kind: "run-failed",
       subject: run.id,
+      topic: `run:${process.name}`,
       compose: (app) =>
         runFailedMessage({
           app,

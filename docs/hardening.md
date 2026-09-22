@@ -110,30 +110,30 @@ the test lives. When one is deliberately left alone, it says why.
 
 | ID      | Sev      | Finding                                                                                                                                    | Status |
 | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| BILL-1  | critical | The trial never ends. Its end date is only displayed.                                                                                      | open   |
-| BILL-2  | critical | Workers and warm apps switched on after checkout are never added to the subscription. Checkout breaks when the always-on price is missing. | open   |
-| BILL-3  | critical | After a cancel, workers and warm apps keep running for free.                                                                               | open   |
-| BILL-4  | high     | After an abandoned or cancelled checkout a space can never subscribe again: it only offers the portal.                                     | open   |
-| BILL-5  | high     | Webhooks are applied in whatever order they arrive, for whichever subscription they name.                                                  | open   |
-| BILL-6  | high     | Two admins, or two tabs, can create two customers and two subscriptions.                                                                   | open   |
-| BILL-7  | high     | Deleting a space while a checkout is open leaves a subscription charging for a space that no longer exists.                                | open   |
-| BILL-8  | high     | The five-minute health probe keeps apps with sidecars running all the time (they are billed per instance), and nobody pays for it.         | open   |
-| BILL-9  | medium   | A subscription set to cancel at the end of its period, or one that has expired, still blocks deleting the space.                           | open   |
-| BILL-10 | medium   | Cira never emails anyone about a failed payment or a cancellation, and Stripe's own emails go to whichever admin first clicked subscribe.  | open   |
-| BILL-11 | medium   | Apps deleted this month disappear from this month's usage.                                                                                 | open   |
-| BILL-12 | medium   | One person can open any number of trial spaces.                                                                                            | open   |
-| BILL-13 | low      | Only one `v1` signature is checked, so rotating the webhook secret can fail.                                                               | open   |
-| BILL-14 | low      | Coming back from checkout before the webhook arrives still shows "Trial".                                                                  | open   |
-| BILL-15 | low      | Keep-warm can end up on at Google but off in Cira if the database write fails.                                                             | open   |
+| BILL-1  | critical | The trial never ends. Its end date is only displayed.                                                                                      | fixed  |
+| BILL-2  | critical | Workers and warm apps switched on after checkout are never added to the subscription. Checkout breaks when the always-on price is missing. | fixed  |
+| BILL-3  | critical | After a cancel, workers and warm apps keep running for free.                                                                               | fixed  |
+| BILL-4  | high     | After an abandoned or cancelled checkout a space can never subscribe again: it only offers the portal.                                     | fixed  |
+| BILL-5  | high     | Webhooks are applied in whatever order they arrive, for whichever subscription they name.                                                  | fixed  |
+| BILL-6  | high     | Two admins, or two tabs, can create two customers and two subscriptions.                                                                   | fixed  |
+| BILL-7  | high     | Deleting a space while a checkout is open leaves a subscription charging for a space that no longer exists.                                | fixed  |
+| BILL-8  | high     | The five-minute health probe keeps apps with sidecars running all the time (they are billed per instance), and nobody pays for it.         | fixed  |
+| BILL-9  | medium   | A subscription set to cancel at the end of its period, or one that has expired, still blocks deleting the space.                           | fixed  |
+| BILL-10 | medium   | Cira never emails anyone about a failed payment or a cancellation, and Stripe's own emails go to whichever admin first clicked subscribe.  | fixed  |
+| BILL-11 | medium   | Apps deleted this month disappear from this month's usage.                                                                                 | fixed  |
+| BILL-12 | medium   | One person can open any number of trial spaces.                                                                                            | fixed  |
+| BILL-13 | low      | Only one `v1` signature is checked, so rotating the webhook secret can fail.                                                               | fixed  |
+| BILL-14 | low      | Coming back from checkout before the webhook arrives still shows "Trial".                                                                  | fixed  |
+| BILL-15 | low      | Keep-warm can end up on at Google but off in Cira if the database write fails.                                                             | fixed  |
 
 ## Alerts
 
 | ID      | Sev    | Finding                                                                                                                                 | Status |
 | ------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| ALERT-1 | high   | An alert that fails to send is lost forever: it is claimed first and never retried. Resend's rate limit makes that likely in an outage. | open   |
-| ALERT-2 | medium | Nothing limits how many emails a flapping app, a crashlooping worker, or a failing five-minute job sends.                               | open   |
-| ALERT-3 | medium | A worker that crashes without running out of memory is never reported, but is still billed.                                             | open   |
-| ALERT-4 | medium | The billing sync runs last in the watcher, so a slow run can starve it.                                                                 | open   |
+| ALERT-1 | high   | An alert that fails to send is lost forever: it is claimed first and never retried. Resend's rate limit makes that likely in an outage. | fixed  |
+| ALERT-2 | medium | Nothing limits how many emails a flapping app, a crashlooping worker, or a failing five-minute job sends.                               | fixed  |
+| ALERT-3 | medium | A worker that crashes without running out of memory is never reported, but is still billed.                                             | later  |
+| ALERT-4 | medium | The billing sync runs last in the watcher, so a slow run can starve it.                                                                 | fixed  |
 
 ## Found by hand
 
@@ -180,3 +180,22 @@ What changed for each finding, and where its test is.
 - **SEC-4** (fixed). Tokens carry a scope (migration 0035). `cli` tokens deploy; `assistant` tokens only reach MCP. Tokens made in the app, and by `cira mcp connect` (new `/api/cli/assistant-token`), are assistant tokens, so an assistant's config no longer holds deploy rights. Every token lapses after ninety days unused, and each use moves that on. The login page asks someone arriving by link to confirm they ran `cira login` themselves. `CIRA_TOKEN` lets CI deploy without a config file. Tests: `cli-session.test.ts`.
 - **SEC-5** (fixed). Joining by domain is a setting admins turn on (`spaces.join_by_domain`, migration 0034), off for every space including existing ones. Someone removed cannot rejoin by domain until invited (`space_join_blocks`). The personal-provider list grew from 26 to around 190 domains plus academic ones. Tests: `member-actions.test.ts`, `email-domain.test.ts`.
 - **SEC-6** (fixed). Re-linking by address only happens when the old sign-in no longer exists and the account is from before production sign-in or belongs to no space. Otherwise the person lands on `/account-conflict`, which says who can fix it. A re-link revokes the old holder's tokens. An email change that collides with a stale row no longer locks the person out. Tests: `identity.test.ts`.
+- **BILL-1** (fixed). A space's plan is worked out from its dates (`effectivePlan` in core): a trial past its fourteen days, or a space whose subscription ended, is `lapsed`. Deploys are refused with a sentence naming who can fix it, and `enforcePlan` switches off workers, scheduled runs and warm apps. Everything deployed still opens. Admins are emailed three days before and on the day. Tests: `plans.test.ts`, `plan-enforcement.test.ts`, `deploy-service.test.ts`.
+- **BILL-2** (fixed). `syncQuantities` adds a line for any price with a quantity and none yet, and removes one that falls to zero. A missing price no longer reads as Stripe being unreachable: the admin is told it is not set up, and the operator gets a log naming the lookup key. Tests: `billing.test.ts`.
+- **BILL-3** (fixed). When a subscription ends (or Stripe marks it unpaid), `enforcePlan` runs at once from the webhook and again on every watcher pass, and admins are told what was switched off. Tests: `plan-enforcement.test.ts`.
+- **BILL-4** (fixed). Checkout is offered whenever the space is not paying, measured by the subscription's status rather than by ever having been a Stripe customer. A former customer also gets a Past invoices link.
+- **BILL-5** (fixed). A webhook event is only a pointer: the subscription is fetched as it is now and that is what is written, so arrival order cannot matter. `checkout.session.completed` and `invoice.payment_failed` are handled as well. Tests: `billing.test.ts`.
+- **BILL-6** (fixed). Checkout refuses a space that already pays and sends it to the portal. The customer and checkout calls carry idempotency keys, and a second running subscription for a paying space is cancelled when it arrives. Tests: `billing.test.ts`.
+- **BILL-7** (fixed). Deleting a space expires its open checkouts, and a subscription that arrives for a space that no longer exists is cancelled. Tests: `billing.test.ts`.
+- **BILL-8** (fixed). The watcher probes an app with a sidecar only while someone would notice: kept warm, opened in the last hour, or called in the last fifteen minutes. Single-container apps are billed per request and are always probed.
+- **BILL-9** (fixed). Deletion asks Stripe as it is now. A subscription set to cancel at the end of its period, or one that expired, no longer blocks it.
+- **BILL-10** (fixed). Admins are emailed when a payment fails and when a subscription ends. The Stripe customer's address follows whoever last started a checkout. `unpaid`, where Stripe leaves a subscription after its last retry, now ends the paid plan instead of keeping it for ever. Tests: `billing-rules.test.ts`.
+- **BILL-11** (fixed). Removing an app records the names Google knows its services and processes by (`removed_apps`, migration 0037), and the month's usage still counts them, marked removed.
+- **BILL-12** (fixed). One person may own at most two spaces that have never been subscribed.
+- **BILL-13** (fixed). Every `v1` in the header is checked, so rotating the webhook secret works. Tests: `billing.test.ts`.
+- **BILL-14** (fixed). Coming back from checkout before Stripe confirms shows that the payment was received and is being confirmed, and the page refreshes until it is.
+- **BILL-15** (fixed). Keep-warm is written down first, then asked of Google, and put back if Google refuses.
+- **ALERT-1** (fixed). The message and whoever it has not reached are kept on the row (migration 0036), and the watcher retries up to five times over a day. Sends are spaced for Resend's rate limit. Tests: `notifications.test.ts`.
+- **ALERT-2** (fixed). Each notice has a topic. There are at most two outage emails per topic in two hours and one failing-run email in six, and no 'back up' for an outage nobody was told about. What is held back is recorded. Tests: `notifications.test.ts`.
+- **ALERT-4** (fixed). Spaces - trial notices, plan enforcement, billing sync - now come before app checks, and a pass stops starting checks after four minutes.
+- **ALERT-3** (later). Worth doing with a real crash-looping worker to read Google's log lines from, not guessed. Picked up in the end-to-end pass.

@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /**
  * Cira owns identity's *consequences* - spaces, membership, access - while an
@@ -851,22 +852,49 @@ export const processes = pgTable(
  * first sends it, and every other finds the row and sends nothing. What was
  * said is not kept; only that it was, to whom many, and whether it went.
  */
+/**
+ * An app that was removed, kept so the month's usage still counts what it ran:
+ * the names Google knows its services and processes by, and their memory.
+ */
+export const removedApps = pgTable(
+  "removed_apps",
+  {
+    /** The app's own id, which it no longer has anywhere else. */
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    resources: jsonb("resources")
+      .$type<Array<{ name: string; memoryMiB: number }>>()
+      .notNull(),
+    removedAt: timestamp("removed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("removed_apps_space_idx").on(t.spaceId, t.removedAt)],
+);
+
 export const notifications = pgTable(
   "notifications",
   {
     id: text("id").primaryKey(),
-    appId: text("app_id")
-      .notNull()
-      .references(() => apps.id, { onDelete: "cascade" }),
+    /** The app it is about, or null for a notice about the whole space. */
+    appId: text("app_id").references(() => apps.id, { onDelete: "cascade" }),
     spaceId: text("space_id")
       .notNull()
       .references(() => spaces.id, { onDelete: "cascade" }),
-    /** deploy-failed, app-down, app-back, run-failed or capability-refused. */
+    /** deploy-failed, app-down, run-failed, trial-ending, payment-failed and so on. */
     kind: text("kind").notNull(),
     /** Which one: a deployment id, a run id, a capability, a spell's start. */
     subject: text("subject").notNull(),
+    /** What it is about within the app - web, one worker, one run - for holding back floods. */
+    topic: text("topic"),
     recipients: integer("recipients").notNull().default(0),
-    /** Set once the email provider accepted it. */
+    /** What was to be sent, kept so a failed send can be tried again. */
+    message: jsonb("message").$type<{ subject: string; text: string; html: string }>(),
+    /** Who it has not reached yet. Empty once everyone has it, or it is given up on. */
+    unsent: text("unsent").array().notNull().default([]),
+    attempts: integer("attempts").notNull().default(0),
+    /** Set once the email provider accepted it for everyone. */
     sentAt: timestamp("sent_at", { withTimezone: true }),
     /** Why it did not go, in Cira's words. Never the provider's. */
     failure: text("failure"),
@@ -874,6 +902,9 @@ export const notifications = pgTable(
   },
   (t) => [
     uniqueIndex("notifications_event_idx").on(t.appId, t.kind, t.subject),
+    uniqueIndex("notifications_space_event_idx")
+      .on(t.spaceId, t.kind, t.subject)
+      .where(sql`${t.appId} IS NULL`),
     index("notifications_space_idx").on(t.spaceId),
   ],
 );

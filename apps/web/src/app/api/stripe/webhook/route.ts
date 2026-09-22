@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { applySubscription, verifyWebhook } from "@/lib/billing";
+import { paymentFailedMessage, subscriptionEndedMessage } from "@/lib/messages";
+import { notifyAdmins } from "@/lib/notify";
+import { enforcePlan } from "@/lib/plan-enforcement";
+import { db, spaces } from "@cira/db";
+import { eq } from "drizzle-orm";
 
 /**
  * What Stripe says happened.
@@ -9,6 +14,9 @@ import { applySubscription, verifyWebhook } from "@/lib/billing";
  * raw for exactly that reason. Everything that changes what a company may do
  * arrives here rather than from the browser that came back from checkout: a
  * redirect can be faked, and a person can close the tab before it happens.
+ *
+ * An event is only ever a pointer: `applySubscription` fetches the
+ * subscription as it is now, so the order events arrive in cannot matter.
  */
 export async function POST(request: Request) {
   const secret = process.env["STRIPE_WEBHOOK_SECRET"]?.trim();
@@ -24,16 +32,67 @@ export async function POST(request: Request) {
   }
 
   const event = JSON.parse(payload) as {
+    id?: string;
     type?: string;
     data?: { object?: Record<string, unknown> };
   };
   const object = event.data?.object ?? {};
 
-  // Subscription events carry the subscription itself. A finished checkout
-  // does not, and does not need to: the subscription it created sends its own.
-  if (event.type?.startsWith("customer.subscription.") === true) {
-    await applySubscription(object);
+  // A finished checkout names the subscription it made; applying it here as
+  // well as on its own event means the page someone returns to is right
+  // sooner, whichever of the two arrives first.
+  const subscriptionId =
+    event.type?.startsWith("customer.subscription.") === true
+      ? (object["id"] as string | undefined)
+      : event.type === "checkout.session.completed" ||
+          event.type === "invoice.payment_failed"
+        ? (object["subscription"] as string | undefined)
+        : undefined;
+
+  if (subscriptionId !== undefined && subscriptionId !== null) {
+    const applied = await applySubscription({ id: subscriptionId });
+
+    if (applied.kind === "applied") {
+      const ended =
+        applied.before !== applied.after &&
+        ["canceled", "unpaid", "incomplete_expired", "paused"].includes(applied.after);
+      if (ended) {
+        // Stopped paying: what runs by the hour stops now, not at the
+        // watcher's next pass, and the admins are told what changed.
+        await enforcePlan(applied.spaceId).catch(() => undefined);
+        await notifyAdmins({
+          spaceId: applied.spaceId,
+          kind: "subscription-ended",
+          subject: subscriptionId,
+          compose: (space) => subscriptionEndedMessage({ space }),
+        });
+      }
+    }
+
+    if (event.type === "invoice.payment_failed") {
+      const spaceId =
+        applied.kind === "applied" ? applied.spaceId : await spaceOfCustomer(object);
+      if (spaceId !== null) {
+        await notifyAdmins({
+          spaceId,
+          kind: "payment-failed",
+          subject: String(object["id"] ?? event.id ?? subscriptionId),
+          compose: (space) => paymentFailedMessage({ space }),
+        });
+      }
+    }
   }
 
   return NextResponse.json({ received: true });
+}
+
+async function spaceOfCustomer(invoice: Record<string, unknown>): Promise<string | null> {
+  const customer = invoice["customer"];
+  if (typeof customer !== "string") return null;
+  const [row] = await db()
+    .select({ id: spaces.id })
+    .from(spaces)
+    .where(eq(spaces.stripeCustomerId, customer))
+    .limit(1);
+  return row?.id ?? null;
 }

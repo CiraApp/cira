@@ -96,9 +96,11 @@ what it uses.
       watcher. A failed payment warns and changes nothing; a cancelled one
       falls back to a trial's allowance (2026-09-19). In test mode.
   - [ ] _You:_ switch Stripe to live mode when there is a customer: create the
-        same two prices with the lookup keys `cira_team_seat` and
-        `cira_team_worker`, a live webhook to `/api/stripe/webhook`, and
-        replace the two Vercel secrets.
+        three prices with the lookup keys `cira_team_seat`, `cira_team_worker`
+        and `cira_team_always_on`, a live webhook to `/api/stripe/webhook`
+        sending `customer.subscription.*`, `checkout.session.completed` and
+        `invoice.payment_failed`, and replace the two Vercel secrets. The test
+        webhook needs the two new events added too.
 - [x] **2.3 Usage and cost per company.** Cloud Monitoring is asked what each
       service, job and worker pool ran for, attributed to apps by Cira's own
       records, priced by `pricing.ts`, and shown to admins at

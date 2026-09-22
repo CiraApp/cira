@@ -1,6 +1,6 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { atomically, db, memberships, spaces } from "@cira/db";
 import { RESERVED_SPACE_SLUGS, newId, slugWithSuffix, slugify } from "@cira/core";
@@ -16,6 +16,9 @@ const createSpaceInput = z.object({
 });
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+/** Spaces one person may own at once without any of them having paid. */
+const MAX_UNPAID_SPACES = 2;
 
 /**
  * Create a space and make the creator its owner.
@@ -37,6 +40,28 @@ export async function createSpace(
 
   const user = await requireCurrentUser();
   const database = db();
+
+  // Each new space is a fresh trial, including its free worker, which costs
+  // Cira real money. Two unpaid ones at a time is room to try Cira twice -
+  // for a company and a side project - not a way to run one for ever.
+  const unpaid = await database
+    .select({ id: spaces.id })
+    .from(memberships)
+    .innerJoin(spaces, eq(spaces.id, memberships.spaceId))
+    .where(
+      and(
+        eq(memberships.userId, user.id),
+        eq(memberships.role, "owner"),
+        isNull(spaces.subscriptionStatus),
+      ),
+    );
+  if (unpaid.length >= MAX_UNPAID_SPACES) {
+    return {
+      ok: false,
+      error:
+        "You already own two spaces that have never been subscribed. Subscribe one of them, or delete one, to start another.",
+    };
+  }
 
   // A name written only in a script with no Latin letters - Японский, 株式会社 -
   // has nothing to make an address from. It keeps its name, and the address is

@@ -2,7 +2,13 @@ import "server-only";
 
 import { and, count, eq, gt } from "drizzle-orm";
 import { apps, db, memberships, processes, spaces } from "@cira/db";
-import { monthlyBill, planOf, type Bill, type Plan } from "@cira/core";
+import {
+  effectivePlan,
+  monthlyBill,
+  trialEndsAt,
+  type Bill,
+  type Plan,
+} from "@cira/core";
 import { readStatus, type SubscriptionStatus } from "@/lib/billing-rules";
 
 /**
@@ -15,11 +21,11 @@ import { readStatus, type SubscriptionStatus } from "@/lib/billing-rules";
  */
 export async function planForSpace(spaceId: string): Promise<Plan> {
   const [row] = await db()
-    .select({ plan: spaces.plan })
+    .select({ plan: spaces.plan, createdAt: spaces.createdAt })
     .from(spaces)
     .where(eq(spaces.id, spaceId))
     .limit(1);
-  return planOf(row?.plan);
+  return effectivePlan(row?.plan, row?.createdAt ?? new Date(0));
 }
 
 export interface PlanSummary {
@@ -31,11 +37,19 @@ export interface PlanSummary {
   /** Apps kept warm, each holding an instance open and charged for. */
   alwaysOn: number;
   bill: Bill;
-  /** When a trial runs out; null on a paid plan. */
+  /** When a trial runs out, or ran out; null on a paid plan. */
   trialEndsAt: Date | null;
-  /** Stripe's word for the subscription, and whether there is one at all. */
+  /** Stripe's word for the subscription. */
   status: SubscriptionStatus | null;
+  /**
+   * Whether a subscription is running now - paid, or behind on a payment -
+   * which is what decides between offering checkout and the billing portal.
+   * Having once been a Stripe customer is not it: someone who abandoned a
+   * checkout, or cancelled, has to be able to subscribe again.
+   */
   subscribed: boolean;
+  /** Whether Stripe knows this company at all, so the portal has invoices to show. */
+  customer: boolean;
   /** What the subscription is paid up to. */
   paidUntil: Date | null;
 }
@@ -76,7 +90,8 @@ export async function planSummary(spaceId: string): Promise<PlanSummary> {
       .where(and(eq(apps.spaceId, spaceId), gt(apps.minInstances, 0))),
   ]);
 
-  const plan = planOf(space?.plan);
+  const plan = effectivePlan(space?.plan, space?.createdAt ?? new Date(0));
+  const status = readStatus(space?.status);
   const use = {
     seats: people?.n ?? 0,
     workers: workers?.n ?? 0,
@@ -89,11 +104,14 @@ export async function planSummary(spaceId: string): Promise<PlanSummary> {
     alwaysOn: use.alwaysOn,
     bill: monthlyBill(plan, use),
     trialEndsAt:
-      plan.trialDays === 0 || space === undefined
-        ? null
-        : new Date(space.createdAt.getTime() + plan.trialDays * 24 * 3600_000),
-    status: readStatus(space?.status),
-    subscribed: (space?.customerId ?? null) !== null,
+      plan.id === "team" || space === undefined ? null : trialEndsAt(space.createdAt),
+    status,
+    subscribed:
+      status === "active" ||
+      status === "trialing" ||
+      status === "past_due" ||
+      status === "unpaid",
+    customer: (space?.customerId ?? null) !== null,
     paidUntil: space?.paidUntil ?? null,
   };
 }

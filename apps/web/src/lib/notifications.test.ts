@@ -283,28 +283,102 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     expect(sent[0]?.text).toContain("running out of memory");
   });
 
-  it("records an event it could not send, and does not send it later", async () => {
+  it("records an event it could not send, and sends it once the provider is back", async () => {
     const { notifications } = await import("@cira/db");
-    const { notifyManagers } = await import("./notify");
+    const { notifyManagers, retryUnsent } = await import("./notify");
     const { refusedMessage } = await import("./messages");
-    emailOutcome = { sent: false, reason: "not-configured" };
+    emailOutcome = { sent: false, reason: "unreachable" };
     const compose = (app: Parameters<typeof refusedMessage>[0]["app"]) =>
       refusedMessage({ app, operation: "Export" });
     expect(
       await notifyManagers({ appId, kind: "capability-refused", subject: "x", compose }),
     ).toBe("not-sent");
-    emailOutcome = { sent: true };
+    // Noticed again: still one event, never a second email about it.
     expect(
       await notifyManagers({ appId, kind: "capability-refused", subject: "x", compose }),
     ).toBe("already-told");
-    const [row] = await database
+    const [waiting] = await database
       .select()
       .from(notifications)
       .where(eq(notifications.subject, "x"));
-    expect(row).toMatchObject({
+    expect(waiting).toMatchObject({
       recipients: 0,
       sentAt: null,
-      failure: "Email is not configured for this Cira.",
+      failure: "The email provider could not be reached.",
     });
+    expect([...(waiting?.unsent ?? [])].sort()).toEqual(managers);
+
+    // It used to be lost for good here. The watcher now tries again.
+    emailOutcome = { sent: true };
+    expect(await retryUnsent()).toBe(1);
+    expect(recipients()).toEqual(managers);
+    const [done] = await database
+      .select()
+      .from(notifications)
+      .where(eq(notifications.subject, "x"));
+    expect(done).toMatchObject({ recipients: 2, unsent: [], failure: null });
+    expect(done?.sentAt).not.toBeNull();
+    expect(await retryUnsent()).toBe(0);
+  });
+
+  it("holds a flapping app to two outage emails in two hours", async () => {
+    const { notifyManagers } = await import("./notify");
+    const { notAnsweringMessage } = await import("./messages");
+    const flap = (n: number) =>
+      notifyManagers({
+        appId,
+        kind: "app-down",
+        subject: `flap@${n}`,
+        topic: "flap",
+        compose: (app) =>
+          notAnsweringMessage({
+            app,
+            worker: null,
+            since: new Date(),
+            why: null,
+            logs: "",
+          }),
+      });
+    expect(await flap(1)).toBe("sent");
+    expect(await flap(2)).toBe("sent");
+    expect(await flap(3)).toBe("held-back");
+    expect(await flap(4)).toBe("held-back");
+    expect(sent).toHaveLength(4); // two outages, two managers each
+
+    // Back up after an outage nobody was told about is not news either.
+    const { answeringAgainMessage } = await import("./messages");
+    expect(
+      await notifyManagers({
+        appId,
+        kind: "app-back",
+        subject: "flap@3",
+        topic: "flap",
+        compose: (app) =>
+          answeringAgainMessage({
+            app,
+            worker: null,
+            since: new Date(),
+            now: new Date(),
+          }),
+      }),
+    ).toBe("held-back");
+  });
+
+  it("tells a space's admins about the space once", async () => {
+    const { notifyAdmins } = await import("./notify");
+    const { trialEndingMessage } = await import("./messages");
+    const once = () =>
+      notifyAdmins({
+        spaceId,
+        kind: "trial-ending",
+        subject: "2026-10-01",
+        compose: (space) =>
+          trialEndingMessage({ space, endsAt: new Date("2026-10-01T00:00:00Z") }),
+      });
+    expect(await once()).toBe("sent");
+    expect(await once()).toBe("already-told");
+    // Admins and owners only: the app's own owner here is a plain member.
+    expect(recipients()).toEqual(["admin@acme.test"]);
+    expect(sent[0]?.subject).toBe("Acme's Cira trial ends Thursday, Oct 1");
   });
 });

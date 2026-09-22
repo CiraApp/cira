@@ -222,3 +222,98 @@ export function refusedMessage(args: { app: AppRef; operation: string }): Messag
     because: manager(app),
   });
 }
+
+/** A space, and where its billing is, for the notices about the space itself. */
+export interface SpaceRef {
+  name: string;
+  /** The space's billing page, absolute. */
+  billing: string;
+}
+
+const admin = (space: SpaceRef) =>
+  `You get this because you are an admin of ${space.name} on Cira.`;
+
+/** A day the way a reader anywhere can place it: "Friday, Oct 3". */
+function day(at: Date): string {
+  return at.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function trialEndingMessage(args: { space: SpaceRef; endsAt: Date }): Message {
+  const { space } = args;
+  return letter({
+    subject: `${space.name}'s Cira trial ends ${day(args.endsAt)}`,
+    paragraphs: [
+      `The free trial of Cira for ${space.name} ends on ${day(args.endsAt)}.`,
+      "After that, everything already deployed keeps opening and nothing is deleted. New deploys stop, and workers and scheduled runs are switched off, until someone subscribes.",
+      "Subscribing takes a minute and a card, at Stripe. Cira never sees the card.",
+    ],
+    action: { label: "Subscribe", href: space.billing },
+    because: admin(space),
+  });
+}
+
+export function trialEndedMessage(args: { space: SpaceRef }): Message {
+  const { space } = args;
+  return letter({
+    subject: `${space.name}'s Cira trial has ended`,
+    paragraphs: [
+      `The free trial of Cira for ${space.name} has ended.`,
+      "Everything already deployed still opens, and nothing has been deleted. Deploying is paused, and workers and scheduled runs are off, until someone subscribes - then switch them back on from each app's page.",
+    ],
+    action: { label: "Subscribe", href: space.billing },
+    because: admin(space),
+  });
+}
+
+export function planEnforcedMessage(args: {
+  space: SpaceRef;
+  switchedOff: readonly string[];
+  cooled: readonly string[];
+}): Message {
+  const { space } = args;
+  const items = [
+    ...args.switchedOff,
+    ...args.cooled.map((name) => `${name}, which was being kept warm`),
+  ];
+  return letter({
+    subject: `${space.name}: Cira switched ${items.length === 1 ? "something" : `${items.length} things`} off`,
+    paragraphs: [
+      `${space.name}'s plan no longer covers everything it was running, so Cira switched off what costs money by the hour:`,
+      items.join("; ") + ".",
+      "Nothing was deleted. Each can be switched back on from its app's page once the plan allows it.",
+    ],
+    action: { label: "See the plan", href: space.billing },
+    because: admin(space),
+  });
+}
+
+export function paymentFailedMessage(args: { space: SpaceRef }): Message {
+  const { space } = args;
+  return letter({
+    subject: `${space.name}: a payment for Cira did not go through`,
+    paragraphs: [
+      `The latest payment for ${space.name}'s Cira subscription did not go through.`,
+      "Everything keeps running for now. Updating the card from Billing keeps it that way; Stripe will try the payment again.",
+    ],
+    action: { label: "Update the card", href: space.billing },
+    because: admin(space),
+  });
+}
+
+export function subscriptionEndedMessage(args: { space: SpaceRef }): Message {
+  const { space } = args;
+  return letter({
+    subject: `${space.name}'s Cira subscription has ended`,
+    paragraphs: [
+      `${space.name}'s Cira subscription has ended.`,
+      "Everything already deployed still opens, and nothing has been deleted. Deploying is paused, and workers, scheduled runs and warm apps are off, until someone subscribes again.",
+    ],
+    action: { label: "Subscribe again", href: space.billing },
+    because: admin(space),
+  });
+}

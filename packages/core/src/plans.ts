@@ -18,7 +18,12 @@ import { monthlyCost } from "./pricing.js";
  * price is changing this record.
  */
 
-export type PlanId = "trial" | "team";
+/**
+ * `lapsed` is never stored. It is what a space is on when its trial has run
+ * out, or its subscription has ended, and nobody has paid: everything it
+ * deployed still opens, and nothing that costs money by the hour runs.
+ */
+export type PlanId = "trial" | "team" | "lapsed";
 
 export interface Plan {
   id: PlanId;
@@ -36,6 +41,10 @@ export interface Plan {
   trialDays: number;
   /** What it allows. One record, so a page cannot promise what the server refuses. */
   limits: Limits;
+  /** Whether new code may be deployed. */
+  canDeploy: boolean;
+  /** Whether an app may be kept warm, which is an instance running all the time. */
+  canKeepWarm: boolean;
 }
 
 /**
@@ -45,6 +54,16 @@ export interface Plan {
 const TRIAL_LIMITS: Limits = {
   ...DEFAULT_LIMITS,
   processes: { ...DEFAULT_LIMITS.processes, workersPerSpace: 1 },
+};
+
+/**
+ * Nothing that runs by the hour, and no new deploys. Web apps scale to zero
+ * and cost pennies, so they keep opening: a company's software is not held
+ * hostage over an unpaid month, and nothing is deleted.
+ */
+const LAPSED_LIMITS: Limits = {
+  ...DEFAULT_LIMITS,
+  processes: { ...DEFAULT_LIMITS.processes, workersPerSpace: 0, scheduledPerSpace: 0 },
 };
 
 export const PLANS: Record<PlanId, Plan> = {
@@ -58,6 +77,21 @@ export const PLANS: Record<PlanId, Plan> = {
     alwaysOnMonthly: 0,
     trialDays: 14,
     limits: TRIAL_LIMITS,
+    canDeploy: true,
+    canKeepWarm: false,
+  },
+  lapsed: {
+    id: "lapsed",
+    name: "No plan",
+    perSeatMonthly: 0,
+    minimumSeats: 0,
+    workerMonthly: 0,
+    includedWorkers: 0,
+    alwaysOnMonthly: 0,
+    trialDays: 0,
+    limits: LAPSED_LIMITS,
+    canDeploy: false,
+    canKeepWarm: false,
   },
   team: {
     id: "team",
@@ -72,6 +106,8 @@ export const PLANS: Record<PlanId, Plan> = {
     alwaysOnMonthly: 75,
     trialDays: 0,
     limits: DEFAULT_LIMITS,
+    canDeploy: true,
+    canKeepWarm: true,
   },
 };
 
@@ -79,6 +115,29 @@ export const DEFAULT_PLAN: PlanId = "trial";
 
 export function planOf(id: string | null | undefined): Plan {
   return PLANS[(id ?? DEFAULT_PLAN) as PlanId] ?? PLANS[DEFAULT_PLAN];
+}
+
+/** When a space's trial runs out: its first day plus the trial's length. */
+export function trialEndsAt(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + PLANS.trial.trialDays * 86_400_000);
+}
+
+/**
+ * The plan a space is actually on, now.
+ *
+ * What is stored says whether it pays. A space on the trial whose trial has
+ * run out - including one whose subscription ended long after its trial did -
+ * is `lapsed`. The date used to be only something a page displayed, so a
+ * trial ran for ever and a cancelled subscription kept its workers for free.
+ */
+export function effectivePlan(
+  stored: string | null | undefined,
+  spaceCreatedAt: Date,
+  now: Date = new Date(),
+): Plan {
+  const plan = planOf(stored);
+  if (plan.id !== "trial") return plan;
+  return now.getTime() < trialEndsAt(spaceCreatedAt).getTime() ? plan : PLANS.lapsed;
 }
 
 export interface BillableUse {
@@ -125,6 +184,9 @@ export function workerCost(workers: number, memoryMiB: number): number {
 
 /** A plan in the words a page uses. */
 export function describePlan(plan: Plan): string {
+  if (plan.id === "lapsed") {
+    return "No plan: apps still open, and nothing new deploys or runs in the background";
+  }
   if (plan.perSeatMonthly === 0) {
     return `Free for ${plan.trialDays} days, with ${plan.includedWorkers} worker`;
   }

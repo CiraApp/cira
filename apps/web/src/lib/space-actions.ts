@@ -7,7 +7,11 @@ import { db, spaces } from "@cira/db";
 import { roleAtLeast } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireSpaceMember } from "@/lib/authz";
 import { tearDownSpace } from "@/lib/space-teardown";
-import { billingConfigured, portalFor } from "@/lib/billing";
+import {
+  expireOpenCheckouts,
+  portalFor,
+  subscriptionBlocksDeletion,
+} from "@/lib/billing";
 
 /**
  * Deleting a company's space: the owner's decision, nobody else's, and only
@@ -39,11 +43,10 @@ export async function deleteSpace(
   if (confirmation.trim() !== ctx.space.name.trim()) {
     return { ok: false, error: "That is not the space's name." };
   }
-  if (
-    billingConfigured() &&
-    ctx.space.stripeSubscriptionId !== null &&
-    ctx.space.subscriptionStatus !== "canceled"
-  ) {
+  // Asked of Stripe as it is now: one already set to end with its period is
+  // on its way out, and one that expired never started, so neither stands in
+  // the way.
+  if (await subscriptionBlocksDeletion(ctx.space)) {
     return {
       ok: false,
       error:
@@ -51,6 +54,10 @@ export async function deleteSpace(
         "so nothing is charged after it is gone.",
     };
   }
+
+  // A checkout left open in someone's tab could otherwise start a
+  // subscription for a space that no longer exists.
+  await expireOpenCheckouts(ctx.space);
 
   const result = await tearDownSpace(ctx.space);
   if (!result.ok) return result;

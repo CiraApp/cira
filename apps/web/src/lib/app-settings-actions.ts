@@ -286,7 +286,7 @@ export async function setKeepWarm(
   }
 
   const plan = await planForSpace(ctx.space.id);
-  if (warm && plan.id !== "team") {
+  if (warm && !plan.canKeepWarm) {
     return {
       ok: false,
       error: "Keeping an app warm costs money every hour, so it needs a paid plan.",
@@ -305,19 +305,26 @@ export async function setKeepWarm(
     };
   }
 
+  // Written down first, then asked of Google, and put back if Google says no.
+  // The other order could leave an app warm at Google - running, and costing
+  // money every hour - that Cira's records, and so its bill, say is cold.
+  const before = ctx.app.minInstances;
+  await db()
+    .update(apps)
+    .set({ minInstances: warm ? 1 : 0, updatedAt: new Date() })
+    .where(eq(apps.id, ctx.app.id));
   try {
     await deploymentProvider().setMinInstances(
       deployment.providerDeploymentId,
       warm ? 1 : 0,
     );
   } catch {
+    await db()
+      .update(apps)
+      .set({ minInstances: before, updatedAt: new Date() })
+      .where(eq(apps.id, ctx.app.id));
     return { ok: false, error: "Google would not make that change right now." };
   }
-
-  await db()
-    .update(apps)
-    .set({ minInstances: warm ? 1 : 0, updatedAt: new Date() })
-    .where(eq(apps.id, ctx.app.id));
 
   revalidatePath(`/${spaceSlug}/${appSlug}`);
   return { ok: true, data: { warm } };

@@ -699,13 +699,31 @@ billing portal.
 
 What a subscription _means_ arrives only by webhook at `/api/stripe/webhook`,
 whose signature is checked before the body is read as anything (a redirect can
-be faked, and a person can close the tab). It sets the space's plan through
-one rule in `lib/billing-rules.ts`: a late payment changes nothing but the
-banner, because Cira is where a company's software lives and switching it off
-over an expired card would hurt them more than the unpaid month hurts Cira; a
-subscription that is actually over falls back to what a trial allows, and
-deletes nothing. The watcher keeps the seat and worker counts in step with
-what the space really has.
+be faked, and a person can close the tab). An event is only a pointer: the
+subscription is fetched as it is now, so Stripe delivering events out of order,
+or retrying an old one, cannot put a space on the wrong plan. A second running
+subscription for a space that already pays, or one for a space that no longer
+exists, is cancelled. Checkout is offered only while a space is not paying
+(the portal cannot start a subscription, so an abandoned or cancelled checkout
+must not leave a space unable to pay again), and two clicks in the same minute
+get the same checkout. Deleting a space expires any checkout still open.
+
+What a plan allows is enforced, not only displayed (`lib/plan-enforcement.ts`,
+run by the watcher and at once when a subscription ends). A trial lasts
+fourteen days from the space's creation. After it, or after a subscription
+ends or Stripe gives up on one (`unpaid`), the space has no plan: everything it
+deployed still opens and nothing is deleted, but deploys are refused and
+workers, scheduled runs and warm apps are switched off - the things that cost
+money by the hour. A late payment (`past_due`) changes nothing but the banner,
+because Cira is where a company's software lives and switching it off over an
+expired card would hurt them more than the unpaid month hurts Cira. Admins are
+emailed three days before a trial ends, when it ends, when a payment fails,
+when a subscription ends and when anything is switched off.
+
+The watcher keeps the subscription in step with what the space really has: a
+seat per person (five at least), a line per worker and per warm app, added when
+the first is switched on and removed when the last goes. One person may own at
+most two spaces that have never been subscribed.
 
 ### Apps that sign their own users in
 
@@ -767,16 +785,28 @@ space are emailed too, with the link still shown to the inviter.
 
 Each event is claimed in `notifications` under a key naming it before any
 email goes (`lib/notify.ts`), so the CLI, a page and the watcher noticing the
-same failure at once send it once, and nothing is ever sent twice. Email goes
-through Resend (`lib/email.ts`) and only when `RESEND_API_KEY` is set;
+same failure at once send it once, and nothing is ever sent twice. The message
+and whoever it has not reached yet are kept on the row, so a send the email
+provider refused or could not take is tried again by the watcher - up to five
+times over a day - rather than lost. Sends are spaced to stay under Resend's
+rate. A flood is held back: at most two outage emails about one thing in two
+hours, one about a failing scheduled run in six, and no "back up" for an
+outage nobody was told about; what was held back is recorded on the row. Email
+goes through Resend (`lib/email.ts`) and only when `RESEND_API_KEY` is set;
 without it, events are still recorded and nothing is sent.
 
 Most of Cira finds things out when someone looks. The watcher
 (`lib/watch.ts`) looks without being asked, every five minutes on Vercel Cron
-(`/api/cron/watch`, `vercel.json`): it settles deploys nobody stayed to
-watch, asks each running app for `/` (any answer short of a server error
-counts, and two misses in a row are an outage, so a slow cold start is not),
-and reads each app's workers and scheduled runs.
+(`/api/cron/watch`, `vercel.json`). It retries notices that did not go; then,
+for every space, sends trial notices, switches off what its plan no longer
+covers and keeps its subscription's quantities in step; then settles deploys
+nobody stayed to watch, asks each running app for `/` (any answer short of a
+server error counts, and two misses in a row are an outage, so a slow cold
+start is not), and reads each app's workers and scheduled runs. An app with a
+sidecar is billed for as long as an instance exists, so it is only asked while
+someone would notice - kept warm, opened in the last hour or called in the last
+fifteen minutes - rather than kept awake around the clock by the asking. A pass
+stops starting new checks after four minutes.
 
 ### The app proxy
 
@@ -798,27 +828,27 @@ Routes:Edit on the zone.
 
 None of this is recreated by a deploy.
 
-| Where          | What                                                                                                         |
-| -------------- | ------------------------------------------------------------------------------------------------------------ |
-| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                    |
-| Cloudflare DNS | apex and `www`, **unproxied**. If they turn orange, the wildcard route sends Cira itself to the worker       |
-| Cloudflare     | route `*.cira.dev/*` to `cira-app-proxy`                                                                     |
-| Vercel         | environment variables, including `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`                                  |
-| GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                          |
-| GitHub         | secret `SENTRY_AUTH_TOKEN`, an organization token that uploads source maps during the production build       |
-| Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                         |
-| Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                       |
-| Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                   |
-| Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                             |
-| Stripe         | products and prices with the lookup keys `cira_team_seat` and `cira_team_worker`, and the webhook endpoint   |
-| Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted |
-| Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email  |
-| Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                      |
-| Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images |
-| Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs     |
-| Google IAM     | the deployer service account holds `roles/cloudscheduler.admin`, so scheduled runs can be given timetables   |
-| Google IAM     | the deployer service account holds `roles/monitoring.viewer`, so each company can be shown what it used      |
-| Google APIs    | Cloud Scheduler (`cloudscheduler.googleapis.com`) is switched on for the project                             |
+| Where          | What                                                                                                                                                                                            |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                                                                                                       |
+| Cloudflare DNS | apex and `www`, **unproxied**. If they turn orange, the wildcard route sends Cira itself to the worker                                                                                          |
+| Cloudflare     | route `*.cira.dev/*` to `cira-app-proxy`                                                                                                                                                        |
+| Vercel         | environment variables, including `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`                                                                                                                     |
+| GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                                                                                                             |
+| GitHub         | secret `SENTRY_AUTH_TOKEN`, an organization token that uploads source maps during the production build                                                                                          |
+| Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                                                                                                            |
+| Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                                                                                                          |
+| Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                                                                                                      |
+| Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                                                                                                                |
+| Stripe         | prices with the lookup keys `cira_team_seat`, `cira_team_worker` and `cira_team_always_on`, and the webhook (`customer.subscription.*`, `checkout.session.completed`, `invoice.payment_failed`) |
+| Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted                                                                                    |
+| Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email                                                                                     |
+| Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                                                                                                         |
+| Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images                                                                                    |
+| Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs                                                                                        |
+| Google IAM     | the deployer service account holds `roles/cloudscheduler.admin`, so scheduled runs can be given timetables                                                                                      |
+| Google IAM     | the deployer service account holds `roles/monitoring.viewer`, so each company can be shown what it used                                                                                         |
+| Google APIs    | Cloud Scheduler (`cloudscheduler.googleapis.com`) is switched on for the project                                                                                                                |
 
 `CIRA_PROXY_SECRET` must be identical in Vercel and the worker: Cira signs with
 it and the worker verifies with it, so a mismatch locks everyone out of every

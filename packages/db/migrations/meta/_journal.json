@@ -253,6 +253,20 @@
       "when": 1790052711052,
       "tag": "0035_scope_tokens_and_let_them_lapse",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790053505754,
+      "tag": "0036_tell_a_space_and_try_again",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790053872658,
+      "tag": "0037_remember_removed_apps_for_usage",
+      "breakpoints": true
     }
   ]
 }

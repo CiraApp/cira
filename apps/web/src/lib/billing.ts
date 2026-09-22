@@ -51,6 +51,9 @@ export async function checkoutFor(space: Space, billTo: string): Promise<Billing
   }
   try {
     const summary = await planSummary(space.id);
+    // Already paying: a second checkout would be a second subscription, and
+    // the company billed twice. The portal is where a running one is changed.
+    if (summary.subscribed) return await portalFor(space);
     const bill = monthlyBill(PLANS.team, {
       seats: summary.people,
       workers: summary.workers,
@@ -81,11 +84,26 @@ export async function checkoutFor(space: Space, billTo: string): Promise<Billing
       form[`line_items[${line}][quantity]`] = String(summary.alwaysOn);
     }
 
-    const session = await stripe<{ url?: string }>("checkout/sessions", "POST", form);
+    // Two admins, or two tabs, clicking in the same minute get the same page
+    // rather than two subscriptions.
+    const minute = Math.floor(Date.now() / 60_000);
+    const session = await stripe<{ url?: string }>(
+      "checkout/sessions",
+      "POST",
+      form,
+      `checkout-${space.id}-${minute}`,
+    );
     return session.url === undefined
       ? { ok: false, error: "Stripe did not return a checkout page." }
       : { ok: true, url: session.url };
-  } catch {
+  } catch (error) {
+    if (error instanceof MissingPriceError) {
+      console.warn(error.message);
+      return {
+        ok: false,
+        error: "Paying is not fully set up on this Cira yet. Its operator has been told.",
+      };
+    }
     return { ok: false, error: "Stripe could not be reached just now." };
   }
 }
@@ -119,20 +137,29 @@ async function customerFor(space: Space, billTo: string): Promise<string> {
     const known = await stripe<{ email?: string | null }>(
       `customers/${space.stripeCustomerId}`,
       "GET",
-    ).catch(() => ({ email: "kept" }) as { email?: string | null });
-    if (known.email === null || known.email === undefined || known.email === "") {
+    ).catch(() => null);
+    // Whoever is subscribing now is who Stripe should write to about it. The
+    // address used to be set once, from whichever admin clicked first, and
+    // failed-payment notices went on reaching them after they had left.
+    if (known !== null && known.email !== billTo) {
       await stripe(`customers/${space.stripeCustomerId}`, "POST", {
         email: billTo,
       }).catch(() => undefined);
     }
     return space.stripeCustomerId;
   }
-  const customer = await stripe<{ id: string }>("customers", "POST", {
-    name: space.name,
-    email: billTo,
-    "metadata[spaceId]": space.id,
-    "metadata[spaceSlug]": space.slug,
-  });
+  const customer = await stripe<{ id: string }>(
+    "customers",
+    "POST",
+    {
+      name: space.name,
+      email: billTo,
+      "metadata[spaceId]": space.id,
+      "metadata[spaceSlug]": space.slug,
+    },
+    // One customer per space, however many admins get here at once.
+    `customer-${space.id}`,
+  );
   await db()
     .update(spaces)
     .set({ stripeCustomerId: customer.id })
@@ -144,19 +171,41 @@ interface StripeSubscription {
   id?: string;
   status?: string;
   current_period_end?: number;
+  cancel_at_period_end?: boolean;
   items?: { data?: Array<{ current_period_end?: number }> };
   metadata?: Record<string, string>;
   customer?: string;
 }
 
+export type Applied =
+  | { kind: "ignored" }
+  | { kind: "applied"; spaceId: string; before: string; after: string }
+  | { kind: "cancelled-orphan" }
+  | { kind: "cancelled-duplicate"; spaceId: string };
+
 /**
  * Write down what a subscription now is, for the space it belongs to.
  *
+ * What the event says is only a pointer. Stripe sends events in no promised
+ * order and retries them later, so an old "updated" can arrive after a
+ * "deleted", and a "created" (incomplete, mid card check) after the "updated"
+ * that made it active. So the subscription is fetched as it is now, and that
+ * is what is written.
+ *
  * The space is found by the id put on the subscription when it was created,
  * falling back to the customer - a webhook is the one place Cira takes a fact
- * from outside, so it never trusts a slug in it.
+ * from outside, so it never trusts a slug in it. A subscription for a space
+ * that no longer exists is cancelled, so nobody pays for nothing; a second
+ * running subscription for a space already paying is cancelled, so nobody pays
+ * twice.
  */
-export async function applySubscription(subscription: StripeSubscription): Promise<void> {
+export async function applySubscription(event: StripeSubscription): Promise<Applied> {
+  if (event.id === undefined) return { kind: "ignored" };
+  const subscription =
+    (await stripe<StripeSubscription>(`subscriptions/${event.id}`, "GET").catch(
+      () => null,
+    )) ?? event;
+
   const database = db();
   const spaceId = subscription.metadata?.["spaceId"];
   const [row] =
@@ -169,21 +218,94 @@ export async function applySubscription(subscription: StripeSubscription): Promi
             .where(eq(spaces.stripeCustomerId, subscription.customer))
             .limit(1)
         : [];
-  if (row === undefined) return;
 
   const status = readStatus(subscription.status);
+  const running = status !== null && RUNNING.includes(status);
+
+  if (row === undefined) {
+    if (!running) return { kind: "ignored" };
+    await stripe(`subscriptions/${event.id}`, "DELETE").catch(() => undefined);
+    console.warn(`stripe subscription ${event.id} cancelled: its space no longer exists`);
+    return { kind: "cancelled-orphan" };
+  }
+
+  // A different subscription is already the space's and still running: this
+  // one is a second, from two checkouts finished side by side.
+  if (
+    row.stripeSubscriptionId !== null &&
+    row.stripeSubscriptionId !== event.id &&
+    readStatus(row.subscriptionStatus) !== null &&
+    RUNNING.includes(readStatus(row.subscriptionStatus)!)
+  ) {
+    if (running) {
+      await stripe(`subscriptions/${event.id}`, "DELETE").catch(() => undefined);
+      console.warn(`stripe subscription ${event.id} cancelled: ${row.id} already pays`);
+      return { kind: "cancelled-duplicate", spaceId: row.id };
+    }
+    return { kind: "ignored" };
+  }
+
   const until =
     subscription.current_period_end ?? subscription.items?.data?.[0]?.current_period_end;
+  const plan = planFor(status);
 
   await database
     .update(spaces)
     .set({
-      plan: planFor(status),
+      plan,
       subscriptionStatus: status,
-      stripeSubscriptionId: subscription.id ?? row.stripeSubscriptionId,
+      stripeSubscriptionId: event.id,
       paidUntil: until === undefined ? row.paidUntil : new Date(until * 1000),
     })
     .where(eq(spaces.id, row.id));
+
+  return {
+    kind: "applied",
+    spaceId: row.id,
+    before: row.subscriptionStatus ?? "none",
+    after: status ?? "none",
+  };
+}
+
+/** Statuses under which a subscription is still being paid, or chased. */
+const RUNNING: readonly SubscriptionStatus[] = ["trialing", "active", "past_due"];
+
+/**
+ * Whether a space's subscription stands in the way of deleting it: one still
+ * charging, that nobody has told to stop. One cancelled at the end of its
+ * period is on its way out, and one that expired never started.
+ */
+export async function subscriptionBlocksDeletion(space: Space): Promise<boolean> {
+  if (!billingConfigured() || space.stripeSubscriptionId === null) return false;
+  const live = await stripe<StripeSubscription>(
+    `subscriptions/${space.stripeSubscriptionId}`,
+    "GET",
+  ).catch(() => null);
+  if (live === null) {
+    const status = readStatus(space.subscriptionStatus);
+    return status !== null && RUNNING.includes(status);
+  }
+  const status = readStatus(live.status);
+  return (
+    status !== null && RUNNING.includes(status) && live.cancel_at_period_end !== true
+  );
+}
+
+/**
+ * Close any checkout still open for this space's customer, so a tab left
+ * open on Stripe cannot start a subscription after the space is gone.
+ */
+export async function expireOpenCheckouts(space: Space): Promise<void> {
+  if (!billingConfigured() || space.stripeCustomerId === null) return;
+  const open = await stripe<{ data?: Array<{ id: string }> }>(
+    `checkout/sessions?customer=${encodeURIComponent(space.stripeCustomerId)}&status=open&limit=20`,
+    "GET",
+  ).catch(() => ({ data: [] }));
+  for (const session of open.data ?? []) {
+    await stripe(`checkout/sessions/${session.id}/expire`, "POST", {}).catch(
+      () => undefined,
+    );
+  }
 }
 
 /**
@@ -217,28 +339,51 @@ export async function syncQuantities(
   const items = subscription.items?.data ?? [];
   const changes: Record<string, string> = {};
   let index = 0;
-  let changed = false;
 
   const quantities: Record<string, number> = {
     [SEAT_PRICE]: wanted.seats,
     [WORKER_PRICE]: summary.workers,
     [ALWAYS_ON_PRICE]: summary.alwaysOn,
   };
-  for (const item of items) {
-    const quantity = quantities[item.price?.lookup_key ?? ""] ?? item.quantity ?? 0;
-    if ((item.quantity ?? 0) === quantity) continue;
-    changes[`items[${index}][id]`] = item.id;
-    changes[`items[${index}][quantity]`] = String(quantity);
+  // Every price Cira charges for, whether or not the subscription has a line
+  // for it yet. Checkout only adds a line for what the space had then, so a
+  // worker switched on afterwards used to have no line to count on - and was
+  // never billed. A line that falls to nothing is removed rather than left at
+  // zero on every invoice.
+  for (const [key, quantity] of Object.entries(quantities)) {
+    const item = items.find((i) => i.price?.lookup_key === key);
+    if (item === undefined) {
+      if (quantity === 0) continue;
+      changes[`items[${index}][price]`] = await priceId(key);
+      changes[`items[${index}][quantity]`] = String(quantity);
+    } else if (quantity === 0 && key !== SEAT_PRICE) {
+      changes[`items[${index}][id]`] = item.id;
+      changes[`items[${index}][deleted]`] = "true";
+    } else if ((item.quantity ?? 0) !== quantity) {
+      changes[`items[${index}][id]`] = item.id;
+      changes[`items[${index}][quantity]`] = String(quantity);
+    } else {
+      continue;
+    }
     index += 1;
-    changed = true;
   }
-  if (!changed) return "same";
+  if (index === 0) return "same";
 
   await stripe(`subscriptions/${subscriptionId}`, "POST", {
     ...changes,
     proration_behavior: "create_prorations",
   });
   return "changed";
+}
+
+/** A price Cira charges for that nobody has created in Stripe yet. */
+class MissingPriceError extends Error {
+  constructor(lookupKey: string) {
+    super(
+      `No active Stripe price has the lookup key ${lookupKey}. Create it (README, Taking money).`,
+    );
+    this.name = "MissingPriceError";
+  }
 }
 
 /** A price by the key it was created with, so no id has to live in the code. */
@@ -251,15 +396,16 @@ async function priceId(lookupKey: string): Promise<string> {
     "GET",
   );
   const id = found.data?.[0]?.id;
-  if (id === undefined) throw new Error(`No Stripe price is set up for ${lookupKey}.`);
+  if (id === undefined) throw new MissingPriceError(lookupKey);
   priceIds.set(lookupKey, id);
   return id;
 }
 
 async function stripe<T>(
   path: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   form?: Record<string, string>,
+  idempotencyKey?: string,
 ): Promise<T> {
   const key = process.env["STRIPE_SECRET_KEY"]?.trim() ?? "";
   const response = await fetch(`${STRIPE_API}/${path}`, {
@@ -270,6 +416,7 @@ async function stripe<T>(
       ...(form === undefined
         ? {}
         : { "content-type": "application/x-www-form-urlencoded" }),
+      ...(idempotencyKey === undefined ? {} : { "idempotency-key": idempotencyKey }),
     },
     ...(form === undefined ? {} : { body: new URLSearchParams(form).toString() }),
     signal: AbortSignal.timeout(15_000),
@@ -301,25 +448,29 @@ export function verifyWebhook(args: {
   toleranceSeconds?: number;
 }): boolean {
   if (args.header === null) return false;
-  const parts = new Map(
-    args.header.split(",").map((piece) => {
-      const [key, value] = piece.split("=");
-      return [key?.trim() ?? "", value?.trim() ?? ""] as const;
-    }),
-  );
-  const timestamp = Number(parts.get("t"));
-  const signature = parts.get("v1");
-  if (!Number.isFinite(timestamp) || signature === undefined) return false;
+  const pieces = args.header.split(",").map((piece) => {
+    const at = piece.indexOf("=");
+    return [piece.slice(0, at).trim(), piece.slice(at + 1).trim()] as const;
+  });
+  const timestamp = Number(pieces.find(([key]) => key === "t")?.[1]);
+  // Every v1, not the last one: while a webhook secret is being rotated,
+  // Stripe signs with both, and the matching one need not come last.
+  const signatures = pieces.filter(([key]) => key === "v1").map(([, value]) => value);
+  if (!Number.isFinite(timestamp) || signatures.length === 0) return false;
 
   const age = Math.abs((args.now ?? new Date()).getTime() / 1000 - timestamp);
   if (age > (args.toleranceSeconds ?? 300)) return false;
 
-  const expected = createHmac("sha256", args.secret)
-    .update(`${timestamp}.${args.payload}`)
-    .digest("hex");
-  const given = Buffer.from(signature, "utf8");
-  const mine = Buffer.from(expected, "utf8");
-  return given.length === mine.length && timingSafeEqual(given, mine);
+  const expected = Buffer.from(
+    createHmac("sha256", args.secret)
+      .update(`${timestamp}.${args.payload}`)
+      .digest("hex"),
+    "utf8",
+  );
+  return signatures.some((signature) => {
+    const given = Buffer.from(signature, "utf8");
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
 }
 
 export type { SubscriptionStatus };

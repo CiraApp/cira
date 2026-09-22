@@ -9,6 +9,7 @@ import {
   invocations,
   memberships,
   processes,
+  removedApps,
   services,
 } from "@cira/db";
 import { computeCost, DEFAULT_LIMITS, requestCost, type App } from "@cira/core";
@@ -30,7 +31,8 @@ import { deploymentProvider, parseHandle, processResourceName } from "@cira/depl
 export interface AppUsage {
   appId: string;
   name: string;
-  slug: string;
+  /** Null for an app removed since, which has no page to link to. */
+  slug: string | null;
   /** Instance time across its service, workers and scheduled runs. */
   instanceSeconds: number;
   requests: number;
@@ -104,6 +106,31 @@ export async function spaceUsage(
     used.push({ appId: app.id, name: app.name, slug: app.slug, ...perApp });
   }
 
+  // Apps removed this month still ran this month, and Google still billed it.
+  const removed = await database
+    .select()
+    .from(removedApps)
+    .where(
+      and(eq(removedApps.spaceId, spaceId), gte(removedApps.removedAt, window.since)),
+    );
+  for (const app of removed) {
+    const perApp = { instanceSeconds: 0, requests: 0, dollars: 0 };
+    for (const resource of app.resources) {
+      const seconds = totals.instanceSeconds.get(resource.name) ?? 0;
+      const requests = totals.requests.get(resource.name) ?? 0;
+      perApp.instanceSeconds += seconds;
+      perApp.requests += requests;
+      perApp.dollars +=
+        computeCost({
+          instanceSeconds: seconds,
+          cpu: DEFAULT_LIMITS.app.cpu,
+          memoryMiB: resource.memoryMiB,
+        }) + requestCost(requests);
+    }
+    if (perApp.instanceSeconds === 0 && perApp.requests === 0) continue;
+    used.push({ appId: app.id, name: app.name, slug: null, ...perApp });
+  }
+
   used.sort((a, b) => b.dollars - a.dollars || a.name.localeCompare(b.name));
 
   const [deploys, capabilityRuns, questions] = await Promise.all([
@@ -132,7 +159,7 @@ export async function spaceUsage(
  * by, with the memory each was given. Services an app was deployed under
  * before a rename are included: they ran, so they cost something.
  */
-async function resourcesOf(
+export async function resourcesOf(
   appId: string,
 ): Promise<Array<{ name: string; memoryMiB: number }>> {
   const database = db();

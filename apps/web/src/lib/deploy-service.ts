@@ -110,6 +110,18 @@ export async function deployToSpace(args: {
     return { ok: false, error: "That space does not exist." };
   }
 
+  // A space whose trial ran out, or whose subscription ended, keeps what it
+  // deployed and cannot ship more until someone pays. Said before anything is
+  // uploaded or built, and said so the deployer knows who can fix it.
+  const plan = await planForSpace(space.id);
+  if (!plan.canDeploy) {
+    return {
+      ok: false,
+      limited: true,
+      error: `${space.name} has no plan: its trial ended, or its subscription did. Everything already deployed still opens. An admin can subscribe from Billing in Cira to deploy again.`,
+    };
+  }
+
   // Every deploy is a paid build in a project every company shares, so a
   // space may only start so many an hour. Checked before anything is written
   // or built, so a refused deploy leaves no trace and costs nothing.
@@ -151,7 +163,7 @@ export async function deployToSpace(args: {
       .select({ n: count() })
       .from(apps)
       .where(eq(apps.spaceId, space.id));
-    const room = checkNewApp(held?.n ?? 0, (await planForSpace(space.id)).limits);
+    const room = checkNewApp(held?.n ?? 0, plan.limits);
     if (!room.ok) return { ok: false, error: room.message, limited: true };
 
     const slug = await freeSlug(space.id, slugify(appName));

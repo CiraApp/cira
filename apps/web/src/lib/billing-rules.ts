@@ -30,8 +30,10 @@ export function planFor(status: SubscriptionStatus | null): PlanId {
     case "trialing":
     case "active":
     case "past_due":
-    case "unpaid":
       return "team";
+    // `unpaid` is where Stripe leaves a subscription once it has given up
+    // retrying. Keeping the paid plan there meant a company could stop paying
+    // and keep every worker for ever; it goes the way a cancellation does.
     default:
       return "trial";
   }
@@ -46,7 +48,6 @@ export interface BillingNotice {
 export function noticeFor(status: SubscriptionStatus | null): BillingNotice | null {
   switch (status) {
     case "past_due":
-    case "unpaid":
       return {
         tone: "warn",
         message:
@@ -61,11 +62,13 @@ export function noticeFor(status: SubscriptionStatus | null): BillingNotice | nu
     case "canceled":
     case "incomplete_expired":
     case "paused":
+    case "unpaid":
       return {
         tone: "stop",
         message:
-          "This space is not subscribed, so it is back to what a trial allows: " +
-          "one worker. Nothing has been deleted.",
+          "This space is not subscribed. Everything already deployed still opens and " +
+          "nothing has been deleted, but deploying is paused and workers, scheduled " +
+          "runs and warm apps are off until it subscribes again.",
       };
     default:
       return null;

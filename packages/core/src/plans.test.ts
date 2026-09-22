@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { monthlyBill, PLANS, planOf, workerCost, describePlan } from "./plans.js";
+import {
+  describePlan,
+  effectivePlan,
+  monthlyBill,
+  PLANS,
+  planOf,
+  workerCost,
+} from "./plans.js";
 
 /**
  * What a company pays, against what it costs Cira to serve them. The one
@@ -48,5 +55,19 @@ describe("plans", () => {
     expect(planOf(null).id).toBe("trial");
     expect(planOf("enterprise-2030").id).toBe("trial");
     expect(planOf("team").id).toBe("team");
+  });
+
+  it("ends a trial on its fourteenth day, and never ends a paid plan", () => {
+    const created = new Date("2026-09-01T00:00:00Z");
+    expect(effectivePlan("trial", created, new Date("2026-09-10T00:00:00Z")).id).toBe(
+      "trial",
+    );
+    const after = effectivePlan("trial", created, new Date("2026-09-15T00:00:01Z"));
+    expect(after.id).toBe("lapsed");
+    expect(after.canDeploy).toBe(false);
+    expect(after.limits.processes.workersPerSpace).toBe(0);
+    expect(effectivePlan("team", created, new Date("2027-01-01T00:00:00Z")).id).toBe(
+      "team",
+    );
   });
 });

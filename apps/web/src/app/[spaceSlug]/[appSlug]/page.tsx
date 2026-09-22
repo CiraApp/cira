@@ -326,7 +326,7 @@ export default async function AppPage({
               // Only an app with an address can be kept warm; a worker-only
               // app has nothing for a first request to arrive at.
               keepWarm={deployment?.servesWeb === true ? app.minInstances > 0 : null}
-              canKeepWarm={plan.id === "team"}
+              canKeepWarm={plan.canKeepWarm}
               tellsWhoIsCalling={app.tellsWhoIsCalling}
               canTellWhoIsCalling={assertionsConfigured()}
               warmMonthly={Math.round(monthlyCost({ cpu: 1, memoryMiB: 512 }))}

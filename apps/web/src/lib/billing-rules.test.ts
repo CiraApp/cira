@@ -14,16 +14,19 @@ describe("what a subscription means", () => {
     expect(planFor("trialing")).toBe("team");
     // Cira is where their software lives. A late card does not switch it off.
     expect(planFor("past_due")).toBe("team");
-    expect(planFor("unpaid")).toBe("team");
     expect(noticeFor("past_due")?.tone).toBe("warn");
   });
 
-  it("falls back to what a trial allows once a subscription is over", () => {
+  it("stops the paid plan once a subscription is over, including one Stripe gave up on", () => {
     expect(planFor("canceled")).toBe("trial");
     expect(planFor("incomplete_expired")).toBe("trial");
+    // Unpaid is where Stripe leaves a subscription after its last retry.
+    // Keeping the plan there let a company stop paying and keep its workers.
+    expect(planFor("unpaid")).toBe("trial");
     expect(planFor(null)).toBe("trial");
     expect(noticeFor("canceled")).toMatchObject({ tone: "stop" });
-    expect(noticeFor("canceled")?.message).toContain("Nothing has been deleted");
+    expect(noticeFor("canceled")?.message).toContain("nothing has been deleted");
+    expect(noticeFor("unpaid")).toMatchObject({ tone: "stop" });
     expect(noticeFor("active")).toBeNull();
   });
 

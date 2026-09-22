@@ -1,9 +1,10 @@
 import "server-only";
 
 import { eq } from "drizzle-orm";
-import { apps, db, deployments } from "@cira/db";
+import { apps, db, deployments, removedApps } from "@cira/db";
 import { deploymentProvider, parseHandle } from "@cira/deploy";
 import type { App } from "@cira/core";
+import { resourcesOf } from "@/lib/usage";
 
 /**
  * Take an app down and remove what it left behind.
@@ -39,6 +40,15 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
           "Cira could not take the running app down, so nothing was deleted. Try again shortly.",
       };
     }
+  }
+
+  // Kept so this month's usage still counts what the app ran before it went.
+  const resources = await resourcesOf(app.id).catch(() => []);
+  if (resources.length > 0) {
+    await database
+      .insert(removedApps)
+      .values({ id: app.id, spaceId: app.spaceId, name: app.name, resources })
+      .onConflictDoNothing();
   }
 
   // Deployments, capabilities, access and recorded variable names fall away

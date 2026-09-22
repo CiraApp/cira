@@ -254,6 +254,38 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
     expect(app?.status).toBe("live");
   });
 
+  it("refuses to deploy for a space whose trial has ended, and says who can fix it", async () => {
+    const { spaces, memberships } = await import("@cira/db");
+    const { deployToSpace } = await import("./deploy-service");
+    const id = newId("space");
+    await database.insert(spaces).values({
+      id,
+      name: "Lapsed Co",
+      slug: "lapsed-co",
+      createdAt: new Date(Date.now() - 30 * 86_400_000),
+    });
+    await database.insert(memberships).values({
+      id: newId("membership"),
+      userId: deployer.id,
+      spaceId: id,
+      role: "owner",
+    });
+    told.length = 0;
+
+    const outcome = await deployToSpace({
+      user: deployer,
+      spaceSlug: "lapsed-co",
+      appName: "Late",
+      appId: null,
+      sourceId: "src_1",
+      framework: "unknown",
+      container: null,
+    });
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.error).toContain("An admin can subscribe");
+    expect(told).toEqual([]);
+  });
+
   describe("two deploys of one app", () => {
     it("never rolls out the older one once a newer one has started", async () => {
       const first = await deploy("Overlap");

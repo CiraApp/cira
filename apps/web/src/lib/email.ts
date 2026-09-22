@@ -26,6 +26,16 @@ const RESEND_API = "https://api.resend.com/emails";
 /** Who Cira's email comes from. Its domain has to be verified with Resend. */
 export const EMAIL_FROM = "Cira <notifications@cira.dev>";
 
+/**
+ * Resend accepts about two requests a second per account. An outage across
+ * several apps sends a burst from one watcher run, and the ones over the rate
+ * were refused and lost; so sends from one process are spaced out and taken
+ * one at a time.
+ */
+const SEND_GAP_MS = 550;
+let queue: Promise<unknown> = Promise.resolve();
+let lastSent = 0;
+
 export async function sendEmail(
   email: Email,
   env: Record<string, string | undefined> = process.env,
@@ -34,6 +44,22 @@ export async function sendEmail(
   const key = env["RESEND_API_KEY"]?.trim();
   if (key === undefined || key === "") return { sent: false, reason: "not-configured" };
 
+  const turn = queue.then(async () => {
+    const wait = lastSent + SEND_GAP_MS - Date.now();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastSent = Date.now();
+    return post(email, key, env, fetchImpl);
+  });
+  queue = turn.catch(() => undefined);
+  return turn;
+}
+
+async function post(
+  email: Email,
+  key: string,
+  env: Record<string, string | undefined>,
+  fetchImpl: typeof fetch,
+): Promise<EmailOutcome> {
   let response: Response;
   try {
     response = await fetchImpl(RESEND_API, {
