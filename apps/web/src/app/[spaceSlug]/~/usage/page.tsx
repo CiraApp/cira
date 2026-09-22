@@ -142,28 +142,35 @@ export default async function UsagePage({
                 outcome.usage.apps.map((app) => (
                   <li
                     key={app.appId}
-                    className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-3 transition-colors duration-150 hover:bg-sunken/40"
+                    // Four columns where there is room for them. On a phone the
+                    // name and the cost share a line and the rest goes under,
+                    // rather than cutting names short and wrapping the cost.
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-3 transition-colors duration-150 hover:bg-sunken/40 sm:grid-cols-[minmax(0,1fr)_92px_104px_76px]"
                   >
                     {app.slug === null ? (
-                      <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">
+                      <span className="min-w-0 truncate text-[13px] text-ink-muted">
                         {app.name} <span className="text-ink-subtle">(removed)</span>
                       </span>
                     ) : (
                       <Link
                         href={`/${spaceSlug}/${app.slug}`}
-                        className="min-w-0 flex-1 truncate text-[13px] text-ink underline-offset-4 hover:underline"
+                        className="min-w-0 truncate text-[13px] text-ink underline-offset-4 hover:underline"
                       >
                         {app.name}
                       </Link>
                     )}
-                    <span className="tabular w-[92px] text-right text-[12.5px] text-ink-muted">
+                    <span className="tabular hidden text-right text-[12.5px] text-ink-muted sm:block">
                       {describeInstanceTime(app.instanceSeconds)}
                     </span>
-                    <span className="tabular w-[104px] text-right text-[12.5px] text-ink-muted">
+                    <span className="tabular hidden text-right text-[12.5px] text-ink-muted sm:block">
                       {app.requests.toLocaleString()} req
                     </span>
-                    <span className="tabular w-[76px] text-right text-[12.5px] text-ink">
+                    <span className="tabular text-right text-[12.5px] text-ink">
                       {describeDollars(app.dollars)}
+                    </span>
+                    <span className="tabular col-span-2 text-[12px] text-ink-subtle sm:hidden">
+                      {describeInstanceTime(app.instanceSeconds)} running,{" "}
+                      {app.requests.toLocaleString()} req
                     </span>
                   </li>
                 ))

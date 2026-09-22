@@ -114,6 +114,8 @@ export default async function AppPage({
     const offerHomepage =
       manages &&
       (resolved.state === "no-ui" || resolved.state === "unreachable") &&
+      // Workers and scheduled runs only: there is no front door to be elsewhere.
+      resolved.background !== true &&
       (app.homepageUrl === null || app.homepageUrl === "");
     const { href: door, blockedReason } = appDoor(
       resolved,
