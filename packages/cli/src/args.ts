@@ -7,7 +7,7 @@ const FLAGS: Record<string, { values: readonly string[]; switches: readonly stri
   {
     deploy: {
       values: ["--space", "--env-file", "--env", "--unset", "--dockerfile"],
-      switches: ["--no-env", "--yes", "-y"],
+      switches: ["--no-env", "--yes", "-y", "--database"],
     },
     remove: { values: ["--space", "--app", "--confirm"], switches: ["--yes", "-y"] },
   };

@@ -316,6 +316,13 @@
       "when": 1790063066400,
       "tag": "0044_let_cira_set_up_stripe_for_itself",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790075145934,
+      "tag": "0045_let_cira_make_a_database_for_an_app",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { and, count, desc, eq, gt, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
+  appEnvVars,
   appSlugHistory,
   atomically,
   db,
@@ -30,12 +31,26 @@ import type { ContainerHints, Framework, User } from "@cira/core";
 import { archiveUri, deploymentProvider, parseHandle, sourceStore } from "@cira/deploy";
 import { userManages } from "@/lib/app-rights";
 import { supersedeEarlierDeploys } from "@/lib/deployment-sync";
+import { appDatabase, databaseForDeploy, removeAppDatabase } from "@/lib/app-databases";
 import { recordEnvChange } from "@/lib/env-vars";
 import { planForSpace } from "@/lib/plan";
 import { recordProcesses, specsFor } from "@/lib/processes";
 
+/** A database a deploy set, and whether it made it. */
+export interface DeployedDatabase {
+  envName: string;
+  created: boolean;
+}
+
 export type DeployOutcome =
-  | { ok: true; appId: string; appSlug: string; spaceSlug: string; deploymentId: string }
+  | {
+      ok: true;
+      appId: string;
+      appSlug: string;
+      spaceSlug: string;
+      deploymentId: string;
+      database?: DeployedDatabase;
+    }
   | {
       ok: false;
       error: string;
@@ -93,9 +108,14 @@ export async function deployToSpace(args: {
   webMemoryMiB?: number | null;
   /** The command the repository runs once per deploy before going live. */
   release?: string | null;
+  /**
+   * A Postgres database for the app, set as this variable: made on this
+   * deploy if the app has none, set again if it has.
+   */
+  database?: { envName: string } | null;
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName } = args;
-  const env = args.env ?? NO_ENV_CHANGE;
+  let env = args.env ?? NO_ENV_CHANGE;
   const servesWeb = args.web !== false;
 
   const database = db();
@@ -245,7 +265,11 @@ export async function deployToSpace(args: {
   // same app rather than "My App 2"; one that was already running goes back
   // to the status it had, because its last good version is still serving.
   const previousStatus = app.status;
+  // A database this deploy made, taken back out with it if it goes no
+  // further: kept, it would be a project holding nothing that nobody knows of.
+  let madeDatabase = false;
   const abandon = async (error: string): Promise<DeployOutcome> => {
+    if (madeDatabase) await removeAppDatabase(app.id);
     if (created) {
       await database.delete(apps).where(eq(apps.id, app.id));
     } else {
@@ -320,6 +344,30 @@ export async function deployToSpace(args: {
     declared,
   });
 
+  let databaseSet: DeployedDatabase | null = null;
+  if (args.database !== undefined && args.database !== null) {
+    // A database the app already points somewhere else at is not Cira's to
+    // replace: that is someone's real data, and the app would quietly start
+    // reading an empty one.
+    const clash = await pointsElsewhere(app.id, args.database.envName, env);
+    if (clash !== null) return abandon(clash);
+    const found = await databaseForDeploy({
+      appId: app.id,
+      spaceSlug: space.slug,
+      appSlug: app.slug,
+      userId: user.id,
+      envName: args.database.envName,
+    });
+    if (!found.ok) return abandon(found.error);
+    madeDatabase = found.created;
+    databaseSet = { envName: found.envName, created: found.created };
+    // Set with everything else this deploy sets, and never unset by it.
+    env = {
+      set: { ...env.set, ...found.env },
+      unset: env.unset.filter((name) => !(name in found.env)),
+    };
+  }
+
   let result;
   try {
     const provider = deploymentProvider();
@@ -378,7 +426,32 @@ export async function deployToSpace(args: {
     appSlug: app.slug,
     spaceSlug: space.slug,
     deploymentId,
+    ...(databaseSet === null ? {} : { database: databaseSet }),
   };
+}
+
+/**
+ * Why a database cannot be set as this variable, or null when it can: when
+ * this deploy sets the variable itself, or the app already has it from
+ * somewhere other than a database Cira made.
+ */
+async function pointsElsewhere(
+  appId: string,
+  envName: string,
+  env: EnvChange,
+): Promise<string | null> {
+  if (envName in env.set) {
+    return `This deploy sets ${envName} itself. Leave it out to use a database Cira makes.`;
+  }
+  if (await appDatabase(appId)) return null;
+  const [set] = await db()
+    .select({ key: appEnvVars.key })
+    .from(appEnvVars)
+    .where(and(eq(appEnvVars.appId, appId), eq(appEnvVars.key, envName)))
+    .limit(1);
+  return set === undefined || env.unset.includes(envName)
+    ? null
+    : `${envName} already points at a database of this app's own. Cira will not replace it. If a new, empty one is what you want, deploy with --unset ${envName} --database.`;
 }
 
 /**

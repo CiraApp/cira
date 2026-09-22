@@ -11,8 +11,18 @@ import type { EnvVarSummary } from "@/lib/env-vars";
  * The fingerprint earns its place by answering the question a list of names
  * cannot: whether the value behind a name is the one you set last week.
  */
-export function EnvPanel({ vars }: { vars: EnvVarSummary[] }) {
+export function EnvPanel({
+  vars,
+  database,
+}: {
+  vars: EnvVarSummary[];
+  /** The variable a database Cira made is set as, when it made one. */
+  database: { envName: string } | null;
+}) {
   if (vars.length === 0) return null;
+  const fromDatabase = new Set(
+    database === null ? [] : [database.envName, `${database.envName}_UNPOOLED`],
+  );
 
   return (
     <section className="mt-10">
@@ -30,6 +40,15 @@ export function EnvPanel({ vars }: { vars: EnvVarSummary[] }) {
             <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">
               {entry.key}
             </code>
+
+            {fromDatabase.has(entry.key) ? (
+              <span
+                title="The Postgres database Cira made for this app"
+                className="shrink-0 rounded-[2px] border border-line-strong px-1.5 py-[1px] text-[10.5px] text-ink-muted"
+              >
+                database
+              </span>
+            ) : null}
 
             {entry.isPublic ? (
               <span
@@ -49,6 +68,18 @@ export function EnvPanel({ vars }: { vars: EnvVarSummary[] }) {
           </li>
         ))}
       </ul>
+
+      {database === null ? null : (
+        <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-subtle">
+          <code className="font-mono">{database.envName}</code> is a Postgres database
+          Cira made for this app on Neon, pooled for the app; the{" "}
+          <code className="font-mono">_UNPOOLED</code> one is for migrations.{" "}
+          <code className="font-mono">cira database url</code> prints its address for{" "}
+          <code className="font-mono">psql</code> or{" "}
+          <code className="font-mono">pg_dump</code>. Removing the app deletes it and
+          everything in it.
+        </p>
+      )}
     </section>
   );
 }

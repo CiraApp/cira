@@ -61,8 +61,10 @@ export default function SecurityPage() {
       <Section title="What Cira knows about your apps">
         <p>
           Metadata: names, addresses, which operations exist, deploy history, and what
-          ran. Not your apps&rsquo; own data. Ask Cira&rsquo;s conversations live in the
-          browser tab that holds them, and only what a question cost is kept.
+          ran. Not your apps&rsquo; own data - a database Cira makes for an app is that
+          app&rsquo;s alone, a separate Neon project with its own password, and Cira keeps
+          no copy of the address. Ask Cira&rsquo;s conversations live in the browser tab
+          that holds them, and only what a question cost is kept.
         </p>
         <p>
           Cira&rsquo;s own error reports are stripped of request bodies, cookies, queries

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_LIMITS, newId, type EnvChange, type User } from "@cira/core";
 import type * as CiraDb from "@cira/db";
@@ -688,6 +688,208 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
         .from(appEnvVars)
         .where(eq(appEnvVars.appId, first.appId));
       expect(kept.map((r) => r.key)).toEqual(["DATABASE_URL"]);
+    });
+  });
+
+  /**
+   * A database made on Neon. Neon is a fake behind `fetch`: what is tested is
+   * what Cira asks of it, what the app is given, and what is left when a
+   * deploy goes no further or the app is removed.
+   */
+  describe("a database for the app", () => {
+    const neonCalls: string[] = [];
+    let projects = 0;
+    const realFetch = globalThis.fetch;
+
+    beforeAll(() => {
+      vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (!url.startsWith("https://console.neon.tech/")) return realFetch(input, init);
+        neonCalls.push(
+          `${method} ${url.replace("https://console.neon.tech/api/v2", "")}`,
+        );
+        if (method === "POST") {
+          projects += 1;
+          const host = `ep-app-${projects}.us-east-1.aws.neon.tech`;
+          return Response.json({
+            project: { id: `proj-${projects}` },
+            connection_uris: [
+              {
+                connection_uri: `postgresql://owner:pw${projects}@${host}/neondb`,
+                connection_parameters: {
+                  database: "neondb",
+                  role: "owner",
+                  host,
+                  pooler_host: `ep-app-${projects}-pooler.us-east-1.aws.neon.tech`,
+                },
+              },
+            ],
+          });
+        }
+        if (method === "GET") {
+          return Response.json({
+            uri: url.includes("pooled=true")
+              ? "postgresql://again-pooled"
+              : "postgresql://again-direct",
+          });
+        }
+        return Response.json({});
+      });
+    });
+    afterAll(() => {
+      vi.stubGlobal("fetch", realFetch);
+    });
+    // The space holds only so many apps, and every test here counts on room.
+    afterEach(async () => {
+      const { apps } = await import("@cira/db");
+      const { like } = await import("drizzle-orm");
+      await database.delete(apps).where(like(apps.name, "Orders %"));
+    });
+    beforeEach(() => {
+      neonCalls.length = 0;
+      told.length = 0;
+      vi.stubEnv("NEON_API_KEY", "napi_test");
+      vi.stubEnv("NEON_ORG_ID", "org-test");
+    });
+
+    const withDatabase = async (appName: string, appId: string | null = null) => {
+      const { deployToSpace } = await import("./deploy-service");
+      return deployToSpace({
+        user: deployer,
+        spaceSlug: "paradym",
+        appName,
+        appId,
+        sourceId: "src_1",
+        framework: "unknown",
+        container: null,
+        database: { envName: "DATABASE_URL" },
+      });
+    };
+
+    it("makes one, gives it to the app pooled and direct, and keeps only the names", async () => {
+      const first = await withDatabase("Orders Db");
+      expect(first.ok && first.database).toEqual({
+        envName: "DATABASE_URL",
+        created: true,
+      });
+      if (!first.ok) return;
+
+      expect(neonCalls).toEqual(["POST /projects"]);
+      expect(told[0]?.env?.set).toMatchObject({
+        DATABASE_URL: expect.stringContaining("-pooler."),
+        DATABASE_URL_UNPOOLED: expect.stringMatching(/@ep-app-\d+\.us-east-1/),
+      });
+
+      const { appDatabases, appEnvVars } = await import("@cira/db");
+      const [row] = await database
+        .select()
+        .from(appDatabases)
+        .where(eq(appDatabases.appId, first.appId));
+      expect(row).toMatchObject({ provider: "neon", envName: "DATABASE_URL" });
+      // Nothing in the row can open the database.
+      expect(JSON.stringify(row)).not.toContain("pw");
+
+      const names = await database
+        .select({ key: appEnvVars.key })
+        .from(appEnvVars)
+        .where(eq(appEnvVars.appId, first.appId));
+      expect(names.map((n) => n.key).sort()).toEqual([
+        "DATABASE_URL",
+        "DATABASE_URL_UNPOOLED",
+      ]);
+    });
+
+    it("sets the same one again on a redeploy, asking Neon rather than making another", async () => {
+      const first = await withDatabase("Orders Again");
+      if (!first.ok) throw new Error(first.error);
+      neonCalls.length = 0;
+      told.length = 0;
+
+      const again = await withDatabase("Orders Again", first.appId);
+      expect(again.ok && again.database).toEqual({
+        envName: "DATABASE_URL",
+        created: false,
+      });
+      expect(neonCalls.every((call) => call.startsWith("GET "))).toBe(true);
+      expect(told[0]?.env?.set).toEqual({
+        DATABASE_URL: "postgresql://again-pooled",
+        DATABASE_URL_UNPOOLED: "postgresql://again-direct",
+      });
+    });
+
+    it("takes the database back out when the deploy goes no further", async () => {
+      providerFails = true;
+      const outcome = await withDatabase("Orders Broken");
+      providerFails = false;
+      expect(outcome.ok).toBe(false);
+      expect(neonCalls).toEqual([
+        "POST /projects",
+        expect.stringMatching(/^DELETE \/projects\/proj-\d+$/),
+      ]);
+
+      const { apps } = await import("@cira/db");
+      const left = await database
+        .select()
+        .from(apps)
+        .where(eq(apps.name, "Orders Broken"));
+      expect(left).toEqual([]);
+    });
+
+    it("deletes the database with the app, and only then forgets it", async () => {
+      const first = await withDatabase("Orders Gone");
+      if (!first.ok) throw new Error(first.error);
+      neonCalls.length = 0;
+
+      const { apps, appDatabases } = await import("@cira/db");
+      const [app] = await database.select().from(apps).where(eq(apps.id, first.appId));
+      const { tearDownApp } = await import("./app-teardown");
+      const { toApp } = await import("./capabilities");
+      const outcome = await tearDownApp(toApp(app!));
+
+      expect(outcome.ok).toBe(true);
+      expect(neonCalls).toEqual([expect.stringMatching(/^DELETE \/projects\/proj-\d+$/)]);
+      const rows = await database
+        .select()
+        .from(appDatabases)
+        .where(eq(appDatabases.appId, first.appId));
+      expect(rows).toEqual([]);
+    });
+
+    it("never replaces a database the app already points at", async () => {
+      const { deployToSpace } = await import("./deploy-service");
+      const first = await deploy("Orders Own", {
+        set: { DATABASE_URL: "postgres://theirs/real" },
+        unset: [],
+      });
+      if (!first.ok) throw new Error(first.error);
+      neonCalls.length = 0;
+
+      const again = await withDatabase("Orders Own", first.appId);
+      expect(!again.ok && again.error).toContain("will not replace it");
+      expect(neonCalls).toEqual([]);
+
+      // Unless this deploy takes the old one away on purpose.
+      const replaced = await deployToSpace({
+        user: deployer,
+        spaceSlug: "paradym",
+        appName: "Orders Own",
+        appId: first.appId,
+        sourceId: "src_1",
+        framework: "unknown",
+        container: null,
+        env: { set: {}, unset: ["DATABASE_URL"] },
+        database: { envName: "DATABASE_URL" },
+      });
+      expect(replaced.ok && replaced.database?.created).toBe(true);
+      expect(told.at(-1)?.env?.unset).toEqual([]);
+    });
+
+    it("says so, and leaves no app behind, when this Cira cannot make databases", async () => {
+      vi.stubEnv("NEON_API_KEY", "");
+      const outcome = await withDatabase("Orders Nowhere");
+      expect(!outcome.ok && outcome.error).toContain("cannot make databases");
+      expect(neonCalls).toEqual([]);
     });
   });
 

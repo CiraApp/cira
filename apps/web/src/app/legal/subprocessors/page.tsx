@@ -25,8 +25,8 @@ const SUBPROCESSORS = [
   },
   {
     name: "Neon",
-    role: "Cira's database.",
-    data: "Companies, people, apps, capabilities, and the records of what ran.",
+    role: "Cira's database, and the databases Cira makes for apps that ask for one.",
+    data: "Companies, people, apps, capabilities, and the records of what ran; and, in a separate project per app, whatever that app stores in its own database.",
     where: "United States (AWS us-east-1)",
   },
   {

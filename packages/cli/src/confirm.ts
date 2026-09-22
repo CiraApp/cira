@@ -134,7 +134,7 @@ export function dotenvValue(value: string): string {
 }
 
 /** The real one: a readline over this terminal, opened per question. */
-function terminal(): Prompt {
+export function terminal(): Prompt {
   return {
     interactive: process.stdin.isTTY === true,
     ask(question, secret) {

@@ -588,6 +588,20 @@ A space may have 10 scheduled runs and 2 workers on, at most every 5 minutes,
 every hour it is on, about $50 to $65 a month depending on its memory, which
 the page says beside it.
 
+### 11. Databases
+
+An app whose code reads `DATABASE_URL` with nothing set is offered a database
+as it deploys, and `cira deploy --database` asks for one outright
+(`lib/app-databases.ts`, `packages/deploy/src/neon`). Cira makes the app its
+own Neon project - its own Postgres and password, in Cira's Neon organization,
+never inside Cira's own database - and sets `DATABASE_URL` (through Neon's
+pooler) and `DATABASE_URL_UNPOOLED` with the rest of that deploy's variables,
+so the web service, workers, scheduled runs and the release command all have
+it. The secrets rule holds: `app_databases` records which project belongs to
+which app, never an address; `cira database url` asks Neon for one when a
+manager wants it. Removing an app deletes its project before its row, and a
+database already pointed at by the app's own `DATABASE_URL` is never replaced.
+
 ## Design principles
 
 - **The app was not written for Cira.** A repository deploys as it is. Services,
@@ -934,6 +948,7 @@ None of this is recreated by a deploy.
 | Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                                                                                                          |
 | Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                                                                                                      |
 | Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                                                                                                                |
+| Vercel         | `NEON_API_KEY` (an organization key named `cira-app-databases`) and `NEON_ORG_ID`, production only, so Cira can make and delete apps' databases in its Neon organization                        |
 | Stripe         | prices with the lookup keys `cira_team_seat`, `cira_team_worker` and `cira_team_always_on`, and the webhook (`customer.subscription.*`, `checkout.session.completed`, `invoice.payment_failed`) |
 | Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted                                                                                    |
 | Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email                                                                                     |

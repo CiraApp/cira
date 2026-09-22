@@ -5,6 +5,7 @@ import { apps, db, deployments, removedApps } from "@cira/db";
 import { deploymentProvider, parseHandle } from "@cira/deploy";
 import type { App } from "@cira/core";
 import { resourcesOf } from "@/lib/usage";
+import { removeAppDatabase } from "@/lib/app-databases";
 
 /**
  * Take an app down and remove what it left behind.
@@ -40,6 +41,17 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
           "Cira could not take the running app down, so nothing was deleted. Try again shortly.",
       };
     }
+  }
+
+  // Its database next, while the app is still here to try again from: deleting
+  // the row first would leave a Neon project nothing points at, holding a
+  // company's data after they were told it was gone.
+  const dropped = await removeAppDatabase(app.id);
+  if (!dropped.ok) {
+    return {
+      ok: false,
+      error: `The app is down, but its database was not deleted: ${dropped.error}`,
+    };
   }
 
   // Kept so this month's usage still counts what the app ran before it went.

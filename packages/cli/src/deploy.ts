@@ -7,7 +7,8 @@ import { readEntries, uploadSource } from "./source.js";
 import { collectEnv, isPublicName } from "./env.js";
 import type { Framework } from "@cira/core";
 import { detectFramework, readProjectLink, writeProjectLink } from "./project.js";
-import { resolveMissing } from "./confirm.js";
+import { resolveMissing, terminal } from "./confirm.js";
+import { chooseDatabase } from "./database.js";
 import { discoverServices, type DiscoveredService, type Discovery } from "./services.js";
 import { NGINX_CONF, NGINX_CONFIG, staticDockerfile, staticSite } from "./static-site.js";
 import {
@@ -42,6 +43,8 @@ interface DeployResponse {
   appSlug: string;
   spaceSlug: string;
   deploymentId: string;
+  /** The database this deploy set, when it asked for one. */
+  database?: { envName: string; created: boolean };
 }
 
 interface StatusResponse {
@@ -376,7 +379,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
   const inProduction = new Set(
     link === null ? [] : await productionNames(link.appId, collected.unset),
   );
-  const missing = needed.filter(
+  let missing = needed.filter(
     (need) => !supplied.has(need.name) && !inProduction.has(need.name),
   );
 
@@ -414,6 +417,27 @@ export async function deploy(argv: string[] = []): Promise<number> {
       info(`  ${mark} ${name}${note}`);
     }
     info("");
+  }
+
+  // Before the rest of what is missing: a database is the one thing on the
+  // list Cira can supply itself, rather than ask the developer to go and find.
+  const chosen = await chooseDatabase({
+    missing: missing.map((need) => need.name),
+    supplied,
+    argv,
+    io: terminal(),
+  });
+  if ("error" in chosen) {
+    fail(chosen.error);
+    return 1;
+  }
+  const databaseEnv = chosen.envName;
+  if (databaseEnv !== null) {
+    info(
+      `  ${green("✓")} ${databaseEnv}  ${dim("a new Postgres database, made by Cira")}`,
+    );
+    info("");
+    missing = missing.filter((need) => need.name !== databaseEnv);
   }
 
   if (missing.length > 0) {
@@ -520,6 +544,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         web: servesWeb,
         webMemoryMiB: servesWeb ? declared.webMemoryMiB : null,
         release: declared.release,
+        database: databaseEnv === null ? null : { envName: databaseEnv },
         processes: declared.processes,
         env: collected.env,
         unset: collected.unset,
@@ -528,6 +553,13 @@ export async function deploy(argv: string[] = []): Promise<number> {
   } catch (error) {
     fail(error instanceof ApiError ? error.message : "The deploy could not be started.");
     return 1;
+  }
+  if (started.database !== undefined) {
+    success(
+      started.database.created
+        ? `Made a Postgres database, set as ${started.database.envName}`
+        : `Its database is set as ${started.database.envName}`,
+    );
   }
 
   writeProjectLink(

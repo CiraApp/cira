@@ -42,6 +42,26 @@ export default function DocsPage() {
         </p>
       </Section>
 
+      <Section title="Give it a database">
+        <p>
+          An app that reads <code>DATABASE_URL</code> and has none is offered one when it
+          deploys: its own Postgres, made on Neon for that app alone. Or ask for one
+          outright, which is how a script says yes:
+        </p>
+        <CopyableCommand command="cira deploy --database" />
+        <p>
+          The app gets <code>DATABASE_URL</code>, through Neon&rsquo;s pooler, and{" "}
+          <code>DATABASE_URL_UNPOOLED</code> for migrations - and so do its workers, its
+          scheduled runs and its release command, so a first deploy can create its tables.
+          To look inside, or to take the data with you:
+        </p>
+        <CopyableCommand command={`psql "$(cira database url)"`} />
+        <p>
+          Removing the app deletes its database and everything in it. An app that already
+          has a database of its own keeps it; Cira never replaces one.
+        </p>
+      </Section>
+
       <Section title="Open it">
         <p>
           Every app is at <code>{`{app}--{space}.cira.dev`}</code>, and everyone who is

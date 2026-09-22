@@ -7,7 +7,7 @@
  * unreviewed draft as a finished agreement would be the wrong first thing to
  * learn about us.
  */
-export const UPDATED = "20 September 2026";
+export const UPDATED = "22 September 2026";
 
 export function LegalDraftNotice() {
   return (

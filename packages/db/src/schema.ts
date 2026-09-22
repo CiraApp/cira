@@ -918,6 +918,30 @@ export const stripeSetup = pgTable("stripe_setup", {
   checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The Postgres database Cira made for an app, one at most. Which Neon project
+ * it is and how to name its database and role - never its password or its
+ * address, which Neon holds and Cloud Run runs with (docs/secrets.md). Gone
+ * with the app, whose teardown deletes the project first.
+ */
+export const appDatabases = pgTable("app_databases", {
+  appId: text("app_id")
+    .primaryKey()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  provider: text("provider").$type<"neon">().notNull(),
+  /** The Neon project. */
+  externalId: text("external_id").notNull(),
+  databaseName: text("database_name").notNull(),
+  roleName: text("role_name").notNull(),
+  /** The variable the app reads it from; its direct address is this plus `_UNPOOLED`. */
+  envName: text("env_name").notNull(),
+  region: text("region").notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const removedApps = pgTable(
   "removed_apps",
   {

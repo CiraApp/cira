@@ -21,6 +21,7 @@ import { AccessPanel } from "@/components/access-panel";
 import { AppSettings } from "@/components/app-settings";
 import { EnvPanel } from "@/components/env-panel";
 import { listEnvVars } from "@/lib/env-vars";
+import { appDatabase } from "@/lib/app-databases";
 import { CapabilityPanel } from "@/components/capability-panel";
 import { ServicePanel } from "@/components/service-panel";
 import { AppIdentity } from "@/components/app-identity";
@@ -91,6 +92,7 @@ export default async function AppPage({
     // Only to whoever can manage the app: what it is configured with is part of
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
+    const databaseOf = manages ? await appDatabase(app.id) : null;
     const runs = manages ? await recentRuns(app.id) : null;
     // Whether its workers are running and how its runs went is for anyone
     // who can open the app - troubleshooting "did the report go out?" should
@@ -400,7 +402,7 @@ export default async function AppPage({
             />
           ) : null}
 
-          {manages ? <EnvPanel vars={envVars} /> : null}
+          {manages ? <EnvPanel vars={envVars} database={databaseOf} /> : null}
 
           {manages ? (
             <AppSettings

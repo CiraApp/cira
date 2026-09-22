@@ -7,6 +7,7 @@ import {
   capabilities,
   db,
   deployments,
+  appDatabases,
   appEnvVars,
   invites,
   memberships,
@@ -61,7 +62,7 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
   const appIds = ownApps.map((app) => app.id);
   const none = appIds.length === 0;
 
-  const [grants, parts, ops, background, deploys, variables, teamPeople] =
+  const [grants, parts, ops, background, deploys, variables, teamPeople, made] =
     await Promise.all([
       none
         ? []
@@ -92,6 +93,10 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
                 spaceTeams.map((team) => team.id),
               ),
             ),
+      // Which databases Cira made, never where they are or what is in them.
+      none
+        ? []
+        : database.select().from(appDatabases).where(inArray(appDatabases.appId, appIds)),
     ]);
 
   const emailOf = new Map(people.map((p) => [p.user.id, p.user.email]));
@@ -101,7 +106,8 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
     note:
       "Everything Cira holds about this space. It does not include your apps' own data, " +
       "the values of their environment variables (Cira never stores them), what any " +
-      "capability was called with, or their logs.",
+      "capability was called with, or their logs. A database Cira made for an app is " +
+      "listed here; its contents come out with `cira database url` and pg_dump.",
     space: {
       name: space.name,
       address: `/${space.slug}`,
@@ -171,6 +177,15 @@ export async function exportSpace(spaceId: string): Promise<SpaceExport | null> 
       environmentVariableNames: variables
         .filter((variable) => variable.appId === app.id)
         .map((variable) => variable.key),
+      database:
+        made
+          .filter((row) => row.appId === app.id)
+          .map((row) => ({
+            postgresOn: "Neon",
+            setAs: row.envName,
+            region: row.region,
+            createdAt: row.createdAt.toISOString(),
+          }))[0] ?? null,
       deploys: deploys
         .filter((deploy) => deploy.appId === app.id)
         .map((deploy) => ({

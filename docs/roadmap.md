@@ -144,6 +144,16 @@ what it uses.
 - [ ] **3.4 Databases and caches.** Provision through providers such as Neon
       and Upstash rather than hosting data, which keeps Cira out of the
       business of holding customers' data.
+  - [x] Postgres: `cira deploy --database`, or yes to the offer when the code
+        reads a `DATABASE_URL` nobody set, makes the app its own Neon project in
+        Cira's Neon organisation and sets `DATABASE_URL` (pooled) and
+        `DATABASE_URL_UNPOOLED` for the app, its workers, runs and release
+        command. `cira database url` prints the address; removing the app
+        deletes the database (2026-09-22).
+  - [ ] _You:_ Neon's free plan caps how many projects the organisation holds
+        and how big each is. Move the Cira organisation to a paid plan before
+        a customer depends on it.
+  - [ ] Caches (Redis on Upstash), the same way, when an app asks.
 - [ ] **3.5 Custom domains** for apps.
 - [ ] **3.6 Penetration test** of the app proxy, sessions and MCP, by an
       outside firm. _You._
