@@ -21,7 +21,7 @@ import {
   type StoredProcess,
 } from "@cira/core";
 import { TERMINAL_STATUSES, deploymentProvider } from "@cira/deploy";
-import { syncQuantities } from "@/lib/billing";
+import { ensureStripeSetup, syncQuantities, type StripeSetupReport } from "@/lib/billing";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import {
   answeringAgainMessage,
@@ -66,6 +66,8 @@ export interface WatchReport {
   switchedOff: number;
   /** Notices that failed before and went this time. */
   retried: number;
+  /** What was set up in Stripe on this pass, when it was looked at. */
+  stripe: StripeSetupReport | null;
 }
 
 /**
@@ -89,6 +91,7 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
     billingSynced: 0,
     switchedOff: 0,
     retried: 0,
+    stripe: null,
   };
 
   // Deploys still in flight that nobody is polling: the CLI was closed, the
@@ -106,6 +109,15 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
   // Anything that failed to reach people last time goes first, while it is
   // still news.
   report.retried = await retryUnsent(now).catch(() => 0);
+
+  // Stripe holding what Cira bills with and tells it about - checked every
+  // few hours, and set up the first time a key is there, test or live.
+  report.stripe = await ensureStripeSetup(now).catch((error: unknown) => {
+    console.warn(
+      `stripe setup not checked: ${error instanceof Error ? error.message : "error"}`,
+    );
+    return null;
+  });
 
   // Every space before any app: its trial, what its plan still allows, and
   // what it is billed for. These are quick, and they used to run last, where

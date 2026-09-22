@@ -38,6 +38,10 @@ interface FakeSubscription {
 const stripe = {
   subscriptions: new Map<string, FakeSubscription>(),
   requests: [] as Array<{ method: string; path: string; body: URLSearchParams }>,
+  /** Lookup keys with no price yet, for the setup tests. Empty: every key has one. */
+  missingPrices: new Set<string>(),
+  products: [] as Array<{ id: string; metadata: Record<string, string> }>,
+  endpoints: [] as Array<{ id: string; url: string; enabled_events: string[] }>,
 };
 
 function serveStripe(): void {
@@ -50,9 +54,51 @@ function serveStripe(): void {
     const json = (value: unknown, status = 200) =>
       new Response(JSON.stringify(value), { status });
 
-    if (path === "prices") {
+    if (path === "prices" && method === "GET") {
       const key = url.searchParams.get("lookup_keys[]") ?? "";
-      return json({ data: [{ id: `price_${key}` }] });
+      return json({
+        data: stripe.missingPrices.has(key) ? [] : [{ id: `price_${key}` }],
+      });
+    }
+    if (path === "prices" && method === "POST") {
+      const key = body.get("lookup_key") ?? "";
+      stripe.missingPrices.delete(key);
+      return json({ id: `price_${key}` });
+    }
+    if (path === "products/search") {
+      return json({ data: stripe.products.filter((p) => p.metadata["cira"] === "team") });
+    }
+    if (path === "products" && method === "POST") {
+      const product = {
+        id: `prod_${stripe.products.length + 1}`,
+        metadata: { cira: "team" },
+      };
+      stripe.products.push(product);
+      return json(product);
+    }
+    if (path === "webhook_endpoints" && method === "GET") {
+      return json({ data: stripe.endpoints });
+    }
+    if (path === "webhook_endpoints" && method === "POST") {
+      const events = [...body.entries()]
+        .filter(([k]) => k.startsWith("enabled_events"))
+        .map(([, v]) => v);
+      const made = {
+        id: `we_${stripe.endpoints.length + 1}`,
+        url: body.get("url")!,
+        enabled_events: events,
+      };
+      stripe.endpoints.push(made);
+      return json({ ...made, secret: "whsec_made_by_cira" });
+    }
+    const endpoint = /^webhook_endpoints\/(.+)$/.exec(path);
+    if (endpoint !== null && method === "POST") {
+      const found = stripe.endpoints.find((e) => e.id === endpoint[1]);
+      if (found === undefined) return json({ error: {} }, 404);
+      found.enabled_events = [...body.entries()]
+        .filter(([k]) => k.startsWith("enabled_events"))
+        .map(([, v]) => v);
+      return json(found);
     }
     const sub = /^subscriptions\/([^/]+)$/.exec(path);
     if (sub !== null) {
@@ -139,6 +185,9 @@ describe.skipIf(!hasDatabase)("billing", () => {
       .where(eq(spaces.id, spaceId));
     stripe.subscriptions.clear();
     stripe.requests.length = 0;
+    stripe.missingPrices.clear();
+    stripe.products.length = 0;
+    stripe.endpoints.length = 0;
     serveStripe();
   });
 
@@ -229,6 +278,88 @@ describe.skipIf(!hasDatabase)("billing", () => {
         stripeSubscriptionId: "sub_1",
         plan: "team",
       });
+    });
+  });
+
+  /**
+   * Stripe set up by Cira itself, so going live is changing one key: the
+   * prices it bills with, made from the plan, and a webhook endpoint sending
+   * every event the webhook route acts on.
+   */
+  describe("ensureStripeSetup", () => {
+    const force = { force: true };
+
+    it("makes the prices and the webhook a new account lacks, and keeps the secret", async () => {
+      const { ensureStripeSetup, webhookSecrets, WEBHOOK_EVENTS } =
+        await import("./billing");
+      stripe.missingPrices = new Set([
+        "cira_team_seat",
+        "cira_team_worker",
+        "cira_team_always_on",
+      ]);
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
+
+      const report = await ensureStripeSetup(new Date(), force);
+      expect(report).toMatchObject({
+        mode: "test",
+        pricesCreated: ["cira_team_seat", "cira_team_worker", "cira_team_always_on"],
+        webhook: "created",
+      });
+      const seat = stripe.requests.find(
+        (r) =>
+          r.path === "prices" &&
+          r.method === "POST" &&
+          r.body.get("lookup_key") === "cira_team_seat",
+      );
+      expect(seat?.body.get("unit_amount")).toBe("1200");
+      expect(seat?.body.get("recurring[interval]")).toBe("month");
+      // One product, however many prices hang off it.
+      expect(stripe.products).toHaveLength(1);
+      expect(stripe.endpoints[0]?.enabled_events).toEqual([...WEBHOOK_EVENTS]);
+      expect(await webhookSecrets()).toEqual(["whsec_made_by_cira"]);
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
+    });
+
+    it("gives an endpoint someone made by hand the events it lacks, and nothing else", async () => {
+      const { ensureStripeSetup } = await import("./billing");
+      const { appOrigin } = await import("./email");
+      stripe.endpoints.push({
+        id: "we_hand",
+        url: `${appOrigin()}/api/stripe/webhook`,
+        enabled_events: ["customer.subscription.updated", "charge.refunded"],
+      });
+
+      const report = await ensureStripeSetup(new Date(), force);
+      expect(report?.webhook).toBe("updated");
+      expect(report?.eventsAdded).toContain("checkout.session.completed");
+      expect(report?.eventsAdded).toContain("invoice.payment_failed");
+      // What it was already sent stays.
+      expect(stripe.endpoints[0]?.enabled_events).toContain("charge.refunded");
+      expect(report?.pricesCreated).toEqual([]);
+
+      // Right now, so the next pass changes nothing.
+      const again = await ensureStripeSetup(new Date(), force);
+      expect(again).toMatchObject({
+        webhook: "kept",
+        eventsAdded: [],
+        pricesCreated: [],
+      });
+    });
+
+    it("looks again only every few hours once it is right", async () => {
+      const { ensureStripeSetup } = await import("./billing");
+      const now = new Date();
+      await ensureStripeSetup(now, force);
+      stripe.requests.length = 0;
+      expect(await ensureStripeSetup(new Date(now.getTime() + 60_000))).toBeNull();
+      expect(stripe.requests).toHaveLength(0);
+    });
+
+    it("tells a live key from a test one", async () => {
+      const { stripeMode } = await import("./billing");
+      expect(stripeMode("sk_live_abc")).toBe("live");
+      expect(stripeMode("rk_live_abc")).toBe("live");
+      expect(stripeMode("sk_test_abc")).toBe("test");
     });
   });
 

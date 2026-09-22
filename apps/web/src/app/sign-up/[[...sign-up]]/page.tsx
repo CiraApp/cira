@@ -8,7 +8,6 @@ export const metadata: Metadata = { title: "Sign up" };
 export default function SignUpPage() {
   return (
     <AuthFrame
-      title="Start with Cira"
       subtitle={`Your company's space is free for ${PLANS.trial.trialDays} days, with no card. Use your work email, so colleagues at your company can find it.`}
     >
       <SignUp appearance={AUTH_APPEARANCE} />

@@ -790,6 +790,18 @@ exists, is cancelled. Checkout is offered only while a space is not paying
 must not leave a space unable to pay again), and two clicks in the same minute
 get the same checkout. Deleting a space expires any checkout still open.
 
+Cira sets Stripe up for itself (`ensureStripeSetup`, run by the watcher and
+re-checked every six hours): the Cira Team product and its three prices, made
+from the plan by the lookup keys `cira_team_seat`, `cira_team_worker` and
+`cira_team_always_on`, and a webhook endpoint at this Cira's
+`/api/stripe/webhook` sending every event the route acts on. Only what is
+missing is added; an endpoint made by hand is kept and given the events it
+lacks. An endpoint Cira makes has its signing secret kept in `stripe_setup`,
+which the webhook route checks beside `STRIPE_WEBHOOK_SECRET` - safe to keep
+because an event is only a pointer. So going live is setting
+`STRIPE_SECRET_KEY` to the live key: the next watcher pass makes the live
+prices and the live webhook.
+
 What a plan allows is enforced, not only displayed (`lib/plan-enforcement.ts`,
 run by the watcher and at once when a subscription ends). A trial lasts
 fourteen days from the space's creation. After it, or after a subscription

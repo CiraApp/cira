@@ -9,21 +9,21 @@ import { EntryFrame } from "@/components/entry-frame";
  * way back. Now it has the same frame as every other screen before a space
  * exists, says what the person is starting, and leads back out.
  *
- * Clerk's card keeps its own form - it is where the security lives - with the
- * chrome that would fight the frame taken off.
+ * Clerk's card keeps its own form and its own heading - the heading is where
+ * each step says what it wants ("Check your email", and to which address),
+ * and hiding it once left a code field with no word of where the code went.
+ * So the frame has no heading of its own, only the one thing the card cannot
+ * say.
  */
 export function AuthFrame({
-  title,
   subtitle,
   children,
 }: {
-  title: string;
   subtitle: string;
   children: React.ReactNode;
 }) {
   return (
     <EntryFrame
-      title={title}
       subtitle={subtitle}
       footer={
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-subtle">
@@ -50,18 +50,11 @@ export function AuthFrame({
   );
 }
 
-/**
- * Clerk's card, fitted into the frame instead of floating on its own. Its
- * own heading goes: the frame already says what this is, and two headings
- * one above the other read as two different screens.
- */
+/** Clerk's card, fitted into the frame instead of floating on its own. */
 export const AUTH_APPEARANCE = {
   elements: {
     rootBox: "w-full",
     cardBox: "w-full shadow-none",
     card: "w-full shadow-none",
-    // A style rather than a class: Clerk's own stylesheet sets this one's
-    // display and wins over a utility class.
-    header: { display: "none" },
   },
 } as const;

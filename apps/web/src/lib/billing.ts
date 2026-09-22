@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, spaces } from "@cira/db";
+import { db, spaces, stripeSetup } from "@cira/db";
 import { monthlyBill, planOf, PLANS, type Space } from "@cira/core";
 import { appOrigin } from "@/lib/email";
 import { planSummary } from "@/lib/plan";
@@ -430,6 +430,215 @@ async function stripe<T>(
     throw new Error("Stripe refused the request.");
   }
   return (await response.json()) as T;
+}
+
+// -- Cira's own setup in Stripe ------------------------------------------------
+
+/** Every event the webhook route acts on. */
+export const WEBHOOK_EVENTS = [
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "customer.subscription.paused",
+  "customer.subscription.resumed",
+  "checkout.session.completed",
+  "invoice.payment_failed",
+] as const;
+
+/** The prices Cira bills with, made from the plan so the two cannot disagree. */
+export function billedPrices(): Array<{
+  lookupKey: string;
+  name: string;
+  cents: number;
+}> {
+  const team = PLANS.team;
+  return [
+    { lookupKey: SEAT_PRICE, name: "Seat", cents: team.perSeatMonthly * 100 },
+    { lookupKey: WORKER_PRICE, name: "Worker", cents: team.workerMonthly * 100 },
+    {
+      lookupKey: ALWAYS_ON_PRICE,
+      name: "App kept warm",
+      cents: team.alwaysOnMonthly * 100,
+    },
+  ];
+}
+
+/** Test or live, by the key Cira holds. */
+export function stripeMode(
+  key: string | undefined = process.env["STRIPE_SECRET_KEY"],
+): "test" | "live" {
+  return /^(sk|rk)_live_/.test(key?.trim() ?? "") ? "live" : "test";
+}
+
+/** How often the setup is looked at again once it is right. */
+const SETUP_RECHECK_MS = 6 * 3600_000;
+
+export interface StripeSetupReport {
+  mode: "test" | "live";
+  pricesCreated: string[];
+  eventsAdded: string[];
+  webhook: "kept" | "updated" | "created";
+}
+
+/**
+ * Make Stripe hold what Cira needs, in whichever mode its key is for: the
+ * product and prices it bills with, and a webhook endpoint that sends every
+ * event the webhook route acts on. Anything already there is left alone and
+ * only what is missing is added, so it is safe to run again - which is what
+ * turns going live into changing one key.
+ *
+ * An endpoint someone made by hand is kept and given any events it lacks;
+ * its secret stays in the environment. One Cira makes has its secret kept in
+ * `stripe_setup`, where the webhook route also looks.
+ */
+export async function ensureStripeSetup(
+  now: Date = new Date(),
+  { force = false }: { force?: boolean } = {},
+): Promise<StripeSetupReport | null> {
+  if (!billingConfigured()) return null;
+  const mode = stripeMode();
+  const database = db();
+  const [known] = await database
+    .select()
+    .from(stripeSetup)
+    .where(eq(stripeSetup.mode, mode))
+    .limit(1);
+  if (
+    !force &&
+    known !== undefined &&
+    now.getTime() - known.checkedAt.getTime() < SETUP_RECHECK_MS
+  ) {
+    return null;
+  }
+
+  const report: StripeSetupReport = {
+    mode,
+    pricesCreated: [],
+    eventsAdded: [],
+    webhook: "kept",
+  };
+
+  // The product and prices, by lookup key.
+  let product: string | null = null;
+  for (const price of billedPrices()) {
+    const found = await stripe<{ data?: Array<{ id: string }> }>(
+      `prices?lookup_keys[]=${encodeURIComponent(price.lookupKey)}&active=true`,
+      "GET",
+    );
+    if ((found.data?.length ?? 0) > 0) continue;
+    product ??= await teamProduct();
+    const made = await stripe<{ id: string }>(
+      "prices",
+      "POST",
+      {
+        product,
+        currency: "usd",
+        unit_amount: String(price.cents),
+        "recurring[interval]": "month",
+        lookup_key: price.lookupKey,
+        nickname: price.name,
+      },
+      `cira-price-${mode}-${price.lookupKey}-${price.cents}`,
+    );
+    priceIds.set(price.lookupKey, made.id);
+    report.pricesCreated.push(price.lookupKey);
+  }
+
+  // The webhook endpoint that points at this Cira.
+  const url = `${appOrigin()}/api/stripe/webhook`;
+  const endpoints = await stripe<{
+    data?: Array<{ id: string; url: string; enabled_events: string[]; status?: string }>;
+  }>("webhook_endpoints?limit=100", "GET");
+  const endpoint = endpoints.data?.find((e) => e.url === url);
+  let secret = known?.webhookSecret ?? null;
+  let endpointId = known?.webhookEndpointId ?? null;
+
+  if (endpoint !== undefined) {
+    const has = new Set(endpoint.enabled_events);
+    const missing = has.has("*") ? [] : WEBHOOK_EVENTS.filter((event) => !has.has(event));
+    if (missing.length > 0) {
+      const events = [...new Set([...endpoint.enabled_events, ...WEBHOOK_EVENTS])];
+      await stripe(
+        `webhook_endpoints/${endpoint.id}`,
+        "POST",
+        Object.fromEntries(events.map((event, i) => [`enabled_events[${i}]`, event])),
+      );
+      report.eventsAdded = missing;
+      report.webhook = "updated";
+    }
+    endpointId = endpoint.id;
+  } else {
+    // None at this address. Made even when a secret is configured: that one
+    // belongs to an endpoint somewhere else - after a switch to a live key,
+    // the test account's - and a second delivery of an event is harmless,
+    // because events are re-read and notices are claimed once.
+    const made = await stripe<{ id: string; secret?: string }>(
+      "webhook_endpoints",
+      "POST",
+      {
+        url,
+        description: "Cira",
+        api_version: STRIPE_VERSION,
+        ...Object.fromEntries(
+          WEBHOOK_EVENTS.map((event, i) => [`enabled_events[${i}]`, event]),
+        ),
+      },
+      `cira-webhook-${mode}-${url}`,
+    );
+    endpointId = made.id;
+    secret = made.secret ?? secret;
+    report.webhook = "created";
+  }
+
+  await database
+    .insert(stripeSetup)
+    .values({
+      mode,
+      webhookEndpointId: endpointId,
+      webhookSecret: secret,
+      checkedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: stripeSetup.mode,
+      set: { webhookEndpointId: endpointId, webhookSecret: secret, checkedAt: now },
+    });
+  // Names and ids only: what whoever runs Cira needs to see it happened.
+  console.info(
+    `stripe setup (${mode}): prices made [${report.pricesCreated.join(", ")}], ` +
+      `webhook ${report.webhook}${report.eventsAdded.length > 0 ? ` +[${report.eventsAdded.join(", ")}]` : ""}`,
+  );
+  return report;
+}
+
+/** The product Cira's prices hang off, found by its mark or made once. */
+async function teamProduct(): Promise<string> {
+  const found = await stripe<{ data?: Array<{ id: string }> }>(
+    `products/search?query=${encodeURIComponent("metadata['cira']:'team' AND active:'true'")}`,
+    "GET",
+  );
+  const id = found.data?.[0]?.id;
+  if (id !== undefined) return id;
+  const made = await stripe<{ id: string }>(
+    "products",
+    "POST",
+    { name: "Cira Team", "metadata[cira]": "team" },
+    "cira-product-team",
+  );
+  return made.id;
+}
+
+/** Every secret a webhook may be signed with: the configured one, and Cira's own. */
+export async function webhookSecrets(): Promise<string[]> {
+  const configured = process.env["STRIPE_WEBHOOK_SECRET"]?.trim();
+  const [own] = await db()
+    .select({ secret: stripeSetup.webhookSecret })
+    .from(stripeSetup)
+    .where(eq(stripeSetup.mode, stripeMode()))
+    .limit(1);
+  return [configured, own?.secret ?? undefined].filter(
+    (secret): secret is string =>
+      secret !== undefined && secret !== null && secret !== "",
+  );
 }
 
 /**

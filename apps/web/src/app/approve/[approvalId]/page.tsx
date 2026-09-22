@@ -38,7 +38,7 @@ export default async function ApprovePage({
   return (
     <EntryFrame
       eyebrow={capability.appName}
-      title={`Approve ${humanName(capability.name)}?`}
+      title={`${humanName(capability.name)}?`}
       subtitle={`${who} wants to make this change in ${capability.appName} as you, ${user.name}. Nothing has happened yet.`}
     >
       <div className="rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5">

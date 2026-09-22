@@ -903,6 +903,21 @@ export const approvals = pgTable(
  * An app that was removed, kept so the month's usage still counts what it ran:
  * the names Google knows its services and processes by, and their memory.
  */
+/**
+ * What Cira set up in Stripe for itself, per mode (test or live): the
+ * webhook endpoint it made, with the secret Stripe signs that endpoint's
+ * events with, and when the setup was last checked. The secret is kept here
+ * because Cira made the endpoint and cannot write its own deployment's
+ * environment; an event is only ever a pointer that billing re-reads from
+ * Stripe, so a forged one could not change what a company has paid for.
+ */
+export const stripeSetup = pgTable("stripe_setup", {
+  mode: text("mode").$type<"test" | "live">().primaryKey(),
+  webhookEndpointId: text("webhook_endpoint_id"),
+  webhookSecret: text("webhook_secret"),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const removedApps = pgTable(
   "removed_apps",
   {

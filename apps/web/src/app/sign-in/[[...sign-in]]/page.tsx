@@ -6,10 +6,7 @@ export const metadata: Metadata = { title: "Sign in" };
 
 export default function SignInPage() {
   return (
-    <AuthFrame
-      title="Sign in to Cira"
-      subtitle="Your company's software, and the assistants that use it, in one place."
-    >
+    <AuthFrame subtitle="Your company's software, and the assistants that use it, in one place.">
       <SignIn appearance={AUTH_APPEARANCE} />
     </AuthFrame>
   );

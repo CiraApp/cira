@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { applySubscription, verifyWebhook } from "@/lib/billing";
+import { applySubscription, verifyWebhook, webhookSecrets } from "@/lib/billing";
 import { paymentFailedMessage, subscriptionEndedMessage } from "@/lib/messages";
 import { notifyAdmins } from "@/lib/notify";
 import { enforcePlan } from "@/lib/plan-enforcement";
@@ -19,15 +19,15 @@ import { eq } from "drizzle-orm";
  * subscription as it is now, so the order events arrive in cannot matter.
  */
 export async function POST(request: Request) {
-  const secret = process.env["STRIPE_WEBHOOK_SECRET"]?.trim();
-  if (secret === undefined || secret === "") {
+  // The configured secret, and the one for an endpoint Cira made itself.
+  const secrets = await webhookSecrets();
+  if (secrets.length === 0) {
     return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
 
   const payload = await request.text();
-  if (
-    !verifyWebhook({ payload, header: request.headers.get("stripe-signature"), secret })
-  ) {
+  const header = request.headers.get("stripe-signature");
+  if (!secrets.some((secret) => verifyWebhook({ payload, header, secret }))) {
     return NextResponse.json({ error: "Bad signature" }, { status: 400 });
   }
 

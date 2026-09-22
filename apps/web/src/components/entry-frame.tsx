@@ -24,7 +24,8 @@ export function EntryFrame({
   /** A finished step gets a tick; everything else carries the logo. */
   mark?: "logo" | "done";
   eyebrow?: string;
-  title: string;
+  /** Left out where what follows carries its own heading, as Clerk's card does. */
+  title?: string;
   subtitle?: string;
   children?: React.ReactNode;
   footer?: React.ReactNode;
@@ -47,12 +48,14 @@ export function EntryFrame({
           </p>
         ) : null}
 
-        <h1
-          className="enter-up mt-2 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink"
-          style={{ animationDelay: "110ms" }}
-        >
-          {title}
-        </h1>
+        {title !== undefined ? (
+          <h1
+            className="enter-up mt-2 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink"
+            style={{ animationDelay: "110ms" }}
+          >
+            {title}
+          </h1>
+        ) : null}
 
         {subtitle !== undefined ? (
           <p
