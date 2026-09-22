@@ -218,6 +218,20 @@
       "when": 1789879045246,
       "tag": "0030_tell_an_app_who_is_calling",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790050070422,
+      "tag": "0031_let_a_grant_manage_an_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790050661203,
+      "tag": "0032_mark_a_replaced_deploy_superseded",
+      "breakpoints": true
     }
   ]
 }

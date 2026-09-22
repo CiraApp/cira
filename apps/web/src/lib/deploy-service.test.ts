@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { DEFAULT_LIMITS, newId, type User } from "@cira/core";
+import { DEFAULT_LIMITS, newId, type EnvChange, type User } from "@cira/core";
 import type * as CiraDb from "@cira/db";
 import type * as CiraDeploy from "@cira/deploy";
 import { migratedTestDatabase } from "../../../../packages/db/src/test-database.js";
@@ -22,7 +22,9 @@ const hasDatabase = TEST_DATABASE_URL !== undefined && TEST_DATABASE_URL !== "";
 
 let database: Awaited<ReturnType<typeof migratedTestDatabase>>;
 /** What the provider was asked to deploy, most recent last. */
-const told: Array<{ processes: unknown[] }> = [];
+const told: Array<{ processes: unknown[]; env?: EnvChange }> = [];
+/** Which deploys the provider was asked about, which is also what rolls them out. */
+const asked: string[] = [];
 /** Flipped by a test that wants the provider to refuse. */
 let providerFails = false;
 
@@ -44,7 +46,11 @@ vi.mock("@cira/deploy", async (importOriginal) => {
       find: () => Promise.resolve({ size: 1024, object: "source.tgz" }),
     }),
     deploymentProvider: () => ({
-      deploy: (input: { processes: unknown[] }) => {
+      getStatus: (id: string) => {
+        asked.push(id);
+        return Promise.resolve({ providerDeploymentId: id, status: "live", url: null });
+      },
+      deploy: (input: { processes: unknown[]; env?: EnvChange }) => {
         told.push(input);
         return providerFails
           ? Promise.reject(new Error("the builder said no"))
@@ -93,7 +99,7 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
     await database?.end();
   });
 
-  const deploy = async (appName: string) => {
+  const deploy = async (appName: string, env?: EnvChange) => {
     const { deployToSpace } = await import("./deploy-service");
     return deployToSpace({
       user: deployer,
@@ -103,6 +109,26 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
       sourceId: "src_1",
       framework: "unknown",
       container: null,
+      ...(env === undefined ? {} : { env }),
+    });
+  };
+
+  const redeploy = async (
+    user: User,
+    appId: string,
+    appName: string,
+    env?: EnvChange,
+  ) => {
+    const { deployToSpace } = await import("./deploy-service");
+    return deployToSpace({
+      user,
+      spaceSlug: "paradym",
+      appName,
+      appId,
+      sourceId: "src_1",
+      framework: "unknown",
+      container: null,
+      ...(env === undefined ? {} : { env }),
     });
   };
 
@@ -192,29 +218,211 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
     expect(note?.appId).toBe(first.appId);
   });
 
-  it("marks the app failed when the builder refuses, and keeps its grant", async () => {
+  it("leaves nothing behind when a first deploy is refused, so a retry is the same app", async () => {
     providerFails = true;
     const outcome = await deploy("Broken");
     providerFails = false;
 
     expect(outcome.ok).toBe(false);
 
-    const { apps, appAccess } = await import("@cira/db");
-    const [app] = await database
+    const { apps } = await import("@cira/db");
+    const left = await database
       .select()
       .from(apps)
-      .where(and(eq(apps.spaceId, spaceId), eq(apps.slug, "broken")))
-      .limit(1);
+      .where(and(eq(apps.spaceId, spaceId), eq(apps.name, "Broken")));
+    expect(left).toEqual([]);
 
-    expect(app?.status).toBe("failed");
-
-    // A failed build is not a reason for its owner to lose the app.
-    const grants = await database
-      .select()
-      .from(appAccess)
-      .where(eq(appAccess.appId, app?.id ?? ""));
-    expect(grants).toHaveLength(1);
+    // Not "broken-2": the failed attempt did not keep the name.
+    const retry = await deploy("Broken");
+    expect(retry.ok && retry.appSlug).toBe("broken");
   });
+
+  it("puts a redeploy that never started back to how it was", async () => {
+    const first = await deploy("Steady");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const { apps } = await import("@cira/db");
+    await database.update(apps).set({ status: "live" }).where(eq(apps.id, first.appId));
+
+    providerFails = true;
+    const again = await redeploy(deployer, first.appId, "Steady");
+    providerFails = false;
+    expect(again.ok).toBe(false);
+
+    // Its last good version is still serving, so it still reads as live.
+    const [app] = await database.select().from(apps).where(eq(apps.id, first.appId));
+    expect(app?.status).toBe("live");
+  });
+
+  describe("two deploys of one app", () => {
+    it("never rolls out the older one once a newer one has started", async () => {
+      const first = await deploy("Overlap");
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const second = await redeploy(deployer, first.appId, "Overlap");
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+
+      const { deployments } = await import("@cira/db");
+      const [older] = await database
+        .select()
+        .from(deployments)
+        .where(eq(deployments.id, first.deploymentId));
+      expect(older?.status).toBe("superseded");
+
+      // Looking at it again, as the watcher or a CLI still polling it would,
+      // does not ask the provider - asking is what rolls a build out.
+      asked.length = 0;
+      const { reconcileDeployment } = await import("./deployment-sync");
+      const again = await reconcileDeployment(older as never);
+      expect(again.status).toBe("superseded");
+      expect(asked).toEqual([]);
+    });
+
+    it("catches an older deploy still in flight even if it was never marked", async () => {
+      const first = await deploy("Overlap Two");
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const second = await redeploy(deployer, first.appId, "Overlap Two");
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+
+      // As if the two had raced past the moment the older one is marked.
+      const { deployments } = await import("@cira/db");
+      await database
+        .update(deployments)
+        .set({ status: "building" })
+        .where(eq(deployments.id, first.deploymentId));
+      const [older] = await database
+        .select()
+        .from(deployments)
+        .where(eq(deployments.id, first.deploymentId));
+
+      asked.length = 0;
+      const { reconcileDeployment } = await import("./deployment-sync");
+      expect((await reconcileDeployment(older as never)).status).toBe("superseded");
+      expect(asked).toEqual([]);
+    });
+  });
+
+  describe("who may redeploy an app", () => {
+    const colleague: User = {
+      id: newId("user"),
+      name: "Sam",
+      email: "sam@demo.test",
+      createdAt: new Date(),
+    };
+
+    beforeAll(async () => {
+      const { users, memberships } = await import("@cira/db");
+      await database.insert(users).values({
+        id: colleague.id,
+        externalId: "ext_sam",
+        name: colleague.name,
+        email: colleague.email,
+      });
+      await database.insert(memberships).values({
+        id: newId("membership"),
+        userId: colleague.id,
+        spaceId,
+        role: "member",
+      });
+    });
+
+    it("refuses a member who does not manage it, even with its id", async () => {
+      const first = await deploy("Payroll");
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      told.length = 0;
+
+      const outcome = await redeploy(colleague, first.appId, "Payroll");
+      expect(outcome.ok).toBe(false);
+      expect(!outcome.ok && outcome.error).toContain("You do not manage Payroll");
+      // Refused before Google was asked for anything.
+      expect(told).toEqual([]);
+    });
+
+    it("lets a member deploy an app they were given manage on", async () => {
+      const first = await deploy("Reports");
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const { appAccess } = await import("@cira/db");
+      await database.insert(appAccess).values({
+        id: newId("access"),
+        appId: first.appId,
+        type: "user",
+        targetId: colleague.id,
+        level: "manage",
+      });
+
+      const outcome = await redeploy(colleague, first.appId, "Reports");
+      expect(outcome.ok).toBe(true);
+    });
+
+    it("does not let a grant to use the app stand in for managing it", async () => {
+      const first = await deploy("Handbook");
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const { appAccess } = await import("@cira/db");
+      await database.insert(appAccess).values({
+        id: newId("access"),
+        appId: first.appId,
+        type: "user",
+        targetId: colleague.id,
+        level: "use",
+      });
+
+      const outcome = await redeploy(colleague, first.appId, "Handbook");
+      expect(outcome.ok).toBe(false);
+    });
+  });
+
+  describe("variables on a redeploy", () => {
+    it("changes nothing when a redeploy brings none, and keeps what was set", async () => {
+      const first = await deploy("Ledger Two", {
+        set: { DATABASE_URL: "postgres://db/ledger", API_KEY: "k1" },
+        unset: [],
+      });
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      told.length = 0;
+
+      // A teammate's clone, or CI: no `.env` at all.
+      const again = await redeploy(deployer, first.appId, "Ledger Two");
+      expect(again.ok).toBe(true);
+      expect(told[0]?.env).toEqual({ set: {}, unset: [] });
+
+      const { appEnvVars } = await import("@cira/db");
+      const kept = await database
+        .select({ key: appEnvVars.key })
+        .from(appEnvVars)
+        .where(eq(appEnvVars.appId, first.appId));
+      expect(kept.map((r) => r.key).sort()).toEqual(["API_KEY", "DATABASE_URL"]);
+    });
+
+    it("takes a variable away only when asked to", async () => {
+      const first = await deploy("Ledger Three", {
+        set: { DATABASE_URL: "postgres://db/three", OLD_FLAG: "1" },
+        unset: [],
+      });
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+
+      const again = await redeploy(deployer, first.appId, "Ledger Three", {
+        set: { DATABASE_URL: "postgres://db/three-new" },
+        unset: ["OLD_FLAG"],
+      });
+      expect(again.ok).toBe(true);
+
+      const { appEnvVars } = await import("@cira/db");
+      const kept = await database
+        .select({ key: appEnvVars.key })
+        .from(appEnvVars)
+        .where(eq(appEnvVars.appId, first.appId));
+      expect(kept.map((r) => r.key)).toEqual(["DATABASE_URL"]);
+    });
+  });
+
   /**
    * The two limits a space meets when deploying, each in its own space so the
    * numbers are exact. Both refuse before anything is written or built.

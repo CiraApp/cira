@@ -27,28 +27,11 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
     .from(deployments)
     .where(eq(deployments.appId, app.id));
 
-  // Every deployment of one app shares a service, so the name is taken once
-  // rather than the service being deleted once per deploy. Rows from the
-  // provider Cira used before Cloud Run are skipped: asking Google to remove
-  // one of those fails, and an app nobody can delete is worse than an orphan.
-  //
-  // A failed deploy counts. The service is created before its build finishes,
-  // so a build that failed still left one behind.
-  let service: string | null = null;
-  for (const row of rows) {
-    if (row.provider !== "cloudrun" || row.status === "removed") continue;
-    try {
-      service = parseHandle(row.providerDeploymentId).service;
-      break;
-    } catch {
-      // Not a handle this version wrote. Try the next.
-    }
-  }
-
   let images = true;
-  if (service !== null) {
+  for (const service of servicesOf(rows)) {
     try {
-      ({ images } = await deploymentProvider().teardown(service));
+      const outcome = await deploymentProvider().teardown(service);
+      images &&= outcome.images;
     } catch {
       return {
         ok: false,
@@ -63,4 +46,32 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
   await database.delete(apps).where(eq(apps.id, app.id));
 
   return { ok: true, images };
+}
+
+/**
+ * Every name this app has run under at Google.
+ *
+ * Usually one. An app renamed before its name was kept stable got a second
+ * service on its next deploy, and the first went on running, so every name
+ * any deployment ever recorded is taken down - each is idempotent, and one
+ * left behind is software nobody can see still serving.
+ *
+ * A failed deploy counts: the service is created before its build finishes.
+ * Rows from the provider Cira used before Cloud Run are skipped, because
+ * asking Google to remove one of those fails, and an app nobody can delete is
+ * worse than an orphan.
+ */
+export function servicesOf(
+  rows: ReadonlyArray<{ provider: string; providerDeploymentId: string }>,
+): string[] {
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (row.provider !== "cloudrun") continue;
+    try {
+      names.add(parseHandle(row.providerDeploymentId).service);
+    } catch {
+      // Not a handle this version wrote.
+    }
+  }
+  return [...names].sort();
 }

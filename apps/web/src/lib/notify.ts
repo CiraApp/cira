@@ -1,7 +1,16 @@
 import "server-only";
 
 import { and, eq, inArray, or } from "drizzle-orm";
-import { apps, db, memberships, notifications, spaces, users } from "@cira/db";
+import {
+  appAccess,
+  apps,
+  db,
+  memberships,
+  notifications,
+  spaces,
+  teamMembers,
+  users,
+} from "@cira/db";
 import { newId } from "@cira/core";
 import { appOrigin, sendEmail } from "@/lib/email";
 import type { AppRef, Message } from "@/lib/messages";
@@ -61,7 +70,7 @@ export async function notifyManagers(args: {
     const claim = claimed[0];
     if (claim === undefined) return "already-told";
 
-    const to = await managerEmails(row.app.spaceId, row.app.ownerUserId);
+    const to = await managerEmails(row.app);
     if (to.length === 0) {
       await database
         .update(notifications)
@@ -111,23 +120,44 @@ const REASONS: Record<string, string> = {
 
 /**
  * Who manages an app, by email: its owner while they are still in the space,
- * and the space's admins and owners - the same people `canManageApp` lets
- * change it.
+ * the space's admins and owners, and anyone given `manage` on it directly or
+ * through a team - the same people `canManageApp` lets change it.
  */
-export async function managerEmails(
-  spaceId: string,
-  ownerUserId: string,
-): Promise<string[]> {
-  const rows = await db()
+export async function managerEmails(app: {
+  id: string;
+  spaceId: string;
+  ownerUserId: string;
+}): Promise<string[]> {
+  const database = db();
+
+  const grants = await database
+    .select({ type: appAccess.type, targetId: appAccess.targetId })
+    .from(appAccess)
+    .where(and(eq(appAccess.appId, app.id), eq(appAccess.level, "manage")));
+  const people = grants.filter((g) => g.type === "user").map((g) => g.targetId);
+  const teams = grants.filter((g) => g.type === "team").map((g) => g.targetId);
+  const onTeams =
+    teams.length === 0
+      ? []
+      : await database
+          .select({ userId: teamMembers.userId })
+          .from(teamMembers)
+          .where(inArray(teamMembers.teamId, teams));
+  const granted = [...people, ...onTeams.map((t) => t.userId)];
+
+  // Still in the space, always: a grant outliving someone's membership must
+  // not keep sending them the company's alerts.
+  const rows = await database
     .select({ email: users.email })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
       and(
-        eq(memberships.spaceId, spaceId),
+        eq(memberships.spaceId, app.spaceId),
         or(
-          eq(memberships.userId, ownerUserId),
+          eq(memberships.userId, app.ownerUserId),
           inArray(memberships.role, ["admin", "owner"]),
+          ...(granted.length > 0 ? [inArray(memberships.userId, granted)] : []),
         ),
       ),
     );

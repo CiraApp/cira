@@ -4,7 +4,7 @@ import { DEFAULT_LIMITS, FRAMEWORKS, parseSchedule, settleMemory } from "@cira/c
 import { isSafeDockerfilePath } from "@cira/deploy";
 import { userFromRequest } from "@/lib/cli-session";
 import { deployToSpace } from "@/lib/deploy-service";
-import { envSchema } from "@/lib/env-vars";
+import { ENV_NAME, MAX_VARS, envSchema } from "@/lib/env-vars";
 
 export const maxDuration = 60;
 
@@ -57,9 +57,11 @@ const body = z.object({
     .max(8)
     .optional(),
   // Values pass straight through to the provider and are never stored; see
-  // docs/secrets.md. Absent means "this app has none", which clears any the
-  // app was previously deployed with.
+  // docs/secrets.md. Variables to set: a name not sent keeps its value, so a
+  // deploy from a machine with no `.env` changes nothing about them.
   env: envSchema.optional(),
+  /** Variables to take away, by name. Only ever an explicit ask. */
+  unset: z.array(z.string().regex(ENV_NAME)).max(MAX_VARS).default([]),
   /** Whether the repository has a web process. Absent from an older CLI: yes. */
   web: z.boolean().default(true),
   /** Workers and scheduled runs found in the repository. */
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
     framework: parsed.data.framework,
     container: parsed.data.container,
     services: parsed.data.services ?? null,
-    env: parsed.data.env ?? {},
+    env: { set: parsed.data.env ?? {}, unset: parsed.data.unset },
     web: parsed.data.web,
     // A timetable is taken only if Cira can run it; one it cannot is dropped
     // for a person to set, rather than refusing the whole deploy.

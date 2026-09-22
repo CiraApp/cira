@@ -42,7 +42,10 @@ const input: AppDeploymentInput = {
   appSlug: "ledger",
   framework: "python",
   source: { uri: SOURCE_URI, size: 4096 },
-  env: { DATABASE_URL: "postgres://user:hunter2@db/app", PORT: "8080" },
+  env: {
+    set: { DATABASE_URL: "postgres://user:hunter2@db/app", PORT: "8080" },
+    unset: [],
+  },
 };
 
 interface Call {
@@ -186,7 +189,7 @@ describe("deploy", () => {
 
     await provider().deploy({
       ...input,
-      env: { PORT: "3000", K_SERVICE: "mine", KEEP: "yes" },
+      env: { set: { PORT: "3000", K_SERVICE: "mine", KEEP: "yes" }, unset: [] },
     });
 
     const patch = calls.find((c) => c.method === "PATCH");
@@ -217,6 +220,24 @@ describe("deploy", () => {
     expect(result.url).toBe("https://acme-ledger-abc-uc.a.run.app");
   });
 
+  it("redeploys a renamed app onto the service it already runs as", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    // Renamed from Ledger to Books: the slug changed, the running app did not.
+    const result = await provider().deploy({
+      ...input,
+      appSlug: "books",
+      service: "acme-ledger-0000app1",
+    });
+
+    const patch = calls.find((c) => c.method === "PATCH" && c.url.includes("/services/"));
+    expect(patch?.url).toContain("/services/acme-ledger-0000app1");
+    expect(result.providerDeploymentId).toContain(":acme-ledger-0000app1:");
+  });
+
   it("points a brand new service at the image being built", async () => {
     serve([
       [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
@@ -244,6 +265,145 @@ describe("deploy", () => {
 
     await provider().deploy(input);
     expect(calls.some((c) => c.url.includes("setIamPolicy"))).toBe(false);
+  });
+});
+
+/**
+ * A deploy carries a change to the app's variables, never the whole set: the
+ * values live with Google, and a deploy from a machine with no `.env` used to
+ * replace production's with nothing. And they wait, with the build, rather
+ * than meeting the old code.
+ */
+describe("variables on a redeploy", () => {
+  const withEnv = (env: Array<{ name: string; value: string }>) =>
+    serviceAt("older-image", {
+      trafficStatuses: [{ type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 }],
+      template: { labels: {}, containers: [{ image: "older-image", env }] },
+    });
+
+  const written = () => {
+    const patch = calls.find((c) => c.method === "PATCH" && c.url.includes("/services/"));
+    return patch?.body as {
+      traffic: Array<{ type: string; revision?: string; percent: number }>;
+      template: { containers: Array<{ env: Array<{ name: string; value: string }> }> };
+    };
+  };
+
+  it("keeps every variable when the deploy brings none", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET"
+            ? withEnv([
+                { name: "API_KEY", value: "k1" },
+                { name: "DATABASE_URL", value: "postgres://prod" },
+              ])
+            : {},
+      ],
+    ]);
+
+    await provider().deploy({ ...input, env: { set: {}, unset: [] } });
+
+    expect(written().template.containers[0]?.env).toEqual([
+      { name: "API_KEY", value: "k1" },
+      { name: "DATABASE_URL", value: "postgres://prod" },
+    ]);
+  });
+
+  it("changes what it names, and takes away only what it is told to", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET"
+            ? withEnv([
+                { name: "API_KEY", value: "k1" },
+                { name: "DATABASE_URL", value: "postgres://prod" },
+                { name: "OLD_FLAG", value: "1" },
+              ])
+            : {},
+      ],
+    ]);
+
+    await provider().deploy({
+      ...input,
+      env: { set: { API_KEY: "k2" }, unset: ["OLD_FLAG"] },
+    });
+
+    expect(written().template.containers[0]?.env).toEqual([
+      { name: "API_KEY", value: "k2" },
+      { name: "DATABASE_URL", value: "postgres://prod" },
+    ]);
+  });
+
+  it("holds the new variables on a revision that takes no requests", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET" ? withEnv([{ name: "DB_URL", value: "postgres://prod" }]) : {},
+      ],
+    ]);
+
+    await provider().deploy({
+      ...input,
+      env: { set: { DATABASE_URL: "postgres://prod" }, unset: ["DB_URL"] },
+    });
+
+    // Requests stay on what is serving now; the renamed variable never meets
+    // the code that still reads the old name.
+    expect(written().traffic).toEqual([
+      {
+        type: "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+        revision: "acme-ledger-00001",
+        percent: 100,
+      },
+    ]);
+  });
+
+  it("keeps holding to what serves when an earlier deploy is still waiting", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET"
+            ? serviceAt("older-image", {
+                // A revision holding variables for a build is the newest ready
+                // one, but it is not the one answering.
+                latestReadyRevision: "acme-ledger-00002",
+                trafficStatuses: [
+                  {
+                    type: "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+                    revision: "acme-ledger-00001",
+                    percent: 100,
+                  },
+                ],
+              })
+            : {},
+      ],
+    ]);
+
+    await provider().deploy(input);
+
+    expect(written().traffic[0]?.revision).toBe("acme-ledger-00001");
+  });
+
+  it("sends a brand new service's requests to its newest revision", async () => {
+    serve([
+      [/cloudbuild.*\/builds$/, () => ({ metadata: { build: building } })],
+      [/run\.googleapis/, (m) => (m === "GET" ? new Response("", { status: 404 }) : {})],
+    ]);
+
+    await provider().deploy(input);
+
+    expect(written().traffic).toEqual([
+      { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 },
+    ]);
   });
 });
 
@@ -291,6 +451,10 @@ describe("getStatus", () => {
     ]);
     expect(body.template.labels["cira-build"]).toBe("b-1");
     expect(result.status).toBe("deploying");
+    // The new code, with the variables held for it, is what takes requests.
+    expect((patch?.body as { traffic: unknown }).traffic).toEqual([
+      { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 },
+    ]);
   });
 
   it("does not roll the same build out twice", async () => {

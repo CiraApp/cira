@@ -55,7 +55,7 @@ export function canAccessApp(args: {
   access: readonly AppAccess[];
 }): boolean {
   const { principal, app, access } = args;
-  const { userId, memberships, teamIds } = principal;
+  const { userId, memberships } = principal;
 
   const membership = membershipIn(memberships, userId, app.spaceId);
   if (membership === undefined) return false;
@@ -66,27 +66,46 @@ export function canAccessApp(args: {
   // Admins and owners administer the whole space, so they can see every app.
   if (roleAtLeast(membership.role, "admin")) return true;
 
-  return access.some((rule) => {
-    if (rule.appId !== app.id) return false;
-    if (rule.type === "space") return rule.targetId === app.spaceId;
-    if (rule.type === "team") return teamIds.includes(rule.targetId);
-    return rule.targetId === userId;
-  });
+  return access.some((rule) => grantReaches(rule, app, principal));
 }
 
-/** Can this user change an app's settings, access, or deployments? */
-export function canManageApp(args: {
-  userId: UserId;
-  app: App;
-  memberships: readonly Membership[];
-}): boolean {
-  const { userId, app, memberships } = args;
+/** Whether one grant on this app names this person, directly or by a team. */
+function grantReaches(rule: AppAccess, app: App, principal: Principal): boolean {
+  if (rule.appId !== app.id) return false;
+  if (rule.type === "space") return rule.targetId === app.spaceId;
+  if (rule.type === "team") return principal.teamIds.includes(rule.targetId);
+  return rule.targetId === principal.userId;
+}
 
-  const membership = membershipIn(memberships, userId, app.spaceId);
+/**
+ * Can this user change an app: deploy it, set its variables, decide who sees
+ * it, switch its workers on?
+ *
+ * Its owner and the space's admins always can. Anyone else needs a grant that
+ * says `manage`, which is how a team of engineers shares one app without
+ * routing every deploy through one person. A `manage` grant to the whole
+ * space is refused where grants are made, so this can never quietly become
+ * "everyone may redeploy payroll".
+ */
+export function canManageApp(args: {
+  principal: Principal;
+  app: App;
+  access: readonly AppAccess[];
+}): boolean {
+  const { principal, app, access } = args;
+
+  const membership = membershipIn(principal.memberships, principal.userId, app.spaceId);
   if (membership === undefined) return false;
 
-  if (app.ownerUserId === userId) return true;
-  return roleAtLeast(membership.role, "admin");
+  if (app.ownerUserId === principal.userId) return true;
+  if (roleAtLeast(membership.role, "admin")) return true;
+
+  return access.some(
+    (rule) =>
+      rule.level === "manage" &&
+      rule.type !== "space" &&
+      grantReaches(rule, app, principal),
+  );
 }
 
 /** Can this user invite people into the space? */

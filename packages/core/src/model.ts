@@ -131,16 +131,27 @@ export interface Service {
  */
 export type AccessType = "user" | "space" | "team";
 
+/**
+ * What a grant allows. `use` opens the app and runs what it can do; `manage`
+ * also deploys it, sets its variables and decides who else may use it.
+ */
+export type AccessLevel = "use" | "manage";
+
 export interface AppAccess {
   id: string;
   appId: AppId;
   type: AccessType;
   /** A UserId for `user`, a SpaceId for `space`, a TeamId for `team`. */
   targetId: string;
+  level: AccessLevel;
 }
 
+/**
+ * `superseded` is a deploy a newer one of the same app replaced before it
+ * finished: never rolled out, and not a failure.
+ */
 export type DeploymentStatus =
-  "queued" | "building" | "deploying" | "live" | "failed" | "removed";
+  "queued" | "building" | "deploying" | "live" | "failed" | "removed" | "superseded";
 
 export interface Deployment {
   id: string;

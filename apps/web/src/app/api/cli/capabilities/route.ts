@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apps, db, memberships } from "@cira/db";
+import { apps, db } from "@cira/db";
+import { userManages } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { analyzeAppSource } from "@/lib/capability-analysis";
 
@@ -40,19 +41,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  // Analysis writes to the app, so it takes the same membership the deploy
-  // did. An app the caller is not in reads as one that does not exist.
-  const [app] = await db()
-    .select({
-      id: apps.id,
-      name: apps.name,
-      spaceId: apps.spaceId,
-      description: apps.description,
-    })
+  // Analysis rewrites what the app is said to do - names, descriptions and
+  // input shapes that agents are then handed - so it takes the right to
+  // manage the app, exactly as the deploy it follows did. An app the caller
+  // may not manage reads as one that does not exist.
+  const [row] = await db()
+    .select()
     .from(apps)
-    .innerJoin(memberships, eq(memberships.spaceId, apps.spaceId))
-    .where(and(eq(apps.id, parsed.data.appId), eq(memberships.userId, user.id)))
+    .where(eq(apps.id, parsed.data.appId))
     .limit(1);
+  const app =
+    row !== undefined && (await userManages(user, row))
+      ? { id: row.id, name: row.name, spaceId: row.spaceId, description: row.description }
+      : undefined;
 
   if (app === undefined) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });

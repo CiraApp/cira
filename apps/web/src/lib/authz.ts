@@ -149,6 +149,10 @@ export async function listVisibleApps(spaceSlug: string): Promise<App[]> {
 
 export interface AppContext extends SpaceContext {
   app: App;
+  /** Every grant on the app, already read to decide whether it opens. */
+  grants: AppAccess[];
+  /** Whether this user may change the app, by the same grants. */
+  manages: boolean;
 }
 
 /** The app, if this user may open it. */
@@ -183,7 +187,16 @@ export async function requireAppAccess(
   // An app the user cannot open is indistinguishable from one that is not there.
   if (!allowed) throw new NotFoundError("App");
 
-  return { ...ctx, app };
+  return {
+    ...ctx,
+    app,
+    grants: grants as AppAccess[],
+    manages: canManageApp({
+      principal: ctx.principal,
+      app,
+      access: grants as AppAccess[],
+    }),
+  };
 }
 
 /** The app, if this user may change its settings, access or deployments. */
@@ -192,14 +205,7 @@ export async function requireAppManage(
   appSlug: string,
 ): Promise<AppContext> {
   const ctx = await requireAppAccess(spaceSlug, appSlug);
-
-  const allowed = canManageApp({
-    userId: ctx.user.id,
-    app: ctx.app,
-    memberships: ctx.memberships,
-  });
-
-  if (!allowed) throw new ForbiddenError("manage this app");
+  if (!ctx.manages) throw new ForbiddenError("manage this app");
   return ctx;
 }
 

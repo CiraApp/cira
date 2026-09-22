@@ -1,6 +1,7 @@
 import {
   DEFAULT_LIMITS,
   RuntimeLogsError,
+  applyEnvChange,
   type AppDeploymentInput,
   type DeployableService,
   type DeploymentLogLine,
@@ -116,6 +117,8 @@ interface RunService {
   uri?: string;
   latestReadyRevision?: string;
   latestCreatedRevision?: string;
+  /** Which revisions are actually receiving requests, as Google reports it. */
+  trafficStatuses?: Array<{ type?: string; revision?: string; percent?: number }>;
   terminalCondition?: { type?: string; state?: string; message?: string };
   template?: {
     labels?: Record<string, string>;
@@ -156,6 +159,12 @@ interface ServiceSpec {
   labels: Record<string, string>;
   /** Instances kept running when nobody is asking. Zero unless paid for. */
   minInstances?: number;
+  /**
+   * Where requests go: the newest revision, or one named revision held while
+   * the next one waits for its build. Always said, because a write that leaves
+   * it out sends everything to the newest revision.
+   */
+  traffic: "latest" | { revision: string };
 }
 
 export class CloudRunProvider implements DeploymentProvider {
@@ -176,11 +185,16 @@ export class CloudRunProvider implements DeploymentProvider {
   }
 
   async deploy(app: AppDeploymentInput): Promise<DeploymentResult> {
-    const service = serviceName({
-      spaceSlug: app.spaceSlug,
-      appSlug: app.appSlug,
-      appId: app.appId,
-    });
+    // An app keeps the name it was first deployed under. Renaming the app, or
+    // its space, changes the slugs this is built from, and a new name here is
+    // a second service beside the first, which goes on serving old code.
+    const service =
+      app.service ??
+      serviceName({
+        spaceSlug: app.spaceSlug,
+        appSlug: app.appSlug,
+        appId: app.appId,
+      });
     const tag = imageTag(app.source.uri);
     const archive = parseArchiveUri(app.source.uri);
 
@@ -205,25 +219,26 @@ export class CloudRunProvider implements DeploymentProvider {
     // lets the rest of the deploy stay exactly as it was.
     const buildId = await this.startBuild(archive, planned);
 
-    // The environment is written now, while Cira is holding it, because this
-    // is the only moment it has it: Cira stores no values, so nothing later in
-    // the deploy could put them back.
-    //
-    // The image deliberately stays as it is. Pointing a live service at an
-    // image that is still being built would replace a working revision with
-    // one that cannot start, so a redeploy would take the app down for the
-    // length of its own build. The swap happens in `getStatus`, once there is
-    // something to swap to.
     // An app none of whose parts takes the port is only workers and
     // scheduled runs. It has no service to write, and no address.
     const web = app.services.some((part) => part.ingress);
+    const current = web ? await this.getService(service) : null;
 
-    // Workers and scheduled runs get the environment now, for the same reason
-    // the service does below: nothing later in the deploy will have it.
+    // What the app runs with next: what Google already holds for it, changed
+    // by exactly what this deploy says. Never only what one machine sent -
+    // that is how a teammate's clone with no `.env` used to wipe production.
+    const had =
+      current !== null ? envOf(current) : await this.processes.currentEnv(service);
+    const env = applyEnvChange(had, app.env);
+
+    // Beside a web service, the next variables wait on that service (below)
+    // and reach the processes with the new build; with none, they have
+    // nowhere else to wait.
     const writeProcesses = this.processes.deploy({
       service,
       processes: app.processes,
-      env: app.env,
+      env,
+      holdEnv: current !== null,
       parts: new Map(
         app.services.map((part) => [
           part.slug,
@@ -250,7 +265,6 @@ export class CloudRunProvider implements DeploymentProvider {
     // reported on its page rather than standing in the way of the deploy.
     await writeProcesses.catch(() => undefined);
 
-    const current = await this.getService(service);
     const serving = current?.template?.containers ?? [];
     // By name when there are several, and by position when there is one -
     // because a lone container is written without a name, so there is nothing
@@ -258,6 +272,16 @@ export class CloudRunProvider implements DeploymentProvider {
     // does not exist yet, which is the whole thing the carry-forward prevents.
     const running = new Map(serving.map((c) => [c.name ?? "", c.image]));
 
+    // The variables are written now, while Cira is holding them, because this
+    // is the only moment it has them: Cira stores no values, so nothing later
+    // in the deploy could put them back.
+    //
+    // Written onto the image that is already running, into a revision that
+    // takes no requests: traffic stays on whatever is serving now. The new
+    // variables and the new code go live together in `getStatus`, once the
+    // build exists. A build that fails leaves the app exactly as it was, which
+    // is what the email about it says.
+    const holding = current === null ? null : servingRevision(current);
     await this.putService(service, {
       minInstances: app.minInstances ?? 0,
       containers: planned.map((part) => ({
@@ -269,8 +293,9 @@ export class CloudRunProvider implements DeploymentProvider {
         port: part.ingress ? (part.port ?? CONTAINER_PORT) : part.port,
         ingress: part.ingress,
       })),
-      env: app.env,
+      env,
       labels: current?.template?.labels ?? {},
+      traffic: holding === null ? "latest" : { revision: holding },
     });
 
     return {
@@ -312,14 +337,18 @@ export class CloudRunProvider implements DeploymentProvider {
         ? { providerDeploymentId: deploymentId, status: "live", url: null }
         : { providerDeploymentId: deploymentId, status: "removed", url: null };
     }
-    await this.processes.swap({ service, tag, buildId }).catch(() => undefined);
-
     const current = await this.getService(service);
     if (current === null) {
       // The build produced an image for a service that no longer exists,
       // which means someone removed the app while it was deploying.
       return { providerDeploymentId: deploymentId, status: "removed", url: null };
     }
+
+    // The processes move onto the build with the variables the service has
+    // been holding for it, so code and configuration arrive together.
+    await this.processes
+      .swap({ service, tag, buildId, env: envOf(current) })
+      .catch(() => undefined);
 
     if (current.template?.labels?.[BUILD_LABEL] !== buildId) {
       // The environment is read back off the service rather than carried from
@@ -349,6 +378,8 @@ export class CloudRunProvider implements DeploymentProvider {
         // Read back rather than remembered, like the environment above: a
         // warm app must not go cold because its build finished.
         minInstances: current.template?.scaling?.minInstanceCount ?? 0,
+        // The new code, with the variables held for it, takes the requests.
+        traffic: "latest",
       });
 
       // Changing the template starts a new revision. Its readiness is the next
@@ -573,6 +604,7 @@ export class CloudRunProvider implements DeploymentProvider {
       template?: Record<string, unknown>;
       labels?: Record<string, string>;
       ingress?: string;
+      traffic?: unknown[];
     }>(this.serviceUrl(service), { method: "GET" });
 
     const template = current.template ?? {};
@@ -582,6 +614,9 @@ export class CloudRunProvider implements DeploymentProvider {
       body: JSON.stringify({
         labels: current.labels,
         ingress: current.ingress,
+        // Kept as it is: warming an app mid-deploy must not send its requests
+        // to a revision that is only holding variables for a build.
+        ...(current.traffic === undefined ? {} : { traffic: current.traffic }),
         template: {
           ...template,
           scaling: { ...scaling, minInstanceCount: Math.max(0, instances) },
@@ -629,6 +664,10 @@ export class CloudRunProvider implements DeploymentProvider {
    * not a hazard, so it is reported rather than allowed to block the rest.
    */
   async teardown(service: string): Promise<{ images: boolean }> {
+    // Workers, scheduled runs and their timetables first. They are what keeps
+    // costing money and keeps running with the app's secrets, and once the
+    // service is gone nothing in Cira would ever point at them again.
+    await this.processes.removeAll(service);
     await this.removeService(service);
 
     const access = await this.tokens.accessToken();
@@ -824,6 +863,15 @@ export class CloudRunProvider implements DeploymentProvider {
       body: JSON.stringify({
         labels: { "managed-by": "cira" },
         ingress: "INGRESS_TRAFFIC_ALL",
+        traffic: [
+          spec.traffic === "latest"
+            ? { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 }
+            : {
+                type: "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+                revision: spec.traffic.revision,
+                percent: 100,
+              },
+        ],
         template: {
           labels: spec.labels,
           // Extra CPU while the container is starting and nothing is being
@@ -1022,6 +1070,23 @@ function dockerSteps(image: string, dockerfile: string): unknown[] {
 }
 
 /** The environment a service is already running with. */
+/**
+ * The revision answering requests right now, by its short name, or null when
+ * that cannot be told - in which case the newest revision is the safe answer,
+ * because it is what a service with no explicit traffic serves anyway.
+ */
+export function servingRevision(service: RunService): string | null {
+  const all = service.trafficStatuses ?? [];
+  const whole = all.find((t) => (t.percent ?? 0) === 100);
+  if (whole === undefined) return null;
+  const name =
+    whole.type === "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
+      ? whole.revision
+      : service.latestReadyRevision;
+  if (name === undefined || name === "") return null;
+  return name.split("/").pop() ?? null;
+}
+
 function envOf(service: RunService): Record<string, string> {
   const entries = service.template?.containers?.[0]?.env ?? [];
   const env: Record<string, string> = {};

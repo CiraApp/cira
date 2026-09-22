@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, eq, ne, notInArray } from "drizzle-orm";
+import { and, eq, gt, ne, notInArray } from "drizzle-orm";
 import { apps, db, deployments } from "@cira/db";
 import type { Deployment, DeploymentStatus } from "@cira/core";
-import { deploymentProvider, isTerminal } from "@cira/deploy";
+import { TERMINAL_STATUSES, deploymentProvider, isTerminal } from "@cira/deploy";
 import { checkStaleness } from "@/lib/deployment-staleness";
 import { deployFailedMessage } from "@/lib/messages";
 import { notifyManagers } from "@/lib/notify";
@@ -18,6 +18,16 @@ import { notifyManagers } from "@/lib/notify";
 export async function reconcileDeployment(deployment: Deployment): Promise<Deployment> {
   const verdict = checkStaleness(deployment);
   if (verdict.action === "settled") return deployment;
+
+  // Asking the provider about a deploy is also what rolls it out once its
+  // build is done. A deploy a newer one replaced must never get that far, or
+  // its build finishing late would take production back to older code.
+  if (await isSuperseded(deployment)) {
+    return recordDeploymentStatus(deployment, {
+      status: "superseded",
+      url: deployment.url,
+    });
+  }
 
   if (verdict.action === "declare-failed") {
     return recordDeploymentStatus(deployment, { status: "failed", url: deployment.url });
@@ -61,13 +71,14 @@ export async function recordDeploymentStatus(
     .where(
       and(
         eq(deployments.id, deployment.id),
-        notInArray(deployments.status, ["live", "failed", "removed"]),
+        notInArray(deployments.status, [...TERMINAL_STATUSES]),
       ),
     )
     .returning({ id: deployments.id });
   if (moved.length === 0) return deployment;
 
-  if (isTerminal(next.status)) {
+  // A replaced deploy says nothing about the app: the one replacing it does.
+  if (isTerminal(next.status) && next.status !== "superseded") {
     await database
       .update(apps)
       .set({ status: next.status === "live" ? "live" : "failed", updatedAt: now })
@@ -102,6 +113,42 @@ export async function recordDeploymentStatus(
   return { ...deployment, status: next.status, url: next.url };
 }
 
+/** Whether a newer deploy of the same app has started since this one. */
+async function isSuperseded(deployment: Deployment): Promise<boolean> {
+  const [newer] = await db()
+    .select({ id: deployments.id })
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.appId, deployment.appId),
+        gt(deployments.createdAt, deployment.createdAt),
+      ),
+    )
+    .limit(1);
+  return newer !== undefined;
+}
+
+/**
+ * Mark every deploy of an app still in flight, other than this one, as
+ * replaced by it. Called the moment a deploy starts, so there is never a
+ * window in which two builds of one app are both waiting to be rolled out.
+ */
+export async function supersedeEarlierDeploys(
+  appId: string,
+  deploymentId: string,
+): Promise<void> {
+  await db()
+    .update(deployments)
+    .set({ status: "superseded", updatedAt: new Date() })
+    .where(
+      and(
+        eq(deployments.appId, appId),
+        ne(deployments.id, deploymentId),
+        notInArray(deployments.status, [...TERMINAL_STATUSES]),
+      ),
+    );
+}
+
 /**
  * Settle deploys that were plainly abandoned, without asking the provider.
  *
@@ -120,7 +167,7 @@ export async function settleAbandonedDeploys(spaceId: string): Promise<void> {
     .where(
       and(
         eq(apps.spaceId, spaceId),
-        notInArray(deployments.status, ["live", "failed", "removed"]),
+        notInArray(deployments.status, [...TERMINAL_STATUSES]),
       ),
     );
 

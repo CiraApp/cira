@@ -182,21 +182,27 @@ export class CloudRunProcesses {
   ) {}
 
   /**
-   * Create or update every declared process with the environment in hand, and
-   * remove the ones the repository no longer declares. Existing processes keep
-   * running their current image and command until the build is ready; new ones
-   * start from Google's placeholder, switched off.
+   * Create or update every declared process, and remove the ones the
+   * repository no longer declares. Existing processes keep running their
+   * current image and command until the build is ready; new ones start from
+   * Google's placeholder, switched off.
+   *
+   * `holdEnv` keeps an existing process on the variables it already has. An
+   * app with a web service holds its next variables on that service until the
+   * build is ready, and they reach the processes at `swap`, together with the
+   * code that expects them - so a renamed variable never meets the old code.
+   * An app that is only processes has nowhere else to hold them, so they are
+   * written now.
    */
   async deploy(args: {
     service: string;
     processes: readonly ProcessSpec[];
     env: Readonly<Record<string, string>>;
+    holdEnv: boolean;
     /** Per service slug: how its image is built, and its part of the image name. */
     parts: ReadonlyMap<string, { builder: Builder; imagePart: string }>;
   }): Promise<void> {
-    const env = Object.entries(args.env)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, value]) => ({ name, value }));
+    const env = envList(args.env);
 
     const existingJobs = await this.jobsOf(args.service);
     const existingPools = await this.poolsOf(args.service);
@@ -230,7 +236,7 @@ export class CloudRunProcesses {
                   ...(current?.command !== undefined
                     ? { command: current.command, args: current.args ?? [] }
                     : {}),
-                  env,
+                  env: args.holdEnv && current !== undefined ? (current.env ?? []) : env,
                   resources: resources(process.memoryMiB),
                 },
               ],
@@ -261,7 +267,7 @@ export class CloudRunProcesses {
                 ...(current?.command !== undefined
                   ? { command: current.command, args: current.args ?? [] }
                   : {}),
-                env,
+                env: args.holdEnv && current !== undefined ? (current.env ?? []) : env,
                 resources: resources(process.memoryMiB),
               },
             ],
@@ -292,7 +298,13 @@ export class CloudRunProcesses {
    * the repository declares. Returns whether anything was still to move, so
    * a caller can tell "done" from "just done".
    */
-  async swap(args: { service: string; tag: string; buildId: string }): Promise<boolean> {
+  async swap(args: {
+    service: string;
+    tag: string;
+    buildId: string;
+    /** The variables to move onto, when they were held elsewhere during the build. */
+    env?: Readonly<Record<string, string>>;
+  }): Promise<boolean> {
     let moved = false;
     for (const job of await this.jobsOf(args.service)) {
       if (job.template?.labels?.[BUILD_LABEL] === args.buildId) continue;
@@ -455,6 +467,25 @@ export class CloudRunProcesses {
       await this.remove(this.poolUrl(leaf(pool.name)));
   }
 
+  /**
+   * The variables this app's processes run with, for an app with no web
+   * service to read them from. Read back from Google, where they are kept;
+   * Cira holds none of its own.
+   */
+  async currentEnv(service: string): Promise<Record<string, string>> {
+    const pools = await this.poolsOf(service);
+    const jobs = await this.jobsOf(service);
+    const container =
+      pools[0]?.template?.containers?.[0] ?? jobs[0]?.template?.template?.containers?.[0];
+    const env: Record<string, string> = {};
+    for (const item of container?.env ?? []) {
+      if (typeof item.name === "string" && typeof item.value === "string") {
+        env[item.name] = item.value;
+      }
+    }
+    return env;
+  }
+
   /** Whether the app has any processes at all, for an app with no service. */
   async any(service: string): Promise<boolean> {
     return (await this.jobsOf(service)).length + (await this.poolsOf(service)).length > 0;
@@ -598,7 +629,7 @@ export class CloudRunProcesses {
   private onBuild(
     container: Container,
     annotations: Record<string, string> | undefined,
-    args: { service: string; tag: string },
+    args: { service: string; tag: string; env?: Readonly<Record<string, string>> },
   ): Container {
     const part = annotations?.[PART] ?? "";
     const builder: Builder =
@@ -608,6 +639,7 @@ export class CloudRunProcesses {
       ...container,
       image: this.imageFor(args.service, args.tag, part === "" ? undefined : part),
       ...(command === undefined ? {} : startCommand(command, builder)),
+      ...(args.env === undefined ? {} : { env: envList(args.env) }),
     };
   }
 
@@ -688,6 +720,15 @@ function failure(status: number, code: string): ProcessError {
     );
   }
   return new ProcessError(`Google refused the change (${status}).`, "failed", status);
+}
+
+/** Variables as Cloud Run takes them, in a stable order. */
+function envList(
+  env: Readonly<Record<string, string>>,
+): Array<{ name: string; value: string }> {
+  return Object.entries(env)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => ({ name, value }));
 }
 
 async function googleReason(response: Response): Promise<string> {

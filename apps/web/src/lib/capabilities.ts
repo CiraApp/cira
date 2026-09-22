@@ -8,25 +8,23 @@ import {
   capabilities,
   db,
   deployments,
-  memberships,
   spaces,
 } from "@cira/db";
 import {
   canAccessApp,
-  canManageApp,
   currentReach,
   newId,
   reconcileCapabilities,
   type App,
   type AppAccess,
   type Capability,
-  type Membership,
   type User,
 } from "@cira/core";
 import type { AnalyzedCapability } from "@/lib/capability-grounding";
 import { humanize } from "@/lib/ask/words";
 import { refusedMessage } from "@/lib/messages";
 import { notifyManagers } from "@/lib/notify";
+import { userManages } from "@/lib/app-rights";
 import { principalFor } from "@/lib/principal";
 
 /**
@@ -135,16 +133,7 @@ export async function updateCapabilityEnabled(
 
   if (row === undefined) return { ok: false, error: NO_SUCH_CAPABILITY };
 
-  const mine = await database
-    .select()
-    .from(memberships)
-    .where(eq(memberships.userId, user.id));
-
-  const allowed = canManageApp({
-    userId: user.id,
-    app: toApp(row.app),
-    memberships: mine as Membership[],
-  });
+  const allowed = await userManages(user, toApp(row.app));
 
   // The same sentence the missing-row case returns, so this cannot be used to
   // learn that a capability exists.

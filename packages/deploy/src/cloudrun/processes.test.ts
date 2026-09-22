@@ -45,6 +45,7 @@ class FakeGoogle {
   executions = new Map<string, Doc[]>();
   service: Doc | null = null;
   buildStatus = "SUCCESS";
+  builds = 0;
   /** Out-of-memory lines Cloud Run has logged, by worker pool. */
   outOfMemory = new Map<string, string>();
 
@@ -68,9 +69,13 @@ class FakeGoogle {
     }
 
     if (u.host.startsWith("cloudbuild")) {
-      return method === "POST"
-        ? json({ metadata: { build: { id: "b-1" } } })
-        : json({ id: "b-1", status: this.buildStatus });
+      // Every build its own id, as Google gives them: a second deploy is a
+      // second build, and must not look like the first one finishing again.
+      if (method === "POST") {
+        this.builds += 1;
+        return json({ metadata: { build: { id: `b-${this.builds}` } } });
+      }
+      return json({ id: path.split("/").pop(), status: this.buildStatus });
     }
 
     if (u.host.startsWith("cloudscheduler")) {
@@ -108,6 +113,24 @@ class FakeGoogle {
 
     // Cloud Run.
     if (path.endsWith("/services/" + SERVICE)) {
+      if (method === "PATCH") {
+        this.service = {
+          uri: "https://acme-sync.a.run.app",
+          latestReadyRevision: "acme-sync-00001",
+          latestCreatedRevision: "acme-sync-00001",
+          terminalCondition: { state: "CONDITION_SUCCEEDED" },
+          trafficStatuses: [
+            { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 },
+          ],
+          ...(body as Doc),
+        };
+        return json({ name: "operations/service" });
+      }
+      if (method === "DELETE") {
+        const had = this.service !== null;
+        this.service = null;
+        return had ? json({}) : missing();
+      }
       return this.service === null ? missing() : json(this.service);
     }
     const kinds: Array<[string, Map<string, Doc>, string]> = [
@@ -196,7 +219,7 @@ const scriptApp = (processes: ProcessSpec[]): AppDeploymentInput => ({
   services: [
     { slug: "app", sourcePath: "", dockerfile: null, port: null, ingress: false },
   ],
-  env: { DATABASE_URL: "postgres://db/app" },
+  env: { set: { DATABASE_URL: "postgres://db/app" }, unset: [] },
   processes,
 });
 
@@ -412,6 +435,77 @@ describe("an app that is only a scheduled run and a worker", () => {
     const started = await provider().deploy(scriptApp([report, worker]));
     await provider().remove(started.providerDeploymentId);
     expect(google.jobs.size + google.pools.size + google.schedules.size).toBe(0);
+  });
+
+  /**
+   * The path deleting an app actually takes. It used to take down only the
+   * service and the images, leaving every worker running and billing, and
+   * every timetable starting code nobody could see.
+   */
+  it("takes every process down when the app is torn down", async () => {
+    await provider().deploy(scriptApp([report, { ...worker, enabled: true }]));
+    await provider().teardown(SERVICE);
+    expect(google.jobs.size + google.pools.size + google.schedules.size).toBe(0);
+  });
+});
+
+/**
+ * An app with a web service and a worker shares one set of variables. The
+ * next set waits on the service while the build runs, and reaches the worker
+ * together with the code that reads it.
+ */
+describe("an app with a web service and a worker", () => {
+  const webApp = (env: AppDeploymentInput["env"]): AppDeploymentInput => ({
+    ...scriptApp([{ ...worker, enabled: true }]),
+    services: [
+      { slug: "app", sourcePath: "", dockerfile: null, port: null, ingress: true },
+    ],
+    env,
+  });
+  const serviceEnv = () =>
+    (google.service?.template as { containers: Array<{ env: unknown }> }).containers[0]
+      ?.env;
+
+  it("moves the worker onto new variables only with the new build", async () => {
+    const first = await provider().deploy(
+      webApp({ set: { DB_URL: "postgres://old" }, unset: [] }),
+    );
+    await provider().getStatus(first.providerDeploymentId);
+    expect(poolContainer("worker-0000app1").env).toEqual([
+      { name: "DB_URL", value: "postgres://old" },
+    ]);
+
+    // The next deploy renames the variable. Its build is still running.
+    google.buildStatus = "WORKING";
+    const second = await provider().deploy(
+      webApp({ set: { DATABASE_URL: "postgres://new" }, unset: ["DB_URL"] }),
+    );
+    expect(serviceEnv()).toEqual([{ name: "DATABASE_URL", value: "postgres://new" }]);
+    // The worker still runs the old code, so it keeps the name that code reads.
+    expect(poolContainer("worker-0000app1").env).toEqual([
+      { name: "DB_URL", value: "postgres://old" },
+    ]);
+
+    google.buildStatus = "SUCCESS";
+    await provider().getStatus(second.providerDeploymentId);
+    expect(poolContainer("worker-0000app1").env).toEqual([
+      { name: "DATABASE_URL", value: "postgres://new" },
+    ]);
+  });
+
+  it("keeps an app of only processes on its variables when a deploy brings none", async () => {
+    await provider().deploy(scriptApp([report, worker]));
+    await provider().deploy({
+      ...scriptApp([report, worker]),
+      env: { set: {}, unset: [] },
+    });
+
+    expect(jobContainer("report-0000app1").env).toEqual([
+      { name: "DATABASE_URL", value: "postgres://db/app" },
+    ]);
+    expect(poolContainer("worker-0000app1").env).toEqual([
+      { name: "DATABASE_URL", value: "postgres://db/app" },
+    ]);
   });
 });
 

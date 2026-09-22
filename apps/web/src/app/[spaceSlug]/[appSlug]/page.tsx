@@ -4,7 +4,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { listMySpaces } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
-import { DEFAULT_LIMITS, canManageApp, describeAppAllowance } from "@cira/core";
+import { DEFAULT_LIMITS, describeAppAllowance } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
 import { appSlugMovedTo, deploymentHistory, listServicesForApp } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
@@ -69,11 +69,7 @@ export default async function AppPage({
 
     // Only someone who can change access is shown it; for everyone else the
     // page stays the simple "open this app" screen it should be.
-    const manages = canManageApp({
-      userId: ctx.user.id,
-      app,
-      memberships: ctx.memberships,
-    });
+    const manages = ctx.manages;
     const access = manages ? await loadAccess(spaceSlug, appSlug) : null;
     const plan = await planForSpace(ctx.space.id);
     // Only to whoever can manage the app: what it is configured with is part of

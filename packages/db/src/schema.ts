@@ -33,6 +33,7 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
   "live",
   "failed",
   "removed",
+  "superseded",
 ]);
 
 export const accessTypeEnum = pgEnum("access_type", ["user", "space", "team"]);
@@ -354,6 +355,11 @@ export const appAccess = pgTable(
     type: accessTypeEnum("type").notNull(),
     /** A user id for `user`, a space id for `space`, a team id for `team`. */
     targetId: text("target_id").notNull(),
+    /**
+     * `use` opens the app; `manage` also deploys it, sets its variables and
+     * changes who sees it. Checked in the database as well as the type.
+     */
+    level: text("level").$type<"use" | "manage">().notNull().default("use"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

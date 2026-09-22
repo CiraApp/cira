@@ -3,7 +3,6 @@ import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import { appAccess, apps, db, processes, spaces, users } from "@cira/db";
 import {
-  canManageApp,
   describeMemory,
   visibleApps,
   type App,
@@ -17,6 +16,7 @@ import {
 import { deploymentProvider } from "@cira/deploy";
 import { toApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
+import { principalManages } from "@/lib/app-rights";
 import { principalFor } from "@/lib/principal";
 import { processesForPage, type ProcessView } from "@/lib/processes";
 import { latestDeployment } from "@/lib/queries";
@@ -213,11 +213,7 @@ async function report(
   origin: string,
 ): Promise<Record<string, unknown>> {
   const { app, spaceSlug, spaceName } = visible;
-  const manages = canManageApp({
-    userId: principal.userId,
-    app,
-    memberships: principal.memberships,
-  });
+  const manages = await principalManages(principal, app);
 
   const raw = await latestDeployment(app.id);
   // Asked the same way the app page asks, so the two cannot disagree.
@@ -279,6 +275,8 @@ function deploymentWords(deployment: Deployment | null): string {
       return "the last deploy failed";
     case "removed":
       return "removed";
+    case "superseded":
+      return "replaced by a newer deploy";
   }
 }
 

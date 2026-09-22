@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apps, db, memberships, spaces } from "@cira/db";
-import { canManageApp } from "@cira/core";
+import { apps, db, spaces } from "@cira/db";
+import { userManages } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { tearDownApp } from "@/lib/app-teardown";
 
@@ -13,8 +13,8 @@ import { tearDownApp } from "@/lib/app-teardown";
  * doors have to lead to the same place: a removal that differs by where it was
  * started from is one that leaves different things behind depending on the day.
  *
- * Managing rights, not membership. Deploying into a space is something any
- * member may do; removing what someone else deployed is not.
+ * Managing rights, not membership. Deploying a new app into a space is
+ * something any member may do; changing or removing one is for its managers.
  */
 export const maxDuration = 120;
 
@@ -48,23 +48,7 @@ export async function POST(request: Request) {
 
   // Not being able to see it and not being allowed to remove it give the same
   // answer, so this cannot be used to find out which apps exist.
-  const mine = await database
-    .select({ id: memberships.id, role: memberships.role, spaceId: memberships.spaceId })
-    .from(memberships)
-    .where(eq(memberships.userId, user.id));
-
-  const allowed =
-    found !== undefined &&
-    canManageApp({
-      userId: user.id,
-      app: found.app,
-      memberships: mine.map((m) => ({
-        id: m.id,
-        userId: user.id,
-        spaceId: m.spaceId,
-        role: m.role,
-      })),
-    });
+  const allowed = found !== undefined && (await userManages(user, found.app));
 
   if (!allowed || found === undefined) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });

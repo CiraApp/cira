@@ -6,7 +6,7 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
 
 describe("checkStaleness", () => {
   it("leaves a finished deploy alone, however old", () => {
-    for (const status of ["live", "failed", "removed"] as const) {
+    for (const status of ["live", "failed", "removed", "superseded"] as const) {
       expect(
         checkStaleness({ status, createdAt: ago(365 * 24 * 3600 * 1000) }, NOW).action,
       ).toBe("settled");
@@ -19,6 +19,14 @@ describe("checkStaleness", () => {
         "ask-provider",
       );
     }
+  });
+
+  it("keeps asking about a build that uses all twenty minutes it is allowed", () => {
+    // A build may run for twenty minutes, then the revision has to start and
+    // the watcher has to come round. None of that is abandonment.
+    expect(
+      checkStaleness({ status: "deploying", createdAt: ago(25 * 60_000) }, NOW).action,
+    ).toBe("ask-provider");
   });
 
   it("declares an abandoned deploy failed rather than leaving it spinning", () => {

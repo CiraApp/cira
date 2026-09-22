@@ -9,7 +9,7 @@ import {
   type ProcessState,
   type StoredProcess,
 } from "@cira/core";
-import { deploymentProvider } from "@cira/deploy";
+import { TERMINAL_STATUSES, deploymentProvider } from "@cira/deploy";
 import { syncQuantities } from "@/lib/billing";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import {
@@ -67,7 +67,7 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
   const inFlight = await db()
     .select()
     .from(deployments)
-    .where(notInArray(deployments.status, ["live", "failed", "removed"]));
+    .where(notInArray(deployments.status, [...TERMINAL_STATUSES]));
   for (const deployment of inFlight) {
     const settled = await reconcileDeployment(deployment as Deployment).catch(() => null);
     if (settled !== null && settled.status !== deployment.status)

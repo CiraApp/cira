@@ -1,9 +1,9 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { appAccess, db, memberships, teamMembers, teams, users } from "@cira/db";
 import { newId } from "@cira/core";
-import type { Role } from "@cira/core";
+import type { AccessLevel, Role } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -28,6 +28,8 @@ export interface AccessEntry {
   /** For a person: their name. For a team: its name. For everyone: the space. */
   label: string;
   detail: string | null;
+  /** Open only, or also deploy and configure. Always `use` for everyone. */
+  level: AccessLevel;
 }
 
 /**
@@ -100,6 +102,7 @@ export async function loadAccess(
         kind: "everyone",
         label: `Everyone at ${ctx.space.name}`,
         detail: people(memberRows.length),
+        level: "use",
       });
       continue;
     }
@@ -111,6 +114,7 @@ export async function loadAccess(
         kind: "team",
         label: team?.name ?? "A team that no longer exists",
         detail: team === undefined ? "Nobody" : people(team.size),
+        level: grant.level,
       });
       continue;
     }
@@ -121,6 +125,7 @@ export async function loadAccess(
       kind: "person",
       label: member?.user.name ?? "Someone no longer in this space",
       detail: member?.user.email ?? null,
+      level: grant.level,
     });
   }
 
@@ -244,6 +249,48 @@ export async function grantAccess(
   }
 }
 
+/**
+ * Let a person or a team manage this app as well as open it, or take that
+ * back. Managing is deploying it, setting its variables and deciding who else
+ * sees it, so it is never given to the whole space: "everyone may redeploy
+ * payroll" is not a setting anyone should be one click away from.
+ */
+export async function setAccessLevel(
+  spaceSlug: string,
+  appSlug: string,
+  grantId: string,
+  level: AccessLevel,
+): Promise<ActionResult<null>> {
+  try {
+    const ctx = await requireAppManage(spaceSlug, appSlug);
+    if (level !== "use" && level !== "manage") {
+      return { ok: false, error: "That is not a level of access." };
+    }
+    const database = db();
+
+    const [grant] = await database
+      .select({ type: appAccess.type })
+      .from(appAccess)
+      .where(and(eq(appAccess.id, grantId), eq(appAccess.appId, ctx.app.id)))
+      .limit(1);
+    if (grant === undefined) return { ok: false, error: "That access was removed." };
+    if (grant.type === "space" && level === "manage") {
+      return {
+        ok: false,
+        error: "Managing an app is given to people or teams, never to everyone at once.",
+      };
+    }
+
+    await database
+      .update(appAccess)
+      .set({ level })
+      .where(and(eq(appAccess.id, grantId), eq(appAccess.appId, ctx.app.id)));
+    return { ok: true, data: null };
+  } catch (error) {
+    return asActionError(error);
+  }
+}
+
 export async function revokeAccess(
   spaceSlug: string,
   appSlug: string,
@@ -271,12 +318,4 @@ function asActionError(error: unknown): ActionResult<never> {
     return { ok: false, error: "That app no longer exists." };
   }
   throw error;
-}
-
-export async function spaceMemberCount(spaceId: string): Promise<number> {
-  const rows = await db()
-    .select({ id: memberships.id })
-    .from(memberships)
-    .where(inArray(memberships.spaceId, [spaceId]));
-  return rows.length;
 }

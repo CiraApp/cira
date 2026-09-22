@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import type { DeploymentStatus } from "@cira/core";
 import { fetchBuildLogs, type LogsResult } from "@/lib/log-actions";
 import { SectionLink } from "./section-link";
 import { StatusDot } from "./status-dot";
@@ -12,13 +13,15 @@ export interface DeployRow {
   relative: string;
 }
 
-const LABEL: Record<string, string> = {
+/** Keyed by every status, so a new one cannot reach this list unlabelled. */
+const LABEL: Record<DeploymentStatus, string> = {
   live: "Deployed",
   failed: "Failed",
   removed: "Removed",
   queued: "Queued",
   building: "Building",
   deploying: "Deploying",
+  superseded: "Replaced by a newer deploy",
 };
 
 /**
@@ -90,7 +93,7 @@ export function DeploymentHistory({
                 aria-expanded={isOpen}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-sunken/50"
               >
-                <StatusDot status={d.status} label={LABEL[d.status] ?? d.status} />
+                <StatusDot status={d.status} label={LABEL[d.status as DeploymentStatus] ?? d.status} />
                 <span className="flex-1" />
                 <span className="tabular text-[12px] text-ink-subtle">{d.relative}</span>
                 <svg

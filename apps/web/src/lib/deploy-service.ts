@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, gt, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray } from "drizzle-orm";
 import {
   apps,
   appAccess,
@@ -14,16 +14,19 @@ import {
 } from "@cira/db";
 import {
   DEFAULT_LIMITS,
-  canManageApp,
+  NO_ENV_CHANGE,
   checkDeployRate,
   checkNewApp,
   newId,
   slugify,
 } from "@cira/core";
+import type { EnvChange } from "@cira/core";
 import type { DeployableService, DeployedProcess } from "@cira/core";
 import type { ContainerHints, Framework, User } from "@cira/core";
-import { archiveUri, deploymentProvider, sourceStore } from "@cira/deploy";
-import { recordEnvVars } from "@/lib/env-vars";
+import { archiveUri, deploymentProvider, parseHandle, sourceStore } from "@cira/deploy";
+import { userManages } from "@/lib/app-rights";
+import { supersedeEarlierDeploys } from "@/lib/deployment-sync";
+import { recordEnvChange } from "@/lib/env-vars";
 import { planForSpace } from "@/lib/plan";
 import { recordProcesses, specsFor } from "@/lib/processes";
 
@@ -67,8 +70,11 @@ export async function deployToSpace(args: {
    * has to care which it was.
    */
   services?: readonly DeployableService[] | null;
-  /** Handed to the provider and then forgotten. See docs/secrets.md. */
-  env?: Readonly<Record<string, string>>;
+  /**
+   * What this deploy changes about the app's variables. Handed to the
+   * provider and then forgotten; see docs/secrets.md. Absent changes nothing.
+   */
+  env?: EnvChange;
   /**
    * Whether the repository has a web process. False for an app that is only
    * workers and scheduled runs. Absent from an older CLI, which means yes.
@@ -78,7 +84,7 @@ export async function deployToSpace(args: {
   processes?: readonly DeployedProcess[];
 }): Promise<DeployOutcome> {
   const { user, spaceSlug, appName } = args;
-  const env = args.env ?? {};
+  const env = args.env ?? NO_ENV_CHANGE;
   const servesWeb = args.web !== false;
 
   const database = db();
@@ -127,6 +133,7 @@ export async function deployToSpace(args: {
   // Redeploy an existing app when the folder is already linked, otherwise
   // create one. Relinking is by id, so renaming a folder does not fork the app.
   let app = null;
+  let created = false;
   if (args.appId !== null) {
     const [existing] = await database
       .select()
@@ -180,47 +187,28 @@ export async function deployToSpace(args: {
     // Read back rather than returned. A batch hands back its results by
     // position, and reaching into one by index reads far worse than a query
     // that says what it is after.
-    const [created] = await database
+    const [inserted] = await database
       .select()
       .from(apps)
       .where(eq(apps.id, appId))
       .limit(1);
 
-    if (created === undefined) {
+    if (inserted === undefined) {
       return { ok: false, error: "Could not create the app." };
     }
-    app = created;
+    app = inserted;
+    created = true;
   } else {
-    // Setting an app's environment is managing it, so it takes the same rights
-    // rather than the weaker "is in this space" that redeploying takes. A first
-    // deploy is exempt by construction: the deployer is the owner.
-    if (Object.keys(env).length > 0) {
-      const mine = await database
-        .select({
-          id: memberships.id,
-          role: memberships.role,
-          spaceId: memberships.spaceId,
-        })
-        .from(memberships)
-        .where(eq(memberships.userId, user.id));
-
-      const allowed = canManageApp({
-        userId: user.id,
-        app,
-        memberships: mine.map((m) => ({
-          id: m.id,
-          userId: user.id,
-          spaceId: m.spaceId,
-          role: m.role,
-        })),
-      });
-
-      if (!allowed) {
-        return {
-          ok: false,
-          error: "You cannot set environment variables on an app you do not manage.",
-        };
-      }
+    // Redeploying replaces what the app runs - its code, and with it what
+    // everyone who opens it sees and what agents calling it reach - so it
+    // takes the right to manage the app, not just a seat in the space. The id
+    // travels in `.cira/project.json`, which is committed, so knowing it
+    // proves nothing.
+    if (!(await userManages(user, app))) {
+      return {
+        ok: false,
+        error: `You do not manage ${app.name}, so you cannot deploy it. Its owner or an admin can deploy it, or give you manage access from its Access panel.`,
+      };
     }
 
     await database
@@ -228,6 +216,23 @@ export async function deployToSpace(args: {
       .set({ status: "deploying", updatedAt: new Date() })
       .where(eq(apps.id, app.id));
   }
+
+  // A deploy that never got going must not leave a trace that misleads. A
+  // brand new app that was never built is taken back out, so a retry is the
+  // same app rather than "My App 2"; one that was already running goes back
+  // to the status it had, because its last good version is still serving.
+  const previousStatus = app.status;
+  const abandon = async (error: string): Promise<DeployOutcome> => {
+    if (created) {
+      await database.delete(apps).where(eq(apps.id, app.id));
+    } else {
+      await database
+        .update(apps)
+        .set({ status: previousStatus, updatedAt: new Date() })
+        .where(eq(apps.id, app.id));
+    }
+    return { ok: false, error };
+  };
 
   // Resolved here rather than trusted from the request. The path is rebuilt
   // from this user's own id, so an id belonging to someone else does not
@@ -240,11 +245,7 @@ export async function deployToSpace(args: {
   }
 
   if (source === null) {
-    await database
-      .update(apps)
-      .set({ status: "failed", updatedAt: new Date() })
-      .where(eq(apps.id, app.id));
-    return { ok: false, error: "That upload did not finish. Try deploying again." };
+    return abandon("That upload did not finish. Try deploying again.");
   }
 
   // One shape from here down, whatever the CLI sent. An app that is a single
@@ -278,13 +279,7 @@ export async function deployToSpace(args: {
           : declared.some((p) => !parts.some((part) => part.slug === p.service))
             ? "A worker or scheduled run names a part of this app that is not in it."
             : null;
-  if (refusal !== null) {
-    await database
-      .update(apps)
-      .set({ status: "failed", updatedAt: new Date() })
-      .where(eq(apps.id, app.id));
-    return { ok: false, error: refusal };
-  }
+  if (refusal !== null) return abandon(refusal);
 
   await recordServices(app.id, parts);
   const stored = await recordProcesses({
@@ -300,6 +295,7 @@ export async function deployToSpace(args: {
       appId: app.id,
       spaceSlug: space.slug,
       appSlug: app.slug,
+      ...(await runningUnder(app.id)),
       framework: args.framework,
       source: { uri: archiveUri(source), size: source.size },
       services: parts,
@@ -309,20 +305,14 @@ export async function deployToSpace(args: {
       processes: specsFor(stored),
     });
   } catch (error) {
-    await database
-      .update(apps)
-      .set({ status: "failed", updatedAt: new Date() })
-      .where(eq(apps.id, app.id));
-
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "The deploy could not be started.",
-    };
+    return abandon(
+      error instanceof Error ? error.message : "The deploy could not be started.",
+    );
   }
 
   // The names, never the values. Recorded after the provider accepted them, so
   // the app page cannot claim a variable is configured when the deploy failed.
-  await recordEnvVars({ appId: app.id, userId: user.id, env });
+  await recordEnvChange({ appId: app.id, userId: user.id, change: env });
 
   const deploymentId = newId("deployment");
   await database.insert(deployments).values({
@@ -334,6 +324,7 @@ export async function deployToSpace(args: {
     url: result.url,
     servesWeb,
   });
+  await supersedeEarlierDeploys(app.id, deploymentId);
 
   return {
     ok: true,
@@ -342,6 +333,31 @@ export async function deployToSpace(args: {
     spaceSlug: space.slug,
     deploymentId,
   };
+}
+
+/**
+ * The name an app already runs under at the provider, from its newest
+ * deployment that has one, so a renamed app redeploys onto its own service
+ * rather than beside it. Nothing for an app never deployed.
+ */
+async function runningUnder(appId: string): Promise<{ service?: string }> {
+  const rows = await db()
+    .select({
+      provider: deployments.provider,
+      providerDeploymentId: deployments.providerDeploymentId,
+    })
+    .from(deployments)
+    .where(eq(deployments.appId, appId))
+    .orderBy(desc(deployments.createdAt));
+  for (const row of rows) {
+    if (row.provider !== "cloudrun") continue;
+    try {
+      return { service: parseHandle(row.providerDeploymentId).service };
+    } catch {
+      // Not a handle this version wrote.
+    }
+  }
+  return {};
 }
 
 /**

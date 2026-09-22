@@ -34,15 +34,33 @@ function app(overrides: Partial<App> = {}): App {
 }
 
 function grantUser(appId: string, userId: string): AppAccess {
-  return { id: `a_${appId}_${userId}`, appId, type: "user", targetId: userId };
+  return {
+    id: `a_${appId}_${userId}`,
+    appId,
+    type: "user",
+    targetId: userId,
+    level: "use",
+  };
 }
 
 function grantSpace(appId: string, spaceId: string): AppAccess {
-  return { id: `a_${appId}_${spaceId}`, appId, type: "space", targetId: spaceId };
+  return {
+    id: `a_${appId}_${spaceId}`,
+    appId,
+    type: "space",
+    targetId: spaceId,
+    level: "use",
+  };
 }
 
 function grantTeam(appId: string, teamId: string): AppAccess {
-  return { id: `a_${appId}_${teamId}`, appId, type: "team", targetId: teamId };
+  return {
+    id: `a_${appId}_${teamId}`,
+    appId,
+    type: "team",
+    targetId: teamId,
+    level: "use",
+  };
 }
 
 describe("roleAtLeast", () => {
@@ -182,19 +200,85 @@ describe("canManageApp", () => {
   const memberships = [
     member("user_dev", ACME, "member"),
     member("user_emp", ACME, "member"),
+    member("user_eng", ACME, "member"),
     member("user_admin", ACME, "admin"),
   ];
+  const as = (userId: string, teamIds: string[] = []): Principal => ({
+    userId,
+    memberships,
+    teamIds,
+  });
+  const grant = (
+    type: AppAccess["type"],
+    targetId: string,
+    level: AppAccess["level"],
+  ): AppAccess => ({
+    id: `g_${type}_${targetId}`,
+    appId: "app_revenue",
+    type,
+    targetId,
+    level,
+  });
 
   it("lets the owner manage their own app", () => {
-    expect(canManageApp({ userId: "user_dev", app: app(), memberships })).toBe(true);
+    expect(canManageApp({ principal: as("user_dev"), app: app(), access: [] })).toBe(
+      true,
+    );
   });
 
   it("lets a space admin manage any app", () => {
-    expect(canManageApp({ userId: "user_admin", app: app(), memberships })).toBe(true);
+    expect(canManageApp({ principal: as("user_admin"), app: app(), access: [] })).toBe(
+      true,
+    );
   });
 
   it("refuses a plain member, even one who can open the app", () => {
-    expect(canManageApp({ userId: "user_emp", app: app(), memberships })).toBe(false);
+    const access = [grant("user", "user_emp", "use"), grant("space", ACME, "use")];
+    expect(canManageApp({ principal: as("user_emp"), app: app(), access })).toBe(false);
+  });
+
+  it("lets someone manage through a manage grant to them or their team", () => {
+    expect(
+      canManageApp({
+        principal: as("user_eng"),
+        app: app(),
+        access: [grant("user", "user_eng", "manage")],
+      }),
+    ).toBe(true);
+    expect(
+      canManageApp({
+        principal: as("user_eng", ["team_platform"]),
+        app: app(),
+        access: [grant("team", "team_platform", "manage")],
+      }),
+    ).toBe(true);
+  });
+
+  it("never lets a grant to the whole space make everyone a manager", () => {
+    expect(
+      canManageApp({
+        principal: as("user_emp"),
+        app: app(),
+        access: [grant("space", ACME, "manage")],
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses anyone outside the space, whatever the grants say", () => {
+    expect(
+      canManageApp({
+        principal: { userId: "user_ghost", memberships, teamIds: [] },
+        app: app(),
+        access: [grant("user", "user_ghost", "manage")],
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a manage grant that belongs to another app", () => {
+    const other = { ...grant("user", "user_eng", "manage"), appId: "app_other" };
+    expect(canManageApp({ principal: as("user_eng"), app: app(), access: [other] })).toBe(
+      false,
+    );
   });
 });
 

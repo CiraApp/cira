@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apps, db, memberships } from "@cira/db";
+import { apps, db } from "@cira/db";
+import { userManages } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { verifyAppCapabilities } from "@/lib/capability-verification";
 
@@ -32,12 +33,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const [app] = await db()
-    .select({ id: apps.id })
+  // Probing an app is part of shipping it, so it takes what the deploy took:
+  // the right to manage it.
+  const [row] = await db()
+    .select()
     .from(apps)
-    .innerJoin(memberships, eq(memberships.spaceId, apps.spaceId))
-    .where(and(eq(apps.id, parsed.data.appId), eq(memberships.userId, user.id)))
+    .where(eq(apps.id, parsed.data.appId))
     .limit(1);
+  const app = row !== undefined && (await userManages(user, row)) ? row : undefined;
 
   if (app === undefined) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });

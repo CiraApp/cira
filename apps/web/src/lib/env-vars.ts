@@ -1,10 +1,10 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { appEnvVars, db } from "@cira/db";
-import { newId } from "@cira/core";
+import { newId, type EnvChange } from "@cira/core";
 
 /**
  * Environment variables on the way to a deployment.
@@ -21,10 +21,10 @@ export const MAX_VALUE_BYTES = 4096;
 export const MAX_TOTAL_BYTES = 64 * 1024;
 
 /** What a shell and a build both accept as a name. */
-const KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export const envSchema = z
-  .record(z.string().regex(KEY, "That is not a usable variable name."), z.string())
+  .record(z.string().regex(ENV_NAME, "That is not a usable variable name."), z.string())
   .refine((env) => Object.keys(env).length <= MAX_VARS, {
     message: `An app can carry at most ${MAX_VARS} environment variables.`,
   })
@@ -58,27 +58,28 @@ export function isPublicName(key: string): boolean {
 }
 
 /**
- * Record what this deploy was given, and forget the rest.
+ * Record what this deploy changed, and forget the values.
  *
- * The stored set is replaced rather than merged, so the list always describes
- * the live deployment: a variable the developer removed should disappear from
- * the app page, not linger as something that looks configured and is not.
+ * Merged, the same way the provider merges them: a name this deploy did not
+ * mention keeps its row, because it keeps its value in production. Only a
+ * name taken away on purpose disappears from the app page.
  */
-export async function recordEnvVars(args: {
+export async function recordEnvChange(args: {
   appId: string;
   userId: string;
-  env: Readonly<Record<string, string>>;
+  change: EnvChange;
 }): Promise<void> {
-  const { appId, userId, env } = args;
+  const { appId, userId, change } = args;
   const database = db();
-  const keys = Object.keys(env);
 
-  if (keys.length === 0) {
-    await database.delete(appEnvVars).where(eq(appEnvVars.appId, appId));
-    return;
+  const removed = change.unset.filter((key) => !(key in change.set));
+  if (removed.length > 0) {
+    await database
+      .delete(appEnvVars)
+      .where(and(eq(appEnvVars.appId, appId), inArray(appEnvVars.key, removed)));
   }
 
-  for (const [key, value] of Object.entries(env)) {
+  for (const [key, value] of Object.entries(change.set)) {
     const row = {
       key,
       fingerprint: fingerprint(value),
@@ -95,11 +96,6 @@ export async function recordEnvVars(args: {
         set: row,
       });
   }
-
-  // Anything the developer stopped sending is no longer configured.
-  await database
-    .delete(appEnvVars)
-    .where(and(eq(appEnvVars.appId, appId), notInArray(appEnvVars.key, keys)));
 }
 
 export interface EnvVarSummary {

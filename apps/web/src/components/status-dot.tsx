@@ -8,6 +8,8 @@ const STATES: Record<
   queued: { dot: "bg-pending text-pending", label: "Queued", motion: "ping" },
   failed: { dot: "bg-failed text-failed", label: "Failed", motion: "pulse-dot" },
   removed: { dot: "bg-ink-subtle text-ink-subtle", label: "Removed" },
+  // A newer deploy took its place before it finished. Nothing went wrong.
+  superseded: { dot: "bg-ink-subtle text-ink-subtle", label: "Replaced" },
   draft: { dot: "bg-ink-subtle text-ink-subtle", label: "Draft" },
   "never-deployed": { dot: "bg-ink-subtle text-ink-subtle", label: "Not deployed" },
   unreachable: { dot: "bg-pending text-pending", label: "Running" },

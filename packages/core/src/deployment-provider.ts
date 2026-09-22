@@ -70,10 +70,39 @@ export interface ContainerHints {
   port: number | null;
 }
 
+/**
+ * Variables to set and variables to take away. A name in both is set: taking
+ * something away is only ever an explicit act, never a side effect.
+ */
+export interface EnvChange {
+  set: Readonly<Record<string, string>>;
+  unset: readonly string[];
+}
+
+/** No change at all: every variable keeps the value it has. */
+export const NO_ENV_CHANGE: EnvChange = { set: {}, unset: [] };
+
+/** The variables an app ends up with, given what it had and what changed. */
+export function applyEnvChange(
+  current: Readonly<Record<string, string>>,
+  change: EnvChange,
+): Record<string, string> {
+  const next: Record<string, string> = { ...current };
+  for (const name of change.unset) delete next[name];
+  return { ...next, ...change.set };
+}
+
 export interface AppDeploymentInput {
   appId: string;
   spaceSlug: string;
   appSlug: string;
+  /**
+   * The provider's name for an app deployed before, taken from its last
+   * deployment. Absent for a first deploy, when one is made from the slugs.
+   * Kept because the slugs change when an app or its space is renamed, and
+   * the running app must not.
+   */
+  service?: string;
   framework: Framework;
   source: SourceArchive;
   /**
@@ -92,14 +121,15 @@ export interface AppDeploymentInput {
   /** Instances to keep running when nobody is asking. Zero unless paid for. */
   minInstances?: number;
   /**
-   * Build-time and run-time variables.
+   * What this deploy changes about the app's variables.
    *
-   * Values pass through and are never stored by Cira or written to a log; see
-   * docs/secrets.md. A name prefixed `NEXT_PUBLIC_` is compiled into the
-   * browser bundle by the build, which is the caller's problem to warn about,
-   * not this interface's to prevent.
+   * A change, never the whole set. The values already configured live with the
+   * provider, because Cira stores none (docs/secrets.md), so a deploy that
+   * sent "everything" could only ever send what one machine happened to have -
+   * and a teammate's clone with no `.env`, or a CI job, would then wipe
+   * production. Names not mentioned here keep the value they have.
    */
-  env: Readonly<Record<string, string>>;
+  env: EnvChange;
   /**
    * Workers and scheduled runs, each from one of `services`' images with its
    * own command. Created now, while the environment is in hand - it is never

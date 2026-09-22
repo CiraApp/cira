@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
-import { apps, db, deployments, memberships } from "@cira/db";
-import type { Deployment } from "@cira/core";
-import { deploymentProvider, isTerminal } from "@cira/deploy";
+import { eq } from "drizzle-orm";
+import { apps, db, deployments } from "@cira/db";
+import { canAccessApp, type Deployment } from "@cira/core";
+import { grantsFor } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
-import { recordDeploymentStatus } from "@/lib/deployment-sync";
+import { reconcileDeployment } from "@/lib/deployment-sync";
+import { principalFor } from "@/lib/principal";
 
 /**
  * How is a deploy going?
@@ -37,32 +38,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No such deployment" }, { status: 404 });
   }
 
-  const [member] = await database
-    .select({ id: memberships.id })
-    .from(memberships)
-    .where(and(eq(memberships.userId, user.id), eq(memberships.spaceId, row.app.spaceId)))
-    .limit(1);
-
-  if (member === undefined) {
+  // Whoever may open the app may follow its deploy. A member who cannot see
+  // it gets the same answer as a deployment that does not exist.
+  const principal = await principalFor(user);
+  const visible =
+    principal !== null &&
+    canAccessApp({ principal, app: row.app, access: await grantsFor(row.app.id) });
+  if (!visible) {
     return NextResponse.json({ error: "No such deployment" }, { status: 404 });
   }
 
-  if (isTerminal(row.deployment.status)) {
-    return NextResponse.json({
-      status: row.deployment.status,
-      url: row.deployment.url,
-    });
-  }
-
-  let live;
-  try {
-    live = await deploymentProvider().getStatus(row.deployment.providerDeploymentId);
-  } catch {
-    // The provider being briefly unreachable is not a failed deploy.
-    return NextResponse.json({ status: row.deployment.status, url: row.deployment.url });
-  }
-
-  await recordDeploymentStatus(row.deployment as Deployment, live);
-
-  return NextResponse.json({ status: live.status, url: live.url });
+  // The same reconciliation as every other place a deploy is looked at, so
+  // the CLI cannot roll out a deploy that a newer one replaced, and cannot
+  // disagree with the app page about how it went.
+  const settled = await reconcileDeployment(row.deployment as Deployment);
+  return NextResponse.json({ status: settled.status, url: settled.url });
 }

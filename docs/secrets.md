@@ -120,10 +120,43 @@ Deliberately tight, because a deploy request is not a file upload:
 - Keys match `^[A-Za-z_][A-Za-z0-9_]*$`, which is what a shell and a build both
   accept
 
+## A deploy changes variables, it never replaces them
+
+A deploy carries the variables it has - from the deployer's `.env` files and
+`--env` flags - and those are set. Every variable it does not mention keeps
+the value it already has at the provider. Taking one away is a separate,
+explicit ask: `cira deploy --unset NAME`.
+
+It used to replace the whole set with whatever one machine sent. That made
+the developer's `.env` the only copy of production's configuration, and it
+meant a teammate's fresh clone, or a CI job with no `.env` file, wiped every
+production variable the moment it deployed. The provider is where a running
+app's configuration lives, so that is what a deploy now starts from: it reads
+the current variables back from the Cloud Run service (or, for an app with no
+web service, from one of its workers or jobs), applies the change, and writes
+the result. The values pass through Cira's memory for that one request, exactly
+as they did before.
+
+### They go live with the build, not before it
+
+The new variables are written as soon as the deploy starts, because that is
+the only moment Cira holds them. They are written into a revision that takes
+no requests: traffic stays pinned to the revision already serving until the
+new build is ready, and then the new code and the new variables go live
+together. A deploy that renames `DB_URL` to `DATABASE_URL` therefore never
+runs the old code without the name it reads, and a build that fails leaves the
+app exactly as it was. Workers and scheduled runs beside a web service move
+onto the new variables at the same moment as onto the new image.
+
+An app that is only workers and scheduled runs has no service to hold the next
+variables on, so for those they are applied when the deploy starts.
+
 ## Who may set them
 
 Setting a variable is managing the app, so it takes the same rights: the app's
-owner, or an admin of the space. A first deploy creates the app with the
+owner, an admin of the space, or someone given `manage` on the app from its
+Access panel. Redeploying at all takes the same rights, since it replaces the
+code everyone who opens the app runs. A first deploy creates the app with the
 deployer as owner, so it passes by construction.
 
 ## What is never done
@@ -144,7 +177,7 @@ security review asks:
 
 | Place                              | Holds the value                 |
 | ---------------------------------- | ------------------------------- |
-| Developer's machine (`.env.local`) | Yes - the source of truth       |
+| Developer's machine (`.env.local`) | Yes, if they kept it            |
 | Network, developer to Cira         | In flight, under TLS            |
 | Cira's server memory               | For the duration of one request |
 | Cira's database                    | **No**                          |

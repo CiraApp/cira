@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   grantAccess,
   revokeAccess,
+  setAccessLevel,
   type AccessEntry,
   type ImplicitAccess,
   type SpaceMember,
@@ -115,6 +116,30 @@ export function AccessPanel({
                   </span>
                 ) : null}
               </span>
+
+              {entry.kind === "everyone" ? null : (
+                <>
+                  <label htmlFor={`level-${entry.id}`} className="sr-only">
+                    What {entry.label} can do
+                  </label>
+                  <select
+                    id={`level-${entry.id}`}
+                    value={entry.level}
+                    disabled={pending}
+                    onChange={(event) => {
+                      const level = event.target.value === "manage" ? "manage" : "use";
+                      run(`level-${entry.id}`, () =>
+                        setAccessLevel(spaceSlug, appSlug, entry.id, level),
+                      );
+                    }}
+                    title="Managing is deploying it, setting its variables and deciding who sees it"
+                    className="field w-auto shrink-0 py-1.5 pr-7 text-[12.5px]"
+                  >
+                    <option value="use">Can use</option>
+                    <option value="manage">Can manage</option>
+                  </select>
+                </>
+              )}
 
               <button
                 type="button"
