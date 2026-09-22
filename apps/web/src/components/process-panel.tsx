@@ -244,7 +244,8 @@ function Row({
           {process.crashes.exitCode === null
             ? ""
             : ` with code ${process.crashes.exitCode}`}{" "}
-          {process.crashes.count} times in the last hour, last at{" "}
+          {process.crashes.count}
+          {process.crashes.more ? " or more" : ""} times in the last hour, last at{" "}
           <LocalTime at={process.crashes.lastAt} />, and was started again each time.{" "}
           <span className="text-ink-muted">
             A worker should run for good; its logs say why it stops.

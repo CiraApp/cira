@@ -141,7 +141,7 @@ export interface ProcessView {
    */
   outOfMemoryAt: Date | null;
   /** A worker that keeps exiting on its own: how often in the last hour, and how. */
-  crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
+  crashes: { count: number; more: boolean; lastAt: Date; exitCode: number | null } | null;
   /** What Google reports, or null when it could not be asked. */
   state: ProcessState | null;
 }

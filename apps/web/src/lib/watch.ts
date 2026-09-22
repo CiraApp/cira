@@ -358,7 +358,7 @@ async function watchApp(deployment: Deployment, now: Date): Promise<number> {
         outOfMemory
           ? "it keeps running out of memory and being restarted"
           : crashing
-            ? `it keeps stopping - it exited${state.crashes!.exitCode === null ? "" : ` with code ${state.crashes!.exitCode}`} ${state.crashes!.count} times in the last hour; its logs say why`
+            ? `it keeps stopping - it exited${state.crashes!.exitCode === null ? "" : ` with code ${state.crashes!.exitCode}`} ${state.crashes!.count}${state.crashes!.more ? " or more" : ""} times in the last hour; its logs say why`
             : "it failed to start",
         now,
       );

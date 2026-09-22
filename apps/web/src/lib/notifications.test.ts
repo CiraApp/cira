@@ -295,7 +295,12 @@ describe.skipIf(!hasDatabase)("notifications", () => {
     states = [
       {
         ...healthy()[0]!,
-        crashes: { count: 12, lastAt: new Date("2026-09-24T10:59:30Z"), exitCode: 3 },
+        crashes: {
+          count: 12,
+          more: false,
+          lastAt: new Date("2026-09-24T10:59:30Z"),
+          exitCode: 3,
+        },
       } as ProcessState,
       healthy()[1]!,
     ];

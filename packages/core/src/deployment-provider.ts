@@ -196,7 +196,13 @@ export type ProcessState =
        * and one that exits is restarted while its provider still calls it
        * ready. Null when it is not stopping.
        */
-      crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
+      crashes: {
+        count: number;
+        /** True when there were more than `count`: only so many lines are read. */
+        more: boolean;
+        lastAt: Date;
+        exitCode: number | null;
+      } | null;
     }
   | {
       kind: "scheduled";

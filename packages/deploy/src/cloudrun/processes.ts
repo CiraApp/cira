@@ -77,6 +77,9 @@ const OUT_OF_MEMORY_LOG = "Out-of-memory event detected in container";
  */
 const EXIT_LOG = "Container called exit(";
 
+/** How many lines of a worker's trouble one check reads. */
+const TROUBLE_LINES = 100;
+
 /** How many exits in the last hour make a crash loop rather than a restart. */
 const CRASH_LOOP = 3;
 
@@ -89,7 +92,7 @@ export function readTrouble(
   now: number,
 ): {
   outOfMemoryAt: Date | null;
-  crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
+  crashes: { count: number; more: boolean; lastAt: Date; exitCode: number | null } | null;
 } {
   const oom = entries.find((e) => e.textPayload?.includes(OUT_OF_MEMORY_LOG) === true);
   const exits = entries.filter(
@@ -106,6 +109,8 @@ export function readTrouble(
         ? null
         : {
             count: exits.length,
+            // A full page of lines means there were more than were read.
+            more: entries.length >= TROUBLE_LINES,
             lastAt: new Date(last.timestamp!),
             exitCode: ((code) => (code === undefined ? null : Number(code)))(
               /exit\((\d+)\)/.exec(last.textPayload ?? "")?.[1],
@@ -826,7 +831,12 @@ export class CloudRunProcesses {
     updateTime: string | undefined,
   ): Promise<{
     outOfMemoryAt: Date | null;
-    crashes: { count: number; lastAt: Date; exitCode: number | null } | null;
+    crashes: {
+      count: number;
+      more: boolean;
+      lastAt: Date;
+      exitCode: number | null;
+    } | null;
   }> {
     const now = Date.now();
     const changed = updateTime === undefined ? 0 : Date.parse(updateTime);
@@ -846,7 +856,7 @@ export class CloudRunProcesses {
         resourceNames: [`projects/${this.config.projectId}`],
         filter,
         orderBy: "timestamp desc",
-        pageSize: 100,
+        pageSize: TROUBLE_LINES,
       });
       if (!response.ok) return none;
       const body = (await response.json()) as {

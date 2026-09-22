@@ -769,6 +769,7 @@ describe("readTrouble", () => {
     );
     expect(trouble.crashes).toEqual({
       count: 3,
+      more: false,
       lastAt: new Date("2026-09-22T08:17:25Z"),
       exitCode: 1,
     });

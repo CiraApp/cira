@@ -371,7 +371,7 @@ function workerWords(p: ProcessView): string {
   if (health === "failed") return "failed to start";
   if (health === "starting") return "starting";
   if (p.crashes !== null) {
-    return `keeps stopping: it exited${p.crashes.exitCode === null ? "" : ` with code ${p.crashes.exitCode}`} ${p.crashes.count} times in the last hour and was restarted each time`;
+    return `keeps stopping: it exited${p.crashes.exitCode === null ? "" : ` with code ${p.crashes.exitCode}`} ${p.crashes.count}${p.crashes.more ? " or more" : ""} times in the last hour and was restarted each time`;
   }
   if (p.outOfMemoryAt !== null) return "running, but it ran out of memory recently";
   return "running";
