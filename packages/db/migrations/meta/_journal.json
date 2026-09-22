@@ -323,6 +323,13 @@
       "when": 1790075145934,
       "tag": "0045_let_cira_make_a_database_for_an_app",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1790077233887,
+      "tag": "0046_let_an_app_answer_on_its_own_domain",
+      "breakpoints": true
     }
   ]
 }

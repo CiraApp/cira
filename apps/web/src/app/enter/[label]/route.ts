@@ -7,6 +7,7 @@ import {
 } from "@cira/core";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { latestDeployment, recordAppOpen, servingDeployment } from "@/lib/queries";
+import { isAppDomain, primaryDomain } from "@/lib/app-domains";
 import { proxyConfig } from "@/lib/proxy-config";
 import { resolveAppState } from "@/lib/app-state";
 
@@ -75,7 +76,16 @@ export async function GET(
     const asked = new URL(request.url).searchParams.get("next") ?? "/";
     const next = isSafeTargetPath(asked) ? asked : "/";
 
-    const handover = new URL(`https://${label}.${appsDomain}/__cira/enter`);
+    // Which name to hand the session to. The one the person came from, when
+    // it is one of this app's own - a token is only ever sent to a name the
+    // app has proved is its - otherwise the name the app is opened at, then
+    // its Cira address.
+    const from = new URL(request.url).searchParams.get("host");
+    const host =
+      from !== null && (await isAppDomain(ctx.app.id, from))
+        ? from.toLowerCase()
+        : ((await primaryDomain(ctx.app.id)) ?? `${label}.${appsDomain}`);
+    const handover = new URL(`https://${host}/__cira/enter`);
     handover.searchParams.set("t", token);
     handover.searchParams.set("next", next);
 

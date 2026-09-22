@@ -4,8 +4,8 @@ import { z } from "zod";
 import { apps, db, spaces } from "@cira/db";
 import { parseAppLabel } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
-import { latestDeployment } from "@/lib/queries";
-import { proxyConfig } from "@/lib/proxy-config";
+import { servingDeployment } from "@/lib/queries";
+import { proxyConfig, fromProxy } from "@/lib/proxy-config";
 
 export const maxDuration = 30;
 
@@ -33,10 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
 
-  // Compared in constant time. A comparison that returns early tells whoever
-  // is guessing how much of their guess was right.
-  const presented = request.headers.get("x-cira-proxy-secret") ?? "";
-  if (!timingSafeEqual(presented, config.secret)) {
+  if (!fromProxy(request, config)) {
     return NextResponse.json({ error: "Not allowed" }, { status: 401 });
   }
 
@@ -61,8 +58,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No such app" }, { status: 404 });
   }
 
-  const deployment = await latestDeployment(row.id);
-  if (deployment === null || deployment.status !== "live" || deployment.url === null) {
+  // The build that is serving, not the newest attempt: a deploy that failed
+  // or is still going out takes no traffic, and asking only the newest shut
+  // every app out of its own proxy from the moment a redeploy failed.
+  const deployment = await servingDeployment(row.id);
+  if (deployment === null || deployment.url === null) {
     return NextResponse.json({ error: "That app is not running" }, { status: 409 });
   }
 
@@ -72,16 +72,4 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Could not reach the app" }, { status: 502 });
   }
-}
-
-/**
- * Length is not hidden, and does not need to be: the secret's length is not
- * the secret. What matters is that two secrets of the same length take the
- * same time to reject.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }

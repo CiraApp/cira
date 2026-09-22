@@ -12,7 +12,7 @@ import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
 import { RunHistory } from "@/components/run-history";
 import { ProcessPanel } from "@/components/process-panel";
-import { appMemory, PLANS } from "@cira/core";
+import { appHost, appMemory, PLANS } from "@cira/core";
 import { assertionsConfigured } from "@/lib/identity-assertion";
 import { planForSpace } from "@/lib/plan";
 import { processesForPage } from "@/lib/processes";
@@ -22,6 +22,9 @@ import { AppSettings } from "@/components/app-settings";
 import { EnvPanel } from "@/components/env-panel";
 import { listEnvVars } from "@/lib/env-vars";
 import { appDatabase } from "@/lib/app-databases";
+import { domainTarget, listDomains, refreshDomains } from "@/lib/app-domains";
+import { DomainPanel } from "@/components/domain-panel";
+import { proxyConfig } from "@/lib/proxy-config";
 import { CapabilityPanel } from "@/components/capability-panel";
 import { ServicePanel } from "@/components/service-panel";
 import { AppIdentity } from "@/components/app-identity";
@@ -93,6 +96,16 @@ export default async function AppPage({
     // how it is run, not part of using it.
     const envVars = manages ? await listEnvVars(app.id) : [];
     const databaseOf = manages ? await appDatabase(app.id) : null;
+    // A name someone is waiting on is asked about while they look.
+    if (manages) await refreshDomains(new Date(), app.id).catch(() => undefined);
+    const domains = manages ? await listDomains(app.id) : [];
+    const ownAddress = (() => {
+      try {
+        return appHost({ appSlug, spaceSlug }, proxyConfig().appsDomain);
+      } catch {
+        return null;
+      }
+    })();
     const runs = manages ? await recentRuns(app.id) : null;
     // Whether its workers are running and how its runs went is for anyone
     // who can open the app - troubleshooting "did the report go out?" should
@@ -399,6 +412,17 @@ export default async function AppPage({
               candidates={access.candidates}
               teamCandidates={access.teamCandidates}
               hasEveryone={access.entries.some((e) => e.kind === "everyone")}
+            />
+          ) : null}
+
+          {manages && deployment?.servesWeb === true && ownAddress !== null ? (
+            <DomainPanel
+              spaceSlug={spaceSlug}
+              appSlug={appSlug}
+              appAddress={ownAddress}
+              target={domainTarget()}
+              domains={domains}
+              limit={DEFAULT_LIMITS.app.domains}
             />
           ) : null}
 

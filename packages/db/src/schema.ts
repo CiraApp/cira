@@ -942,6 +942,32 @@ export const appDatabases = pgTable("app_databases", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * A company's own hostname for an app - `tools.acme.com` - served through a
+ * Cloudflare custom hostname on Cira's zone. Unique across every company: a
+ * name can only point at one app.
+ */
+export const appDomains = pgTable(
+  "app_domains",
+  {
+    hostname: text("hostname").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    /** Cloudflare's id for the custom hostname. */
+    externalId: text("external_id").notNull(),
+    state: text("state").$type<"pending" | "active" | "failed">().notNull(),
+    /** What is holding it up, when something is. */
+    reason: text("reason"),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("app_domains_app_idx").on(t.appId)],
+);
+
 export const removedApps = pgTable(
   "removed_apps",
   {

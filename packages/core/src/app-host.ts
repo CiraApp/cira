@@ -82,3 +82,43 @@ export function parseAppHost(host: string, appsDomain: string): AppAddress | nul
   if (!bare.endsWith(suffix)) return null;
   return parseAppLabel(bare.slice(0, -suffix.length));
 }
+
+/**
+ * A company's own hostname for an app - `tools.acme.com` - lowercased, or why
+ * it cannot be one.
+ *
+ * A subdomain, because the way in is a CNAME record and most DNS hosts will
+ * not put one at the root of a domain. Never under Cira's own domain, whose
+ * names are Cira's to give out, and never an address: a certificate is for a
+ * name.
+ */
+export function customHostname(
+  input: string,
+  appsDomain: string,
+): { ok: true; hostname: string } | { ok: false; reason: string } {
+  const hostname = input.trim().toLowerCase().replace(/\.$/, "");
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(hostname) || hostname.includes("/")) {
+    return {
+      ok: false,
+      reason: "Just the name, like tools.acme.com, with no https:// or path.",
+    };
+  }
+  const labels = hostname.split(".");
+  const valid =
+    hostname.length <= 253 &&
+    labels.length >= 2 &&
+    labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
+    !/^\d+$/.test(labels.at(-1) ?? "");
+  if (!valid) return { ok: false, reason: "That is not a name a domain can have." };
+  const own = appsDomain.toLowerCase();
+  if (hostname === own || hostname.endsWith(`.${own}`)) {
+    return { ok: false, reason: `Names under ${own} are Cira's own.` };
+  }
+  if (labels.length === 2) {
+    return {
+      ok: false,
+      reason: `Use a name under your domain, like tools.${hostname}: its root cannot point at Cira.`,
+    };
+  }
+  return { ok: true, hostname };
+}

@@ -43,3 +43,20 @@ export function browserAccessConfigured(
     return false;
   }
 }
+
+/**
+ * Whether a request carries the secret only the app proxy holds. Compared in
+ * constant time: a comparison that returns early tells whoever is guessing
+ * how much of their guess was right. Length is not hidden, and does not need
+ * to be - the secret's length is not the secret.
+ */
+export function fromProxy(request: Request, config: ProxyConfig): boolean {
+  const presented = request.headers.get("x-cira-proxy-secret") ?? "";
+  const expected = config.secret;
+  if (presented.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < presented.length; i += 1) {
+    diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}

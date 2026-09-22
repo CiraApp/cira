@@ -6,6 +6,7 @@ import { deploymentProvider, parseHandle } from "@cira/deploy";
 import type { App } from "@cira/core";
 import { resourcesOf } from "@/lib/usage";
 import { removeAppDatabase } from "@/lib/app-databases";
+import { removeAppDomains } from "@/lib/app-domains";
 
 /**
  * Take an app down and remove what it left behind.
@@ -41,6 +42,16 @@ export async function tearDownApp(app: App): Promise<TeardownResult> {
           "Cira could not take the running app down, so nothing was deleted. Try again shortly.",
       };
     }
+  }
+
+  // Its own names first: left behind, one would go on pointing at Cira and
+  // opening nothing, and nobody else could ever add it.
+  const released = await removeAppDomains(app.id);
+  if (!released.ok) {
+    return {
+      ok: false,
+      error: `The app is down, but its own names were not let go: ${released.error}`,
+    };
   }
 
   // Its database next, while the app is still here to try again from: deleting

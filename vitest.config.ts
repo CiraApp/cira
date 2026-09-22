@@ -6,7 +6,7 @@ export default defineConfig({
   // renders could be tested.
   esbuild: { jsx: "automatic" },
   test: {
-    include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
+    include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "workers/**/*.test.ts"],
     environment: "node",
     alias: {
       // `server-only` exists to fail a build that imports server code into a

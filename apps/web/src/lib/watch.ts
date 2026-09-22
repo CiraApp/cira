@@ -22,6 +22,7 @@ import {
   type StoredProcess,
 } from "@cira/core";
 import { TERMINAL_STATUSES, deploymentProvider } from "@cira/deploy";
+import { refreshDomains } from "@/lib/app-domains";
 import { ensureStripeSetup, syncQuantities, type StripeSetupReport } from "@/lib/billing";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import {
@@ -69,6 +70,8 @@ export interface WatchReport {
   retried: number;
   /** What was set up in Stripe on this pass, when it was looked at. */
   stripe: StripeSetupReport | null;
+  /** Companies' own hostnames looked at, and those let go for never pointing here. */
+  domains: { checked: number; released: number };
 }
 
 /**
@@ -93,6 +96,7 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
     switchedOff: 0,
     retried: 0,
     stripe: null,
+    domains: { checked: 0, released: 0 },
   };
 
   // Deploys still in flight that nobody is polling: the CLI was closed, the
@@ -119,6 +123,10 @@ export async function watchEverything(now = new Date()): Promise<WatchReport> {
     );
     return null;
   });
+
+  // Names companies are pointing at their apps: certificates issued since the
+  // last pass, and names never pointed here let go after a week.
+  report.domains = await refreshDomains(now).catch(() => ({ checked: 0, released: 0 }));
 
   // Every space before any app: its trial, what its plan still allows, and
   // what it is billed for. These are quick, and they used to run last, where

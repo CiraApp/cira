@@ -53,34 +53,74 @@ interface Reachable {
  */
 const reachable = new Map<string, Reachable>();
 
+/**
+ * A company's own hostnames, by the label of the app each opens. Null for a
+ * name that opens nothing, so a stranger's guesses cost Cira one call each at
+ * most every few minutes.
+ */
+const domains = new Map<string, { label: string | null; until: number }>();
+const DOMAIN_FOR_MS = 5 * 60 * 1000;
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const address = parseAppHost(url.hostname, env.APPS_DOMAIN);
+    const hostname = url.hostname.toLowerCase();
+    const own = parseAppHost(hostname, env.APPS_DOMAIN);
 
-    // Not an app hostname. The route this runs on is a wildcard, so anything
-    // under the domain without an explicit DNS record arrives here; there is
-    // nothing to serve it. Cira's own names have records of their own and do
-    // not reach this, which is why they must stay unproxied.
-    if (address === null) {
+    // A Cira address carries its label; a company's own name - which reaches
+    // this Worker as a Cloudflare custom hostname - is asked about. Anything
+    // else under the domain without a record of its own also arrives here,
+    // and there is nothing to serve it. Cira's own names have records of their
+    // own and do not reach this, which is why they must stay unproxied.
+    const label =
+      own !== null
+        ? (hostname.split(".")[0] ?? "")
+        : hostname.endsWith(`.${env.APPS_DOMAIN}`)
+          ? null
+          : await domainLabel(hostname, env).catch(() => null);
+    if (label === null) {
       return new Response("No app at this address.", {
         status: 404,
         headers: { "content-type": "text/plain; charset=utf-8" },
       });
     }
+    // Asked for by name only when the name is not Cira's own address, so the
+    // handshake comes back to the name the person used.
+    const host = own === null ? hostname : null;
 
-    const label = url.hostname.split(".")[0] ?? "";
-
-    if (url.pathname === ENTER_PATH) return enter(url, label, env);
+    if (url.pathname === ENTER_PATH) return enter(url, label, host, env);
 
     const session = await currentSession(request, label, env);
     if (session === null) {
-      return challenge(request, `${url.pathname}${url.search}`, label, env);
+      return challenge(request, `${url.pathname}${url.search}`, label, host, env);
     }
 
     return forward(request, url, label, env);
   },
 };
+
+/** Which app a company's own hostname opens, asked of Cira and remembered. */
+async function domainLabel(hostname: string, env: Env): Promise<string | null> {
+  const held = domains.get(hostname);
+  if (held !== undefined && held.until > Date.now()) return held.label;
+
+  const response = await fetch(new URL("/api/proxy/domain", env.CIRA_ORIGIN), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-cira-proxy-secret": env.CIRA_PROXY_SECRET,
+    },
+    body: JSON.stringify({ hostname }),
+  });
+  // Only a clear answer is remembered. Cira being unreachable is not "no app".
+  if (response.status !== 200 && response.status !== 404) {
+    throw new Error(`Cira did not answer about ${hostname} (${response.status})`);
+  }
+  const body = (await response.json().catch(() => ({}))) as { label?: unknown };
+  const label = typeof body.label === "string" ? body.label : null;
+  domains.set(hostname, { label, until: Date.now() + DOMAIN_FOR_MS });
+  return label;
+}
 
 /** Read and check the cookie this host was given. */
 async function currentSession(
@@ -97,7 +137,12 @@ async function currentSession(
  * Finish the handshake: Cira has vouched for this person, so put the proof in
  * a cookie for this hostname and get out of the way.
  */
-async function enter(url: URL, label: string, env: Env): Promise<Response> {
+async function enter(
+  url: URL,
+  label: string,
+  host: string | null,
+  env: Env,
+): Promise<Response> {
   const token = url.searchParams.get("t") ?? "";
   const session = await verifySession(token, env.CIRA_PROXY_SECRET, { label });
   const next = safePath(url.searchParams.get("next"));
@@ -106,7 +151,7 @@ async function enter(url: URL, label: string, env: Env): Promise<Response> {
   // to Cira is both the honest answer and the one that fixes it - but back to
   // where they were going, not back to this handshake. Asking Cira to return
   // them to a URL containing the token that just failed is a loop.
-  if (session === null) return challenge(null, next, label, env);
+  if (session === null) return challenge(null, next, label, host, env);
   const maxAge = Math.max(0, session.expiresAt - Math.floor(Date.now() / 1000));
 
   return new Response(null, {
@@ -132,6 +177,8 @@ function challenge(
   request: Request | null,
   next: string,
   label: string,
+  /** The company's own name the person used, when it was not Cira's address. */
+  host: string | null,
   env: Env,
 ): Response {
   const navigation =
@@ -148,6 +195,7 @@ function challenge(
 
   const enterUrl = new URL(`/enter/${label}`, env.CIRA_ORIGIN);
   enterUrl.searchParams.set("next", next);
+  if (host !== null) enterUrl.searchParams.set("host", host);
 
   return new Response(null, {
     status: 302,

@@ -602,6 +602,20 @@ which app, never an address; `cira database url` asks Neon for one when a
 manager wants it. Removing an app deletes its project before its row, and a
 database already pointed at by the app's own `DATABASE_URL` is never replaced.
 
+### 12. An app on a company's own domain
+
+A manager adds `tools.acme.com` on the app page (`lib/app-domains.ts`). Cira
+registers it as a Cloudflare custom hostname on its own zone and shows the
+CNAME to make, pointing at `domains.cira.dev`; once the company's DNS has it,
+Cloudflare issues a certificate and the name serves. The app proxy asks Cira
+which app a hostname it does not recognise opens (`/api/proxy/domain`, behind
+the proxy secret) and from then on treats it exactly as the app's own address:
+the same sign-in through Cira, the same people, a cookie bound to that name.
+`/enter` hands the session to the app's own name when it has one. The zone is
+set up by Cira itself when the first name is added - the fallback origin, its
+DNS record, and a `*/*` Worker route - and a name never pointed at Cira is let
+go after a week, so nobody can hold another company's name.
+
 ## Design principles
 
 - **The app was not written for Cira.** A repository deploys as it is. Services,
@@ -936,28 +950,29 @@ Routes:Edit on the zone.
 
 None of this is recreated by a deploy.
 
-| Where          | What                                                                                                                                                                                            |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                                                                                                       |
-| Cloudflare DNS | apex and `www`, **unproxied**. If they turn orange, the wildcard route sends Cira itself to the worker                                                                                          |
-| Cloudflare     | route `*.cira.dev/*` to `cira-app-proxy`                                                                                                                                                        |
-| Vercel         | environment variables, including `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`                                                                                                                     |
-| GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                                                                                                             |
-| GitHub         | secret `SENTRY_AUTH_TOKEN`, an organization token that uploads source maps during the production build                                                                                          |
-| Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                                                                                                            |
-| Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                                                                                                          |
-| Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                                                                                                      |
-| Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                                                                                                                |
-| Vercel         | `NEON_API_KEY` (an organization key named `cira-app-databases`) and `NEON_ORG_ID`, production only, so Cira can make and delete apps' databases in its Neon organization                        |
-| Stripe         | prices with the lookup keys `cira_team_seat`, `cira_team_worker` and `cira_team_always_on`, and the webhook (`customer.subscription.*`, `checkout.session.completed`, `invoice.payment_failed`) |
-| Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted                                                                                    |
-| Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email                                                                                     |
-| Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                                                                                                         |
-| Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images                                                                                    |
-| Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs                                                                                        |
-| Google IAM     | the deployer service account holds `roles/cloudscheduler.admin`, so scheduled runs can be given timetables                                                                                      |
-| Google IAM     | the deployer service account holds `roles/monitoring.viewer`, so each company can be shown what it used                                                                                         |
-| Google APIs    | Cloud Scheduler (`cloudscheduler.googleapis.com`) is switched on for the project                                                                                                                |
+| Where          | What                                                                                                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare DNS | `*` CNAME, **proxied**, so app hostnames reach the worker                                                                                                                                                                                   |
+| Cloudflare DNS | apex and `www`, **unproxied**. If they turn orange, the wildcard route sends Cira itself to the worker                                                                                                                                      |
+| Cloudflare     | route `*.cira.dev/*` to `cira-app-proxy`                                                                                                                                                                                                    |
+| Vercel         | environment variables, including `CIRA_APPS_DOMAIN` and `CIRA_PROXY_SECRET`                                                                                                                                                                 |
+| GitHub         | secrets `DATABASE_URL_UNPOOLED` (for migrations) and `VERCEL_TOKEN`                                                                                                                                                                         |
+| GitHub         | secret `SENTRY_AUTH_TOKEN`, an organization token that uploads source maps during the production build                                                                                                                                      |
+| Vercel         | `NEXT_PUBLIC_SENTRY_DSN`, production only, a config value since the browser needs it                                                                                                                                                        |
+| Vercel         | `CRON_SECRET`, production only, which Vercel Cron sends and `/api/cron/watch` requires                                                                                                                                                      |
+| Vercel         | `RESEND_API_KEY`, production only, for all of Cira's email                                                                                                                                                                                  |
+| Vercel         | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, production only                                                                                                                                                                            |
+| Vercel         | `NEON_API_KEY` (an organization key named `cira-app-databases`) and `NEON_ORG_ID`, production only, so Cira can make and delete apps' databases in its Neon organization                                                                    |
+| Vercel         | `CLOUDFLARE_API_TOKEN` (Zone: SSL and Certificates, DNS and Workers Routes, all Edit, on `cira.dev`), `CLOUDFLARE_ZONE_ID` and `CIRA_DOMAINS_TARGET` (`domains.cira.dev`), production only, so companies can open apps on their own domains |
+| Stripe         | prices with the lookup keys `cira_team_seat`, `cira_team_worker` and `cira_team_always_on`, and the webhook (`customer.subscription.*`, `checkout.session.completed`, `invoice.payment_failed`)                                             |
+| Cloudflare DNS | Resend's records for `cira.dev` (DKIM at `resend._domainkey`, MX and SPF at `send`), so its email is trusted                                                                                                                                |
+| Sentry         | uptime monitors on `https://cira.dev/api/health` and `https://cira.dev/api/health/proxy`, alerting by email                                                                                                                                 |
+| Google IAM     | the deployer service account holds `roles/iam.serviceAccountTokenCreator` **on itself**                                                                                                                                                     |
+| Google IAM     | the deployer service account holds `roles/artifactregistry.repoAdmin`, so removing an app deletes its images                                                                                                                                |
+| Google IAM     | the deployer service account holds `roles/logging.viewer`, so managers can read their apps' runtime logs                                                                                                                                    |
+| Google IAM     | the deployer service account holds `roles/cloudscheduler.admin`, so scheduled runs can be given timetables                                                                                                                                  |
+| Google IAM     | the deployer service account holds `roles/monitoring.viewer`, so each company can be shown what it used                                                                                                                                     |
+| Google APIs    | Cloud Scheduler (`cloudscheduler.googleapis.com`) is switched on for the project                                                                                                                                                            |
 
 `CIRA_PROXY_SECRET` must be identical in Vercel and the worker: Cira signs with
 it and the worker verifies with it, so a mismatch locks everyone out of every

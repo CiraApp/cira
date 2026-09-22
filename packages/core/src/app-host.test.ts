@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { appHost, appLabel, MAX_LABEL, parseAppHost, parseAppLabel } from "./app-host.js";
+import {
+  appHost,
+  appLabel,
+  customHostname,
+  MAX_LABEL,
+  parseAppHost,
+  parseAppLabel,
+} from "./app-host.js";
 import { slugify } from "./id.js";
 
 describe("appLabel", () => {
@@ -114,5 +121,29 @@ describe("appHost", () => {
     expect(appHost({ appSlug: "ledger", spaceSlug: "acme" }, "cira.dev")).toBe(
       "ledger--acme.cira.dev",
     );
+  });
+});
+
+describe("customHostname", () => {
+  const check = (input: string) => customHostname(input, "cira.dev");
+
+  it("takes a subdomain of a company's own, lowercased", () => {
+    expect(check(" Tools.Acme.com. ")).toEqual({ ok: true, hostname: "tools.acme.com" });
+  });
+
+  it("says why it will not take the rest", () => {
+    for (const [input, says] of [
+      ["https://tools.acme.com/", "no https://"],
+      ["acme.com", "tools.acme.com"],
+      ["ledger--acme.cira.dev", "Cira's own"],
+      ["cira.dev", "Cira's own"],
+      ["10.0.0.1", "not a name"],
+      ["bad_name.acme.com", "not a name"],
+      ["-x.acme.com", "not a name"],
+    ] as const) {
+      const result = check(input);
+      expect(result.ok, input).toBe(false);
+      expect(!result.ok && result.reason, input).toContain(says);
+    }
   });
 });

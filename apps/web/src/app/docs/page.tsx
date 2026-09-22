@@ -69,6 +69,12 @@ export default function DocsPage() {
           that - it is reached through Cira&rsquo;s own door, and only by people the
           app&rsquo;s managers named.
         </p>
+        <p>
+          An app can also answer on a name of your own, like{" "}
+          <code>tools.yourcompany.com</code>: add it from the app&rsquo;s page and make
+          the CNAME record it shows. Cira gets it a certificate, and it opens behind the
+          same sign-in, for the same people.
+        </p>
       </Section>
 
       <Section title="Use it from an assistant">

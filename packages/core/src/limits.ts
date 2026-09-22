@@ -59,6 +59,8 @@ export interface Limits {
     memoryChoicesMiB: readonly number[];
     /** How long one request may run before Cloud Run ends it. */
     requestTimeoutSeconds: number;
+    /** A company's own hostnames one app may answer on. */
+    domains: number;
   };
 }
 
@@ -82,6 +84,7 @@ export const DEFAULT_LIMITS: Limits = {
     memoryMiBWithSidecars: 1024,
     memoryChoicesMiB: [512, 1024, 2048, 4096],
     requestTimeoutSeconds: 300,
+    domains: 3,
   },
 };
 

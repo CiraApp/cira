@@ -154,7 +154,10 @@ what it uses.
         and how big each is. Move the Cira organisation to a paid plan before
         a customer depends on it.
   - [ ] Caches (Redis on Upstash), the same way, when an app asks.
-- [ ] **3.5 Custom domains** for apps.
+- [x] **3.5 Custom domains** for apps. A manager adds `tools.acme.com` on the
+      app page; Cira makes it a Cloudflare custom hostname, shows the CNAME to
+      make, and the app proxy serves it once the certificate is issued, behind
+      the same sign-in (2026-09-22).
 - [ ] **3.6 Penetration test** of the app proxy, sessions and MCP, by an
       outside firm. _You._
 
