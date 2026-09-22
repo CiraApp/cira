@@ -33,7 +33,8 @@ export function RunHistory({ runs }: { runs: RunRecord[] }) {
                   {run.capabilityName}
                 </span>
                 <span className="mt-0.5 block truncate text-[11.5px] text-ink-subtle">
-                  {run.personName} · {VIA[run.via]} ·{" "}
+                  {run.personName} · {VIA[run.via]}
+                  {run.approved ? ", approved" : ""} ·{" "}
                   <time dateTime={run.at.toISOString()} title={run.at.toISOString()}>
                     {ago(run.at)}
                   </time>

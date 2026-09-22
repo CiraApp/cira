@@ -17,7 +17,6 @@ import { isSecretFile } from "./bundle.js";
  * crowd out things somebody did.
  */
 
-/** Big enough for every real internal tool, small enough to stay cheap. */
 /**
  * How much source one analysis may carry.
  *
@@ -29,15 +28,17 @@ import { isSecretFile } from "./bundle.js";
  *
  *   200,000  context
  *    -3,000  the system prompt
- *   -32,000  room for the answer
- *   =165,000 tokens, times 3.5 characters, is about 570,000
+ *   -64,000  room for the answer (MAX_TOKENS in capability-analyzer.ts)
+ *   =133,000 tokens, times 3.5 characters, is about 465,000
  *
  * Set below that, because the ratio is an average and a repository full of
- * dense configuration beats it. A repository too large to fit still analyses -
- * it is packed nearest-first and the rest is reported as omitted - which is
- * the behaviour that was always intended and never reached.
+ * dense configuration beats it. The answer's room was 32,000 once, and a large
+ * app's list of capabilities ran past it and came back as nothing at all;
+ * less source, read in the right order, is the better trade. A repository too
+ * large to fit still analyses - the files most likely to declare routes go in
+ * first and the rest is reported as omitted.
  */
-export const MAX_PACKED_BYTES = 500_000;
+export const MAX_PACKED_BYTES = 420_000;
 
 /** Beyond this a single file is generated, whatever its extension claims. */
 const MAX_FILE_BYTES = 200_000;
@@ -78,18 +79,55 @@ export interface PackedSource {
 }
 
 /**
- * Tests go last, not out.
+ * Which files are read first, when not everything fits.
  *
- * They are often the clearest statement of what an endpoint is for - Wave's
- * full request paths appear nowhere but its tests, because the application
- * builds them from a prefix constant. So they earn their place when there is
- * room and lose it first when there is not.
+ * It used to be the alphabet, so a repository whose docs, styles and
+ * components sorted early could fill the budget before the one file that
+ * declares its routes. Now, in order: what declares routes, then the rest of
+ * the code, then what is prose, styling or data, then tests.
+ *
+ * Tests go last, not out. They are often the clearest statement of what an
+ * endpoint is for - Wave's full request paths appear nowhere but its tests,
+ * because the application builds them from a prefix constant. So they earn
+ * their place when there is room and lose it first when there is not.
  */
-function priority(path: string): number {
-  if (/(^|\/)(tests?|__tests__|spec)\//i.test(path)) return 1;
-  if (/\.(test|spec)\.[a-z]+$/i.test(path)) return 1;
-  return 0;
+export function priority(path: string, head: string): number {
+  if (/(^|\/)(tests?|__tests__|spec|e2e)\//i.test(path)) return 3;
+  if (/\.(test|spec)\.[a-z]+$/i.test(path)) return 3;
+  if (/\.(md|mdx|rst|txt|css|scss|sass|less|csv|tsv|html?|ya?ml\.example)$/i.test(path)) {
+    return 2;
+  }
+  if (
+    /(^|\/)(docs?|public|static|assets|locales?|i18n|fixtures|seeds?|migrations)\//i.test(
+      path,
+    )
+  ) {
+    return 2;
+  }
+  return DECLARES_ROUTES.test(head) ? 0 : 1;
 }
+
+/**
+ * How a route is declared, across the frameworks internal tools are written
+ * in. Only an ordering hint: a file it misses is still read, just later, and
+ * nothing is decided from it.
+ */
+const DECLARES_ROUTES = new RegExp(
+  [
+    // Express, Fastify, Hono, Koa, Flask, FastAPI, Sinatra-style: app.get("/x"
+    String.raw`\b(app|router|api|server|route|bp|blueprint|r|e|g|mux)\.(get|post|put|patch|delete|route|all|api_route|add_url_rule|handle|handlefunc|group|mount|include_router)\s*\(`,
+    // Decorators: @app.get(, @router.post(, @Get(, @GetMapping(, @RequestMapping(
+    String.raw`@\w*\.?(get|post|put|patch|delete|route)\s*\(`,
+    String.raw`@(Get|Post|Put|Patch|Delete|Request)Mapping\b`,
+    // Next.js and other file-based handlers
+    String.raw`export\s+(async\s+)?(function|const)\s+(GET|POST|PUT|PATCH|DELETE|HEAD)\b`,
+    // Go net/http and chi/gin
+    String.raw`\bHandleFunc\s*\(|\.(GET|POST|PUT|PATCH|DELETE)\s*\(\s*"/`,
+    // Django, Rails, Laravel
+    String.raw`\b(re_)?path\s*\(\s*r?["'][^"']*["']\s*,|\bresources?\s+:|Route::(get|post|put|patch|delete|resource)`,
+  ].join("|"),
+  "i",
+);
 
 function worthReading(entry: ArchiveEntry): boolean {
   const name = entry.path.split("/").pop() ?? "";
@@ -111,9 +149,13 @@ export function packSource(
   entries: readonly ArchiveEntry[],
   budget: number = MAX_PACKED_BYTES,
 ): PackedSource {
-  const candidates = entries
-    .filter(worthReading)
-    .sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path));
+  const ranked = entries.filter(worthReading).map((entry) => ({
+    entry,
+    rank: priority(entry.path, entry.body.subarray(0, 64 * 1024).toString("utf8")),
+  }));
+  const candidates = ranked
+    .sort((a, b) => a.rank - b.rank || a.entry.path.localeCompare(b.entry.path))
+    .map((r) => r.entry);
 
   const parts: string[] = [];
   const included: string[] = [];

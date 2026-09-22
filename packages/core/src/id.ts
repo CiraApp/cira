@@ -26,6 +26,8 @@ export const ID_PREFIXES = {
   process: "prc",
   /** One event people were emailed about, claimed once so it is sent once. */
   notification: "ntf",
+  /** A person agreeing, in Cira, to one change an assistant asked to make. */
+  approval: "apv",
   /** Someone removed from a space, kept so joining by domain cannot undo it. */
   joinBlock: "jbl",
   /** A CLI's long-lived credential, kept as a hash. */
@@ -97,6 +99,7 @@ export function slugWithSuffix(base: string, suffix: string): string {
 export const RESERVED_SPACE_SLUGS: ReadonlySet<string> = new Set([
   "account-conflict",
   "api",
+  "approve",
   "cli",
   "demo",
   "docs",

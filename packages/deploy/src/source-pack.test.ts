@@ -98,8 +98,8 @@ describe("packSource", () => {
    */
   it("keeps a packed repository inside the context it is sent to", () => {
     const CONTEXT = 200_000;
-    // The system prompt, and room for the answer to come back.
-    const RESERVED = 35_000;
+    // The system prompt, and room for the answer to come back (64,000).
+    const RESERVED = 67_000;
     // Source code, averaged. Dense configuration beats it, which is why the
     // budget sits below the ceiling rather than on it.
     const CHARS_PER_TOKEN = 3.5;
@@ -111,5 +111,49 @@ describe("packSource", () => {
     // The other direction: a budget small enough to always fit is also small
     // enough to find nothing.
     expect(MAX_PACKED_BYTES).toBeGreaterThan(250_000);
+  });
+
+  /**
+   * The alphabet used to decide. A repository whose docs and components
+   * sorted early filled the budget before the file that declares its routes,
+   * and the analysis found nothing to publish.
+   */
+  it("reads what declares routes first, then code, then prose, then tests", () => {
+    const big = "x".repeat(60);
+    const packed = packSource(
+      [
+        file("README.md", big),
+        file(
+          "app/components/Button.tsx",
+          `export function Button() { return null } ${big}`,
+        ),
+        file("tests/test_orders.py", `client.get("/api/orders") ${big}`),
+        file("zz/server.py", `@app.get("/api/orders")\ndef orders(): ... ${big}`),
+      ],
+      // Room for two files.
+      2 * 160,
+    );
+    expect(packed.included).toEqual(["zz/server.py", "app/components/Button.tsx"]);
+    expect(packed.omitted).toEqual(["README.md", "tests/test_orders.py"]);
+  });
+
+  it("knows a route declaration in the common frameworks", async () => {
+    const { priority } = await import("./source-pack.js");
+    for (const head of [
+      'router.post("/refunds", handler)',
+      "@router.get('/beats/{id}')",
+      '@GetMapping("/orders")',
+      "export async function GET(request: Request) {",
+      'mux.HandleFunc("POST /inventory/{sku}", h)',
+      'r.GET("/ping", ping)',
+      "path('orders/<int:id>/', views.order),",
+      "resources :invoices",
+      "Route::get('/users', [UserController::class, 'index']);",
+    ]) {
+      expect(priority("src/x.any", head), head).toBe(0);
+    }
+    expect(priority("src/util.ts", "export const add = (a, b) => a + b;")).toBe(1);
+    expect(priority("docs/guide.md", 'app.get("/x")')).toBe(2);
+    expect(priority("src/orders.test.ts", 'app.get("/x")')).toBe(3);
   });
 });

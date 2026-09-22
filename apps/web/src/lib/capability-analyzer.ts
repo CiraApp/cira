@@ -180,10 +180,24 @@ Never invent a path. If an app has no capabilities worth exposing, return an
 empty list - that is a good answer.`;
 
 /**
- * Enough for a large app's worth of capabilities and their schemas. Wave, the
- * biggest thing measured, produces 51 of them.
+ * Room for the answer: a large app's worth of capabilities and their schemas.
+ * Wave, the biggest thing measured, produces 51 of them. It was 32,000, and a
+ * larger app ran past it - a cut-off answer does not parse, so the whole list
+ * came back as nothing. 64,000 is Haiku 4.5's ceiling; the source budget in
+ * source-pack.ts was lowered to make room for it.
  */
-const MAX_TOKENS = 32_000;
+const MAX_TOKENS = 64_000;
+
+/** How many operations a second pass over a large app asks for. */
+const LARGE_APP_LIMIT = 40;
+
+function largeApp(limit: number): string {
+  return `## This app is large
+
+Your full list did not fit. Return at most ${limit} operations: the ones
+employees would use most. Keep each description to one short sentence and each
+input schema to the parameters that matter.`;
+}
 
 /**
  * Which model reads the source.
@@ -223,39 +237,55 @@ export async function analyzeCapabilities(
 
   const client = new Anthropic();
 
+  // A large app's full list can run past the answer's room, and a cut-off
+  // answer does not parse. Then it is asked again for the operations people
+  // would use most, which is a smaller list and a far better outcome than
+  // none.
   let parsed;
-  try {
-    // Streamed, and not because anything reads the stream. A whole repository
-    // of input against a large output budget is a request the SDK will not
-    // send any other way - it refuses up front for anything that could run
-    // past ten minutes, and the refusal surfaced as one line at the end of a
-    // deploy saying capabilities were not analyzed. `finalMessage` waits for
-    // the whole thing and carries the parsed output, so nothing else changes.
-    const response = await client.messages
-      .stream({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        system: SYSTEM,
-        ...(THINKS ? { thinking: { type: "adaptive" as const } } : {}),
-        output_config: { format: zodOutputFormat(analysis) },
-        messages: [
-          {
-            role: "user",
-            content: `App name: ${options.appName}\n\nSource:\n\n${source}`,
-          },
-        ],
-      })
-      .finalMessage();
-    parsed = response.parsed_output;
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Capability analysis failed.",
-    };
+  let cutOff = false;
+  for (const limit of [null, LARGE_APP_LIMIT]) {
+    try {
+      // Streamed, and not because anything reads the stream. A whole
+      // repository of input against a large output budget is a request the
+      // SDK will not send any other way - it refuses up front for anything
+      // that could run past ten minutes, and the refusal surfaced as one line
+      // at the end of a deploy saying capabilities were not analyzed.
+      // `finalMessage` waits for the whole thing and carries the parsed
+      // output, so nothing else changes.
+      const response = await client.messages
+        .stream({
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
+          system: limit === null ? SYSTEM : `${SYSTEM}\n\n${largeApp(limit)}`,
+          ...(THINKS ? { thinking: { type: "adaptive" as const } } : {}),
+          output_config: { format: zodOutputFormat(analysis) },
+          messages: [
+            {
+              role: "user",
+              content: `App name: ${options.appName}\n\nSource:\n\n${source}`,
+            },
+          ],
+        })
+        .finalMessage();
+      cutOff = response.stop_reason === "max_tokens";
+      if (cutOff) continue;
+      parsed = response.parsed_output;
+      break;
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Capability analysis failed.",
+      };
+    }
   }
 
   if (parsed === null || parsed === undefined) {
-    return { ok: false, error: "Capability analysis returned nothing usable." };
+    return {
+      ok: false,
+      error: cutOff
+        ? "This app has more operations than Cira can describe, even keeping to the most used."
+        : "Capability analysis returned nothing usable.",
+    };
   }
 
   return {

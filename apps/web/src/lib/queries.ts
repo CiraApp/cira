@@ -28,6 +28,22 @@ export async function latestDeployment(appId: string): Promise<Deployment | null
   return row ?? null;
 }
 
+/**
+ * The build an app is serving: its newest deploy that went live. Newer ones
+ * still building, failed or superseded never took the traffic, so the last
+ * live one still has it.
+ */
+export async function servingDeployment(appId: string): Promise<Deployment | null> {
+  const [row] = await db()
+    .select()
+    .from(deployments)
+    .where(and(eq(deployments.appId, appId), eq(deployments.status, "live")))
+    .orderBy(desc(deployments.createdAt))
+    .limit(1);
+
+  return row ?? null;
+}
+
 /** Every deploy of an app, newest first. */
 export async function deploymentHistory(
   appId: string,

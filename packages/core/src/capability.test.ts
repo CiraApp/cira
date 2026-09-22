@@ -6,6 +6,7 @@ import {
   isSafeTargetPath,
   publicationFor,
   reconcileCapabilities,
+  riskFor,
 } from "./capability.js";
 
 describe("publicationFor", () => {
@@ -69,10 +70,15 @@ describe("isCapabilityName", () => {
 });
 
 describe("reconcileCapabilities", () => {
-  const detected = (name: string, risk: "read" | "write", confidence = 0.9) => ({
+  const detected = (
+    name: string,
+    risk: "read" | "write",
+    target: { method?: string; path?: string } = {},
+  ) => ({
     name,
     risk,
-    confidence,
+    method: target.method ?? (risk === "read" ? "GET" : "POST"),
+    path: target.path ?? `/${name}`,
   });
 
   it("creates what is new, with the policy's default", () => {
@@ -107,6 +113,58 @@ describe("reconcileCapabilities", () => {
     );
     expect(off.update[0]?.enabled).toBe(false);
     expect(off.reviewCount).toBe(1);
+  });
+
+  it("sends a read that has become a write back for review", () => {
+    // syncInventory was a GET, switched itself on as a read, and is now a POST.
+    const plan = reconcileCapabilities(
+      [
+        {
+          id: "cap_1",
+          name: "syncInventory",
+          enabled: true,
+          risk: "read",
+          method: "GET",
+          path: "/syncInventory",
+        },
+      ],
+      [detected("syncInventory", "write")],
+    );
+    expect(plan.update[0]?.enabled).toBe(false);
+  });
+
+  it("sends a write that now points somewhere else back for review", () => {
+    const plan = reconcileCapabilities(
+      [
+        {
+          id: "cap_1",
+          name: "refundOrder",
+          enabled: true,
+          risk: "write",
+          method: "POST",
+          path: "/refunds",
+        },
+      ],
+      [detected("refundOrder", "write", { path: "/refunds/bulk" })],
+    );
+    expect(plan.update[0]?.enabled).toBe(false);
+  });
+
+  it("keeps the decision about a read whose address merely moved", () => {
+    const plan = reconcileCapabilities(
+      [
+        {
+          id: "cap_1",
+          name: "getRevenue",
+          enabled: false,
+          risk: "read",
+          method: "GET",
+          path: "/revenue",
+        },
+      ],
+      [detected("getRevenue", "read", { path: "/api/revenue" })],
+    );
+    expect(plan.update[0]?.enabled).toBe(false);
   });
 
   it("describes a full replacement without losing track of anything", () => {
@@ -198,10 +256,37 @@ describe("fillTargetPath", () => {
     expect(isSafeTargetPath(path)).toBe(false);
   });
 
+  // `/orders/./refund` and `/orders//refund` are both `/orders/refund` once a
+  // server has tidied them, a route nobody meant to reach with an order id.
+  it("never lets a value collapse its segment into a different route", () => {
+    expect(
+      isSafeTargetPath(fillTargetPath("/orders/{id}/refund", { id: "." }).path),
+    ).toBe(false);
+    expect(fillTargetPath("/orders/{id}/refund", { id: "" }).missing).toEqual(["id"]);
+    expect(isSafeTargetPath("/orders//refund")).toBe(false);
+    // A dot inside a value is only a dot.
+    expect(
+      isSafeTargetPath(fillTargetPath("/files/{name}", { name: "a.csv" }).path),
+    ).toBe(true);
+    expect(isSafeTargetPath("/api/items/")).toBe(true);
+  });
+
   it("reports a hole nothing was given for, and fills it when asked to", () => {
     expect(fillTargetPath("/orders/{id}", {}).missing).toEqual(["id"]);
     expect(fillTargetPath("/orders/{id}", {}, "cira-probe").path).toBe(
       "/orders/cira-probe",
     );
+  });
+});
+
+describe("riskFor", () => {
+  it("makes anything but GET and HEAD a write, whatever it was called", () => {
+    expect(riskFor("DELETE", "read")).toBe("write");
+    expect(riskFor("POST", "read")).toBe("write");
+    expect(riskFor("patch", "read")).toBe("write");
+    expect(riskFor("GET", "read")).toBe("read");
+    expect(riskFor("HEAD", "read")).toBe("read");
+    // Stricter is allowed: some GETs do change things.
+    expect(riskFor("GET", "write")).toBe("write");
   });
 });

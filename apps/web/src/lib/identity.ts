@@ -262,10 +262,26 @@ export class AddressTakenError extends Error {
  * through here, a new page cannot ship unprotected by being left out of a
  * route list; it is protected by the act of reading data.
  */
-export async function requireCurrentUser(): Promise<User> {
+/**
+ * The signed-in person, or off to sign in. `returnTo` brings them back to the
+ * page they were sent to - an approval link, a CLI code - rather than to the
+ * home page with the reason they came lost.
+ */
+export async function requireCurrentUser(returnTo?: string): Promise<User> {
   const user = await getCurrentUser();
-  if (user === null) redirect("/sign-in");
+  if (user === null) {
+    redirect(
+      returnTo !== undefined && isOwnPath(returnTo)
+        ? `/sign-in?redirect_url=${encodeURIComponent(returnTo)}`
+        : "/sign-in",
+    );
+  }
   return user;
+}
+
+/** A path on this site, never somewhere else dressed as one. */
+export function isOwnPath(path: string): boolean {
+  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\");
 }
 
 type UserRow = typeof users.$inferSelect;

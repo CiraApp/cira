@@ -227,3 +227,24 @@ describe.skipIf(!hasDatabase)("getCurrentUser", () => {
     expect((await getCurrentUser())?.id).toBe(created?.id);
   });
 });
+
+/**
+ * Where sign-in may send someone back to. A link that came from outside -
+ * an assistant's approval link, a CLI code - is only ever followed back to a
+ * page on Cira itself.
+ */
+describe("isOwnPath", () => {
+  it("accepts Cira's own pages", async () => {
+    const { isOwnPath } = await import("./identity");
+    expect(isOwnPath("/approve/apv_1")).toBe(true);
+    expect(isOwnPath("/cli?code=ABCD-EFGH")).toBe(true);
+  });
+
+  it("refuses anywhere else, however it is dressed", async () => {
+    const { isOwnPath } = await import("./identity");
+    expect(isOwnPath("https://evil.test")).toBe(false);
+    expect(isOwnPath("//evil.test/approve")).toBe(false);
+    expect(isOwnPath("/\\evil.test")).toBe(false);
+    expect(isOwnPath("approve")).toBe(false);
+  });
+});

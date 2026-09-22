@@ -12,6 +12,8 @@ export interface RunRecord {
   outcome: "ran" | "refused" | "pending" | "disabled" | "invalid-input" | "unreachable";
   status: number | null;
   elapsedMs: number | null;
+  /** Its person approved it in Cira first: a write an assistant asked for. */
+  approved: boolean;
   at: Date;
 }
 
@@ -39,6 +41,7 @@ export async function recentRuns(appId: string, limit = 50): Promise<RunRecord[]
     outcome: run.outcome,
     status: run.status,
     elapsedMs: run.elapsedMs,
+    approved: run.approvalId !== null,
     at: run.createdAt,
   }));
 }

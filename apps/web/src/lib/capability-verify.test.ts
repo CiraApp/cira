@@ -323,3 +323,157 @@ describe("a path can never leave the app it belongs to", () => {
     expect(reached.join(" ")).not.toContain("evil.test");
   });
 });
+
+describe("verifyCapabilities, on what real apps answer", () => {
+  /**
+   * `/customers/{id}` with a made-up id is a customer that does not exist,
+   * not a route that does not. Deleting on that 404 removed every read with
+   * an id in its path.
+   */
+  describe("a read with an id in its path", () => {
+    /** An app whose router 404 is a bare page and whose handler's is JSON. */
+    const customers = (opts: { handler404: "json" | "same"; options: number }) => {
+      const fetcher = async (url: string, init: RequestInit): Promise<Response> => {
+        const { pathname } = new URL(url);
+        const method = (init.method ?? "GET").toUpperCase();
+        const routed = /^\/api\/customers\/[^/]+$/.test(pathname);
+        if (!routed) {
+          return new Response(`Cannot ${method} ${pathname}`, {
+            status: 404,
+            headers: { "content-type": "text/html" },
+          });
+        }
+        if (method === "OPTIONS") return new Response(null, { status: opts.options });
+        return opts.handler404 === "json"
+          ? new Response('{"error":"no such customer"}', {
+              status: 404,
+              headers: { "content-type": "application/json" },
+            })
+          : new Response(`Cannot ${method} ${pathname}`, {
+              status: 404,
+              headers: { "content-type": "text/html" },
+            });
+      };
+      return fetcher;
+    };
+    const lookup = read("getCustomer", "/api/customers/{id}");
+
+    it("keeps it when the 404 is the handler's own words", async () => {
+      const result = await verifyCapabilities({
+        ...base,
+        fetcher: customers({ handler404: "json", options: 404 }),
+        capabilities: [lookup],
+      });
+      expect(result.callable).toEqual(["getCustomer"]);
+    });
+
+    it("keeps it when OPTIONS finds the route", async () => {
+      const result = await verifyCapabilities({
+        ...base,
+        fetcher: customers({ handler404: "same", options: 204 }),
+        capabilities: [lookup],
+      });
+      expect(result.callable).toEqual(["getCustomer"]);
+    });
+
+    it("leaves it unconfirmed, never deleted, when nothing can tell", async () => {
+      const result = await verifyCapabilities({
+        ...base,
+        fetcher: customers({ handler404: "same", options: 404 }),
+        capabilities: [lookup, read("listGhosts", "/api/ghosts")],
+      });
+      expect(result.callable).toEqual([]);
+      // A path with no id in it that says 404 is still simply not there.
+      expect(result.absent).toEqual(["listGhosts"]);
+    });
+  });
+
+  // "Nothing matched" as a 404 is the handler answering, not a missing route.
+  it("keeps a read whose 404 is in the app's own words, and drops the router's", async () => {
+    const fetcher = async (url: string): Promise<Response> =>
+      new URL(url).pathname === "/api/search"
+        ? new Response('{"error":"nothing matched"}', {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          })
+        : new Response('{"detail":"Not Found"}', {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          });
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [read("search", "/api/search"), read("invented", "/api/invented")],
+    });
+    expect(result.callable).toEqual(["search"]);
+    expect(result.absent).toEqual(["invented"]);
+  });
+
+  describe("a redirect", () => {
+    const redirecting = (location: string) => async (url: string) => {
+      const { pathname } = new URL(url);
+      if (pathname === "/api/report") {
+        return new Response(null, { status: 302, headers: { location } });
+      }
+      return new Response(null, { status: 404 });
+    };
+
+    it("to a sign-in page is the app turning Cira away", async () => {
+      for (const location of ["/login?next=/api/report", "https://idp.test/authorize"]) {
+        const result = await verifyCapabilities({
+          ...base,
+          fetcher: redirecting(location),
+          capabilities: [read("getReport", "/api/report")],
+        });
+        expect(result.refused, location).toEqual(["getReport"]);
+      }
+    });
+
+    it("anywhere else is not a result, and is not published", async () => {
+      const result = await verifyCapabilities({
+        ...base,
+        fetcher: redirecting("/api/report/"),
+        capabilities: [read("getReport", "/api/report")],
+      });
+      expect(result).toMatchObject({ callable: [], refused: [], absent: [] });
+    });
+  });
+
+  /**
+   * CORS middleware answers every OPTIONS the same, with no `Allow`. That
+   * used to count as callable for any write at all, real or invented.
+   */
+  it("asks a write's path with GET when OPTIONS answers everything alike", async () => {
+    const fetcher = async (url: string, init: RequestInit): Promise<Response> => {
+      const { pathname } = new URL(url);
+      const method = (init.method ?? "GET").toUpperCase();
+      if (method === "OPTIONS") return new Response(null, { status: 204 });
+      if (pathname === "/api/refunds") return new Response(null, { status: 405 });
+      return new Response(null, { status: 404 });
+    };
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [
+        write("createRefund", "POST", "/api/refunds"),
+        write("inventedThing", "POST", "/api/nothing-here"),
+      ],
+    });
+    expect(result.callable).toEqual(["createRefund"]);
+    expect(result.absent).toEqual(["inventedThing"]);
+  });
+
+  it("does not record a refusal given to one person as a refusal for everyone", async () => {
+    const fetcher = async (url: string): Promise<Response> =>
+      new URL(url).pathname === "/api/mine"
+        ? new Response(null, { status: 403 })
+        : new Response(null, { status: 404 });
+    const result = await verifyCapabilities({
+      ...base,
+      identity: "signed-assertion",
+      fetcher,
+      capabilities: [read("getMine", "/api/mine")],
+    });
+    expect(result.refused).toEqual([]);
+  });
+});

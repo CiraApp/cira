@@ -14,13 +14,15 @@ import {
 } from "@cira/core";
 import {
   getCapabilityForUser,
+  recordAbsence,
   recordRefusal,
   NO_SUCH_CAPABILITY,
   type CapabilityWithApp,
 } from "@/lib/capabilities";
 import { assertIdentity, IDENTITY_HEADER } from "@/lib/identity-assertion";
-import { latestDeployment } from "@/lib/queries";
+import { servingDeployment } from "@/lib/queries";
 import { validateInput } from "@/lib/json-schema";
+import { sameNotFound } from "@/lib/capability-verify";
 import { demoAnswer } from "@/lib/demo/answers";
 
 /**
@@ -76,6 +78,8 @@ export async function invokeCapability(args: {
   capabilityId: string;
   input: unknown;
   via: InvocationVia;
+  /** The approval its person gave for this run, when it needed one. */
+  approvalId?: string | undefined;
 }): Promise<InvocationResult> {
   // Resolves the acting user from the session and applies app access. A
   // capability the caller cannot see reads as one that does not exist, and is
@@ -84,16 +88,30 @@ export async function invokeCapability(args: {
   if (capability === null) return { ok: false, error: NO_SUCH_CAPABILITY };
 
   // One person can only start so many runs a minute, across MCP, Ask Cira and
-  // the console together, since each is a request to somebody's app. Counted
-  // from the record below, and a refused run is not added to it.
-  const limit = checkInvocationRate(await runsInLastMinute(args.user.id), DEFAULT_LIMITS);
-  if (!limit.ok) return { ok: false, error: limit.message };
+  // the console together, since each is a request to somebody's app. The run
+  // is written down first and counted with itself in: counting and then
+  // writing let every one of a burst of parallel calls see the same count and
+  // pass together. A run the limit refuses is taken back out of the record.
+  const runId = await claimRun({
+    capability,
+    user: args.user,
+    via: args.via,
+    approvalId: args.approvalId ?? null,
+  });
+  const limit = checkInvocationRate(
+    (await runsInLastMinute(args.user.id)) - 1,
+    DEFAULT_LIMITS,
+  );
+  if (!limit.ok) {
+    await db().delete(invocations).where(eq(invocations.id, runId));
+    return { ok: false, error: limit.message };
+  }
 
   const { result, outcome } = await attempt(capability, args.input, {
     user: args.user,
     via: args.via,
   });
-  await record({ capability, user: args.user, via: args.via, outcome, result });
+  await record(runId, capability, outcome, result);
   return result;
 }
 
@@ -214,39 +232,57 @@ async function runsInLastMinute(userId: string): Promise<number> {
 }
 
 /**
- * Write down that it happened. Who, what, from where, and how it ended; never
- * the input or the reply.
+ * Write down that a run started: who, what, from where, and on whose
+ * approval; never the input. Until it ends it reads as a run with no answer,
+ * which is also the truth about one whose function was killed mid-call.
+ */
+async function claimRun(args: {
+  capability: CapabilityWithApp;
+  user: User;
+  via: InvocationVia;
+  approvalId: string | null;
+}): Promise<string> {
+  const id = newId("invocation");
+  await db().insert(invocations).values({
+    id,
+    spaceId: args.capability.spaceId,
+    appId: args.capability.appId,
+    capabilityId: args.capability.id,
+    capabilityName: args.capability.name,
+    userId: args.user.id,
+    via: args.via,
+    approvalId: args.approvalId,
+    outcome: "ran",
+  });
+  return id;
+}
+
+/**
+ * Write down how it ended; never the reply.
  *
  * A failure to write is logged rather than thrown. By now the app has been
  * called, and telling the person it failed when it did not would be the worse
  * of the two outcomes - they would run a refund again.
  */
-async function record(args: {
-  capability: CapabilityWithApp;
-  user: User;
-  via: InvocationVia;
-  outcome: Outcome;
-  result: InvocationResult;
-}): Promise<void> {
-  const answer = args.result.answer;
+async function record(
+  runId: string,
+  capability: CapabilityWithApp,
+  outcome: Outcome,
+  result: InvocationResult,
+): Promise<void> {
+  const answer = result.answer;
   try {
     await db()
-      .insert(invocations)
-      .values({
-        id: newId("invocation"),
-        spaceId: args.capability.spaceId,
-        appId: args.capability.appId,
-        capabilityId: args.capability.id,
-        capabilityName: args.capability.name,
-        userId: args.user.id,
-        via: args.via,
-        outcome: args.outcome,
+      .update(invocations)
+      .set({
+        outcome,
         status: answer?.status ?? null,
         elapsedMs: answer?.elapsedMs ?? null,
-      });
+      })
+      .where(eq(invocations.id, runId));
   } catch (error) {
     console.error(
-      `could not record a run of ${args.capability.id}: ${error instanceof Error ? error.message : "unknown"}`,
+      `could not record a run of ${capability.id}: ${error instanceof Error ? error.message : "unknown"}`,
     );
   }
 }
@@ -269,10 +305,11 @@ interface ResolvedTarget {
 async function resolveTarget(capability: Capability): Promise<ResolvedTarget | null> {
   if (!isSafeTargetPath(capability.target.path)) return null;
 
-  const deployment = await latestDeployment(capability.appId);
-  if (deployment === null || deployment.status !== "live" || deployment.url === null) {
-    return null;
-  }
+  // The newest build that went live, not the newest build. While a new one
+  // is building, or after one failed, the last good one is still what is
+  // serving - traffic stays on it - and its capabilities still work.
+  const deployment = await servingDeployment(capability.appId);
+  if (deployment === null || deployment.url === null) return null;
 
   let url: URL;
   try {
@@ -293,9 +330,11 @@ async function resolveTarget(capability: Capability): Promise<ResolvedTarget | n
 /**
  * Make the call.
  *
- * A GET carries its input as query parameters and a POST as a JSON body,
- * because that is what a normal Next.js route already expects - the whole
- * premise is that the app was not written for Cira.
+ * A GET, HEAD or DELETE carries its input as query parameters and anything
+ * else as a JSON body, because that is what an ordinary route already expects
+ * - the whole premise is that the app was not written for Cira. A list in a
+ * query is the same key once per item (`?tag=a&tag=b`), the way every
+ * framework reads one; it used to go as one JSON string nothing parsed.
  */
 async function call(
   target: ResolvedTarget,
@@ -313,17 +352,12 @@ async function call(
     Object.entries(input).filter(([key]) => !filled.used.includes(key)),
   );
 
-  if (capability.target.method === "GET") {
-    for (const [key, value] of Object.entries(rest)) {
-      if (value === undefined || value === null) continue;
-      url.searchParams.set(
-        key,
-        typeof value === "object" ? JSON.stringify(value) : String(value),
-      );
-    }
+  if (inQuery(capability.target.method)) {
+    for (const [key, value] of queryPairs(rest)) url.searchParams.append(key, value);
   } else {
     body = JSON.stringify(rest);
   }
+  const write = capability.risk === "write";
 
   // Minted for this app's own URL and expiring in an hour, rather than read
   // out of a column. Cloud Run checks the audience before the request reaches
@@ -356,14 +390,24 @@ async function call(
     // because the app was not written for Cira and may well use it.
     "x-serverless-authorization": `Bearer ${token}`,
     "x-cira-capability": capability.name,
-    ...(body === undefined ? {} : { "content-length": String(body.length) }),
+    // In bytes. The string's length counts characters, and a body with an
+    // accent or a name in another script is longer than that on the wire.
+    ...(body === undefined
+      ? {}
+      : { "content-length": String(Buffer.byteLength(body, "utf8")) }),
   };
 
+  // One deadline for the whole answer, body included. It used to stop at the
+  // headers, so an app that sent them and then trickled its body held the
+  // call open until the platform killed the function, and nothing recorded
+  // what happened.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   const started = performance.now();
+  const late = `${capability.name} took longer than ${TIMEOUT_MS / 1000} seconds.`;
 
   let response: Response;
+  let text: string | null;
   try {
     response = await fetch(url, {
       method: capability.target.method,
@@ -376,33 +420,55 @@ async function call(
   } catch (error) {
     clearTimeout(timer);
     const aborted = error instanceof Error && error.name === "AbortError";
+    if (!aborted) return { ok: false, error: `Could not reach ${capability.appName}.` };
+    return { ok: false, error: write ? `${late} ${MAY_HAVE_HAPPENED}` : late };
+  }
+
+  try {
+    text = await readCapped(response);
+  } catch {
+    clearTimeout(timer);
+    // The app answered, so a write reached its code; only the rest of what
+    // it said is missing.
+    const answer = replyOf(response, "", started);
     return {
       ok: false,
-      error: aborted
-        ? `${capability.name} took longer than ${TIMEOUT_MS / 1000} seconds.`
-        : `Could not reach ${capability.appName}.`,
+      status: response.status,
+      error: write ? `${late} ${MAY_HAVE_HAPPENED}` : late,
+      answer,
     };
-  } finally {
-    clearTimeout(timer);
   }
+  clearTimeout(timer);
 
-  // A redirect from a capability is the app asking for a login it should never
-  // need, or pointing somewhere else entirely. Neither is worth following.
+  // A redirect from a read is the app asking for a login it should never
+  // need, or pointing somewhere else entirely; neither is worth following. A
+  // write redirecting afterwards is often how it says it worked (a 303 to the
+  // thing it made), so it is never reported as not having happened.
   if (response.status >= 300 && response.status < 400) {
-    return { ok: false, error: `${capability.name} did not return a result.` };
+    const answer = replyOf(response, text ?? "", started);
+    return write
+      ? {
+          ok: false,
+          status: response.status,
+          error: `${capability.appName} answered ${capability.name} with a redirect, not a result. ${MAY_HAVE_HAPPENED}`,
+          answer,
+        }
+      : { ok: false, error: `${capability.name} did not return a result.`, answer };
   }
 
-  const text = await readCapped(response);
   if (text === null) {
-    return { ok: false, error: `${capability.name} returned too much data.` };
+    const answer = replyOf(response, "", started);
+    return write && response.ok
+      ? {
+          ok: true,
+          status: response.status,
+          data: { accepted: true, note: "The app's answer was too large to pass on." },
+          answer,
+        }
+      : { ok: false, error: `${capability.name} returned too much data.`, answer };
   }
 
-  const answer: AppAnswer = {
-    status: response.status,
-    body: text,
-    contentType: response.headers.get("content-type"),
-    elapsedMs: Math.round(performance.now() - started),
-  };
+  const answer = replyOf(response, text, started);
 
   // A write can only be verified by asking which methods its path allows,
   // and frameworks answer that before they check who is asking - so the app
@@ -427,6 +493,18 @@ async function call(
     return { ok: false, status: 401, error: refusal(capability), answer };
   }
 
+  // A 404 is usually the thing asked for not existing - no such order - and
+  // then it is the app's own answer. Only when it is the very page the app
+  // gives for a path nobody wrote is the route itself gone, and the
+  // capability is sent back to be checked before anyone else is offered it.
+  if (
+    response.status === 404 &&
+    fillTargetPath(capability.target.path, {}).missing.length === 0 &&
+    (await routerSaidIt(url, answer, headers))
+  ) {
+    await recordAbsence(capability.id);
+  }
+
   if (!response.ok) {
     return {
       ok: false,
@@ -442,10 +520,20 @@ async function call(
   try {
     return { ok: true, status: response.status, data: JSON.parse(text), answer };
   } catch {
-    // A capability is a structured operation. An app answering with HTML is
-    // answering a different question, and passing that on to an agent as if it
-    // were a result is worse than saying it did not work. The page itself is
-    // still in `answer`, for anyone who wants to see what came back.
+    // A write that the app accepted happened, whatever it answered with.
+    // Calling it a failure invites the same refund again.
+    if (write) {
+      return {
+        ok: true,
+        status: response.status,
+        data: { accepted: true, note: "The app did not answer with JSON." },
+        answer,
+      };
+    }
+    // A capability is a structured operation. An app answering a read with
+    // HTML is answering a different question, and passing that on to an agent
+    // as if it were a result is worse than saying it did not work. The page
+    // itself is still in `answer`, for anyone who wants to see what came back.
     return {
       ok: false,
       status: response.status,
@@ -453,6 +541,84 @@ async function call(
       answer,
     };
   }
+}
+
+/**
+ * Whether a 404 is the router's rather than the handler's: the same page, in
+ * the same type, that the app gives a path it has never heard of. One more
+ * small request, and only after a 404; a failure to ask counts as no.
+ */
+async function routerSaidIt(
+  url: URL,
+  answer: AppAnswer,
+  headers: Record<string, string>,
+): Promise<boolean> {
+  const nowhere = new URL(url);
+  nowhere.pathname = `/__cira-probe-${Math.random().toString(36).slice(2, 10)}`;
+  nowhere.search = "";
+  try {
+    const control = await fetch(nowhere, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        "x-serverless-authorization": headers["x-serverless-authorization"] ?? "",
+      },
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (control.status !== 404) return false;
+    const body = ((await readCapped(control)) ?? "").slice(0, 4096);
+    return sameNotFound(
+      {
+        contentType: answer.contentType,
+        body: answer.body.slice(0, 4096),
+        path: url.pathname,
+      },
+      { contentType: control.headers.get("content-type"), body, path: nowhere.pathname },
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** What to tell anyone about a write whose result Cira could not see. */
+const MAY_HAVE_HAPPENED =
+  "The change may still have been made: check in the app before trying again.";
+
+/** Methods whose input goes in the address, since they carry no body. */
+function inQuery(method: string): boolean {
+  return method === "GET" || method === "HEAD" || method === "DELETE";
+}
+
+/**
+ * Input as query parameters. A list is its key once per item; anything else
+ * that is not a plain value goes as JSON, which is the least surprising of
+ * the bad choices for a nested object.
+ */
+export function queryPairs(input: Record<string, unknown>): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item === undefined || item === null) continue;
+        pairs.push([key, typeof item === "object" ? JSON.stringify(item) : String(item)]);
+      }
+      continue;
+    }
+    pairs.push([key, typeof value === "object" ? JSON.stringify(value) : String(value)]);
+  }
+  return pairs;
+}
+
+function replyOf(response: Response, body: string, started: number): AppAnswer {
+  return {
+    status: response.status,
+    body,
+    contentType: response.headers.get("content-type"),
+    elapsedMs: Math.round(performance.now() - started),
+  };
 }
 
 /** A demo app's answer, in the shape a real one arrives in. */

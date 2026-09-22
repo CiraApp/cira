@@ -97,15 +97,26 @@ export async function verifyCapabilities(args: {
   // The control comes first, and its failure ends the exercise. Verifying
   // against an app that answers everything is worse than not verifying: it
   // would stamp every hallucination as confirmed.
-  const control = await ask(fetcher, args, {
-    method: "GET",
-    path: `/__cira-probe-${Math.random().toString(36).slice(2, 10)}`,
-  });
+  const nowhere = `/__cira-probe-${Math.random().toString(36).slice(2, 10)}`;
+  const control = await ask(fetcher, args, { method: "GET", path: nowhere });
 
   // An app that refuses unknown paths as well as real ones tells us nothing
   // by refusing a real one, so the control catches that case too: it comes
   // back 401 rather than 404, and the whole run is inconclusive.
-  if (control !== 404) return { ...NOTHING, inconclusive: true };
+  if (control?.status !== 404) return { ...NOTHING, inconclusive: true };
+
+  // What the app does with OPTIONS on a path it does not serve. Some answer
+  // every OPTIONS the same way - CORS middleware in front of everything - and
+  // then an `Allow` from a real path is the only thing OPTIONS can say.
+  const optionsControl = await allowed(fetcher, args, nowhere);
+  const baseline: Baseline = {
+    notFound: control,
+    nowhere,
+    optionsAnswersAnything:
+      optionsControl !== null &&
+      optionsControl.status !== 404 &&
+      optionsControl.status !== 405,
+  };
 
   const callable: string[] = [];
   const refused: string[] = [];
@@ -116,7 +127,7 @@ export async function verifyCapabilities(args: {
     const outcomes = await Promise.all(
       batch.map(async (capability) => ({
         capability,
-        reach: await reachOf(fetcher, args, capability),
+        reach: await reachOf(fetcher, args, capability, baseline),
       })),
     );
 
@@ -125,8 +136,11 @@ export async function verifyCapabilities(args: {
       // not answer about stays pending and is asked again next time, which is
       // the difference between a slow app and an app that does not serve it.
       if (reach === "callable") callable.push(capability.name);
-      else if (reach === "refused") refused.push(capability.name);
-      else if (reach === "absent") absent.push(capability.name);
+      // Turned away while speaking for one person is about that person, and
+      // recording it would hide the capability from everybody because of them.
+      else if (reach === "refused" && args.identity === undefined) {
+        refused.push(capability.name);
+      } else if (reach === "absent") absent.push(capability.name);
     }
   }
 
@@ -149,6 +163,7 @@ async function reachOf(
   fetcher: Fetcher,
   args: { origin: string; token: string; identity?: string | undefined },
   capability: ProbeTarget,
+  baseline: Baseline,
 ): Promise<Reach> {
   const path = fill(capability.path, capability.probe);
 
@@ -161,11 +176,17 @@ async function reachOf(
   if (!isSafeTargetPath(path)) return "absent";
 
   if (capability.risk === "read") {
-    const status = await ask(fetcher, args, {
+    const answer = await ask(fetcher, args, {
       method: capability.method === "HEAD" ? "HEAD" : "GET",
       path: withQuery(path, capability.probe),
     });
-    return read(status);
+    const reach = read(answer, args.origin);
+    if (reach !== "absent") return reach;
+    // A 404 in the app's own words - "no such customer", "nothing matched" -
+    // is its handler answering, whatever the path.
+    if (answer !== null && differs(answer, baseline, path)) return "callable";
+    if (!hasParameters(capability.path)) return "absent";
+    return missingRecordOrRoute(fetcher, args, path, baseline);
   }
 
   // `Allow` on a 405 is the useful answer: it names the methods this path
@@ -193,19 +214,138 @@ async function reachOf(
   const allow = await allowed(fetcher, args, path);
   if (allow === null) return "unknown";
   if (shut(allow.status)) return "refused";
-  if (allow.status === 404) return "absent";
-  if (allow.methods.length === 0) return "callable";
-  return allow.methods.includes(capability.method.toUpperCase()) ? "callable" : "absent";
+  if (allow.methods.length > 0 && !baseline.optionsAnswersAnything) {
+    return allow.methods.includes(capability.method.toUpperCase())
+      ? "callable"
+      : "absent";
+  }
+  if (allow.status === 404 && !hasParameters(capability.path)) return "absent";
+
+  // OPTIONS said nothing useful: no `Allow`, a redirect, or the same answer
+  // it gives a path that does not exist. A 200 with no `Allow` used to count
+  // as callable, which is what a login redirect or a catch-all looks like.
+  // A GET asks the same question safely - the write's handler does not run
+  // for it - and a route that serves another method says 405.
+  const answer = await ask(fetcher, args, { method: "GET", path });
+  if (answer === null || isRedirect(answer.status)) return "unknown";
+  if (shut(answer.status)) return "refused";
+  if (answer.status === 405) return "callable";
+  if (answer.status === 404) {
+    // `/orders/{id}` can say 404 for the made-up id rather than the route.
+    return hasParameters(capability.path) && differs(answer, baseline, path)
+      ? "callable"
+      : hasParameters(capability.path)
+        ? "unknown"
+        : "absent";
+  }
+  // Something answered GET here, so the path is served; whether it takes this
+  // method too is for the first real call to settle, as for any write.
+  return "callable";
 }
 
-/** What one status code means about a route. */
-function read(status: number | null): Reach {
+/** What the app does with requests for things it does not serve. */
+interface Baseline {
+  notFound: Answer;
+  /** The path it was asked for, which its 404 page may repeat. */
+  nowhere: string;
+  optionsAnswersAnything: boolean;
+}
+
+/** One answer, with enough of it to tell two 404s apart. */
+interface Answer {
+  status: number;
+  contentType: string | null;
+  location: string | null;
+  /** The start of the body, which is all a comparison needs. */
+  body: string;
+}
+
+/**
+ * `/customers/{id}` answering 404 for the made-up id is usually the record
+ * not existing, not the route. Deleting on that removed every read with an id
+ * in its path. Past a 404 in the app's own words, which is checked first for
+ * every read, the route is taken to exist when OPTIONS finds it; when nothing
+ * can tell, it is left unconfirmed and asked again, never deleted.
+ */
+async function missingRecordOrRoute(
+  fetcher: Fetcher,
+  args: { origin: string; token: string; identity?: string | undefined },
+  path: string,
+  baseline: Baseline,
+): Promise<Reach> {
+  if (!baseline.optionsAnswersAnything) {
+    const allow = await allowed(fetcher, args, path);
+    if (allow !== null && !isRedirect(allow.status) && !shut(allow.status)) {
+      if (allow.status !== 404) return "callable";
+    }
+  }
+  return "unknown";
+}
+
+/**
+ * Whether a 404 is the app's own words rather than its router's. The path is
+ * taken out of both first, because a router's page often repeats it.
+ */
+function differs(answer: Answer, baseline: Baseline, path: string): boolean {
+  return !sameNotFound(
+    { ...answer, path },
+    { ...baseline.notFound, path: baseline.nowhere },
+  );
+}
+
+/**
+ * Whether two 404s are the same page - the router's, for a path it does not
+ * know - once each is stripped of the path it repeats. Invocation uses it too,
+ * to tell a route that is gone from a record that is not there.
+ */
+export function sameNotFound(
+  a: { contentType: string | null; body: string; path: string },
+  b: { contentType: string | null; body: string; path: string },
+): boolean {
+  if ((a.contentType ?? "") !== (b.contentType ?? "")) return false;
+  const plain = (text: string, own: string) =>
+    text.split(own).join("").replace(/\s+/g, " ").trim();
+  return plain(a.body, a.path) === plain(b.body, b.path);
+}
+
+function hasParameters(path: string): boolean {
+  return /\{[^}/]+\}|:[A-Za-z_]/.test(path);
+}
+
+function isRedirect(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
+/**
+ * Where a redirect sends someone to sign in. Anything else - a trailing slash
+ * added, a page moved - is not a refusal, and is asked about again.
+ */
+function toSignIn(location: string | null, origin: string): boolean {
+  if (location === null) return false;
+  let target: URL;
+  try {
+    target = new URL(location, origin);
+  } catch {
+    return false;
+  }
+  if (target.origin !== new URL(origin).origin) return true;
+  return /log-?in|sign-?in|auth|sso|session/i.test(target.pathname);
+}
+
+/** What one answer means about a route. */
+function read(answer: Answer | null, origin: string): Reach {
   // Not an answer at all. Asked again next time rather than acted on, because
   // the alternative is deleting an app's capabilities because it was briefly
   // slow.
-  if (status === null) return "unknown";
+  if (answer === null) return "unknown";
+  const { status } = answer;
   if (status === 404) return "absent";
   if (shut(status)) return "refused";
+  // A redirect is not a result: a call would get the same one and nothing an
+  // agent can use. Sent off to sign in is the app turning Cira away; any
+  // other redirect is left unconfirmed rather than published.
+  if (isRedirect(status))
+    return toSignIn(answer.location, origin) ? "refused" : "unknown";
   // Anything else routed and ran: a 200, a 400 saying the probe value was
   // wrong, even a 500 from inside the handler. All of them prove Cira got
   // through to the app's own code, which is what calling it requires.
@@ -223,11 +363,14 @@ function shut(status: number): boolean {
   return status === 401 || status === 403;
 }
 
+/** Enough of a body to tell one 404 page from another. */
+const BODY_SAMPLE_BYTES = 4096;
+
 async function ask(
   fetcher: Fetcher,
   args: { origin: string; token: string; identity?: string | undefined },
   request: { method: string; path: string },
-): Promise<number | null> {
+): Promise<Answer | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -245,7 +388,14 @@ async function ask(
       redirect: "manual",
       signal: controller.signal,
     });
-    return response.status;
+    return {
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      location: response.headers.get("location"),
+      // Read under the same deadline: an app that sends headers and then
+      // trickles its body does not hold the check open.
+      body: response.status === 404 ? await sample(response) : "",
+    };
   } catch {
     // Unreachable is not the same as absent, and treating it as absent would
     // delete an app's capabilities because it was briefly slow.
@@ -253,6 +403,28 @@ async function ask(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The start of a body, then the rest let go. */
+async function sample(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (reader === undefined) return "";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (size < BODY_SAMPLE_BYTES) {
+    const { done, value } = await reader.read();
+    if (done || value === undefined) break;
+    chunks.push(value);
+    size += value.byteLength;
+  }
+  void reader.cancel().catch(() => undefined);
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes.subarray(0, BODY_SAMPLE_BYTES));
 }
 
 async function allowed(

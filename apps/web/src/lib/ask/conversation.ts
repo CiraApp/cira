@@ -64,15 +64,50 @@ const message = z.discriminatedUnion("role", [
   }),
 ]);
 
-const messages = z.array(message).max(MAX_MESSAGES);
+/**
+ * The whole history, in characters. Each block has its own bound, but 120 of
+ * them at that bound is a request far past the model's context and a bill to
+ * match; this is about a hundred thousand tokens, which is a long working
+ * session and not a runaway one.
+ */
+export const MAX_HISTORY_CHARS = 400_000;
+
+const messages = z
+  .array(message)
+  .max(MAX_MESSAGES)
+  .refine((all) => historyChars(all) <= MAX_HISTORY_CHARS, {
+    message: "This conversation has grown too long.",
+  });
+
+/** Every character a history would send the model. */
+function historyChars(all: ReadonlyArray<z.infer<typeof message>>): number {
+  let total = 0;
+  for (const entry of all) {
+    if (typeof entry.content === "string") {
+      total += entry.content.length;
+      continue;
+    }
+    for (const block of entry.content) {
+      if (block.type === "text") total += block.text.length;
+      else if (block.type === "tool_result") total += block.content.length;
+      else total += JSON.stringify(block.input).length;
+    }
+  }
+  return total;
+}
+
+/** The space Ask Cira was opened in; it answers about that company only. */
+const space = z.string().min(1).max(100);
 
 export const askRequestSchema = z.union([
   z.object({
     messages,
+    space,
     question: z.string().trim().min(1).max(MAX_QUESTION_CHARS),
   }),
   z.object({
     messages,
+    space,
     decision: z.object({ toolUseId: z.string().min(1).max(200), run: z.boolean() }),
   }),
 ]);

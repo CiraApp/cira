@@ -784,6 +784,8 @@ export const invocations = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     via: invocationViaEnum("via").notNull(),
     outcome: invocationOutcomeEnum("outcome").notNull(),
+    /** The approval its person gave, for a write an assistant asked for. */
+    approvalId: text("approval_id"),
     /** What the app answered with, when it was reached. */
     status: integer("status"),
     elapsedMs: integer("elapsed_ms"),
@@ -852,6 +854,38 @@ export const processes = pgTable(
  * first sends it, and every other finds the row and sends nothing. What was
  * said is not kept; only that it was, to whom many, and whether it went.
  */
+/**
+ * A person agreeing, in Cira, to one change an assistant asked to make over
+ * MCP. Bound to the person, the capability and the exact input, used once,
+ * and good for fifteen minutes. The input is kept so the person can see what
+ * they are agreeing to; it is what the assistant proposed, not what the app
+ * returned.
+ */
+export const approvals = pgTable(
+  "approvals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    capabilityId: text("capability_id")
+      .notNull()
+      .references(() => capabilities.id, { onDelete: "cascade" }),
+    input: jsonb("input").$type<Record<string, unknown>>().notNull(),
+    inputHash: text("input_hash").notNull(),
+    via: text("via").notNull(),
+    status: text("status")
+      .$type<"pending" | "approved" | "denied" | "used">()
+      .notNull()
+      .default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("approvals_user_idx").on(t.userId, t.createdAt)],
+);
+
 /**
  * An app that was removed, kept so the month's usage still counts what it ran:
  * the names Google knows its services and processes by, and their memory.

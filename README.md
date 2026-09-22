@@ -303,9 +303,12 @@ Deploying an app also publishes what it can do. Nobody writes a manifest.
 ```
 
 **Analysis.** While the build runs, Cira reads the uploaded archive, packs its
-source into one document (lockfiles, generated code and binaries are left out,
-tests go last, and the whole is capped at 500 KB so it fits the model's
-context), and makes one streamed model call. The model proposes operations an
+source into one document (lockfiles, generated code and binaries are left out;
+files that look like they declare routes go first, then other code, then prose
+and styles, then tests; and the whole is capped at 420 KB so it and a 64,000
+token answer fit the model's context), and makes one streamed model call. An
+answer too long to fit is asked for again as the 40 operations people would
+use most. The model proposes operations an
 employee would recognise, each with a name, a description, an HTTP method, a
 root-relative path, an input schema and an example input. It is language-
 agnostic: nothing about it knows what framework an app uses. The default model
@@ -314,11 +317,15 @@ is Claude Haiku 4.5; `CIRA_ANALYZER_MODEL` overrides it.
 **Checks.** `capability-grounding.ts` decides what Cira is willing to store.
 It needs no model: names must be well-formed, paths must be root-relative and
 unable to leave the app's own host, and schemas must be valid. Anything else
-is dropped.
+is dropped. Whether it is a read or a write is decided by the method, not the
+model: anything but `GET` or `HEAD` is a write, and the model can only make a
+`GET` more cautious (`riskFor` in `packages/core/src/capability.ts`).
 
 **Registry.** Capabilities are stored against their app. A redeploy replaces
 the set, but a decision a person made survives it: re-detecting a write
-someone turned off does not turn it back on.
+someone turned off does not turn it back on. A decision is about what the
+person saw, though: a capability whose risk rose, or a write whose method or
+path moved, is switched off and goes back to review.
 
 **Verification.** Reading code can be wrong, so nothing is offered to an agent
 until the running app confirms it. First a control request to a random path
@@ -332,10 +339,21 @@ What the app says is recorded as the capability's `reach`:
 
 | App's answer                  | `reach`    | What happens                                                             |
 | ----------------------------- | ---------- | ------------------------------------------------------------------------ |
-| 404                           | -          | Deleted. Nothing serves it; the analysis was wrong.                      |
+| 404                           | -          | Deleted. Nothing serves it; the analysis was wrong. (But see below.)     |
 | 401 or 403                    | `refused`  | Kept and explained. The route is real, but the app will not let Cira in. |
 | anything else, even 4xx / 5xx | `callable` | The app's own code ran, so Cira can reach it.                            |
 | no answer                     | `pending`  | Left alone and asked again later.                                        |
+
+Two answers need a second look. A read with an id in its path
+(`/customers/{id}`) says 404 for a made-up id when the customer does not
+exist, so its 404 is compared with the one the control got: a different
+content type or body, or an `OPTIONS` that finds the route, means it is
+served. When nothing can tell, it stays `pending` and is never deleted. And a
+redirect is not a result: to a sign-in page (or another origin) it is
+`refused`; anywhere else it stays `pending`. A write whose `OPTIONS` gives no
+`Allow`, or answers every path alike the way CORS middleware does, is asked
+with a `GET` instead, where a 405 means the path is served. A refusal met
+while verifying as one person is not recorded for everyone.
 
 A refusal belongs to the build that gave it. Once a different deployment is
 live, it reads as `pending` again, so a developer who lets Cira in and
@@ -345,7 +363,10 @@ is asking. So a write only counts as `refused` when a real call is turned
 away (see below).
 
 Verification runs after `cira deploy`, and again whenever someone opens an
-app's page while anything is still unconfirmed.
+app's page while anything is still unconfirmed. A real call that gets the app's
+router 404 (the same page it gives a made-up path, not a handler's "no such
+order") sends that capability back to be verified again, so a route the app
+stopped serving is not offered forever.
 
 **Publication.** A capability is offered to agents when it is both
 **enabled** and **callable**. Reads enable themselves; writes are registered
@@ -362,7 +383,7 @@ has deployed. Ask Cira drives the same four, as the person asking:
 | --------------------- | -------------------------------------------------------------------------------- |
 | `search_capabilities` | Finds capabilities across every app this person can open. Empty query lists all. |
 | `describe_capability` | Returns one capability's full description and input schema.                      |
-| `invoke_capability`   | Runs it and returns the app's JSON.                                              |
+| `invoke_capability`   | Runs it and returns the app's JSON. A write first asks its person (below).       |
 | `app_status`          | Says whether an app is live and how its workers and scheduled runs are doing.    |
 
 Fixed tools rather than one per capability, so a company's shelf can change
@@ -371,15 +392,37 @@ with every deploy without an agent re-reading a tool list.
 An invocation passes, in order: the person's access to the app, the capability
 being enabled and callable, and its input against the schema. Only then is a
 URL built, from the app's own deployment plus the capability's path, so a
-capability can never address anything but the app it came from. The call
-carries an identity token for that one app and nothing that identifies a
-person. A capability that cannot be run says why - "not enabled" means ask an
-admin, "the app signs its own users in" means no setting in Cira will help.
+capability can never address anything but the app it came from. The
+deployment is the newest one that went live, so capabilities keep working
+while a new build runs or after one fails. The call carries an identity token
+for that one app and nothing that identifies a person. A capability that
+cannot be run says why - "not enabled" means ask an admin, "the app signs its
+own users in" means no setting in Cira will help.
+
+`GET`, `HEAD` and `DELETE` carry their input in the query, a list as the key
+once per item (`?tag=a&tag=b`); anything else sends a JSON body. One
+15-second deadline covers the whole answer, body included. A write whose
+result Cira could not see - it timed out, trickled, or redirected - is
+reported as "may still have been made", never as unreachable, because the
+wrong answer there is a second refund. A write the app accepted with HTML is
+reported as done. An agent is handed at most 100,000 characters of a result,
+cut with a note asking for less when it is bigger.
 
 A write that answers 401 to a real call is recorded as `refused`, so the next
 agent is told before it tries. That only happens while calls identify nobody:
 the headers are checked against an allow-list, so any future change that
 passes a person's identity turns the recording off by itself.
+
+A write asked for over MCP does not run on the first call. Cira records what
+the assistant wants to do and answers `needs_approval` with a link to
+`/approve/<id>`, where the person sees the app, the operation and every field
+it would send, and approves or declines. The assistant then calls again with
+the same input and the `approvalId`. An approval is for one person, one
+capability and one input (compared by a canonical hash, so key order does not
+matter and a changed amount does), runs once, and lapses after 15 minutes
+(`lib/approvals.ts`). The assistant's own client asking first is not enough:
+one "always allow" there and it never asks again. Ask Cira puts the same
+question to the person in its own window before calling.
 
 The same capabilities can be run by hand from an app's **console**
 (`/{space}/{app}/console`), for the person who knows which call they want and
@@ -396,8 +439,11 @@ page's memory and nowhere else.
 Every run, from MCP, Ask Cira or the console, is written to `invocations`:
 who, which capability, from where, and how it ended - the app's status, or the
 check that stopped it - and never the input or the reply. Whoever manages an
-app sees them on its page under Capability runs. The same record is what limits a person
-to 60 runs a minute; a run refused by that limit is not written.
+app sees them on its page under Capability runs, with "approved" on a write
+its person approved. The same record is what limits a person to 60 runs a
+minute: a run is written before its call and counted with itself in, so a
+burst of parallel calls cannot all pass, and a run refused by that limit is
+taken back out.
 
 ### 7. Access control
 

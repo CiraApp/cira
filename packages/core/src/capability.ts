@@ -144,6 +144,21 @@ export interface Capability {
  * Deliberately a pure function of the one fact that matters, so the policy can
  * be read in one place and tested without a database.
  */
+/**
+ * What an operation's risk is, whatever it was said to be.
+ *
+ * The analyzer is a model, and a model can call `DELETE /users/{id}` a read -
+ * because its description sounds like a lookup, or because a comment in the
+ * code told it to. A read switches itself on and runs without anyone agreeing
+ * to it, so that mistake is the dangerous one. Anything but GET and HEAD is a
+ * write, full stop. A GET may still be graded a write, which is the careful
+ * direction: some GETs do change things.
+ */
+export function riskFor(method: string, claimed: CapabilityRisk): CapabilityRisk {
+  const safe = method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD";
+  return safe ? claimed : "write";
+}
+
 export function publicationFor(args: { risk: CapabilityRisk }): {
   enabled: boolean;
   reason: "auto" | "review";
@@ -174,9 +189,14 @@ export function isCapabilityName(value: string): boolean {
  */
 export function isSafeTargetPath(path: string): boolean {
   if (!path.startsWith("/")) return false;
-  // `//host` is protocol-relative and would leave the app entirely.
-  if (path.startsWith("//")) return false;
+  // `//host` is protocol-relative and would leave the app entirely; `//`
+  // anywhere else is an empty segment, which servers collapse, so the call
+  // lands on a different route than the one it names.
+  if (path.includes("//")) return false;
   if (path.includes("..")) return false;
+  // A `.` segment is collapsed the same way: `/orders/./refund` is
+  // `/orders/refund`, a route nobody meant to reach with an order id.
+  if (path.split("/").some((segment) => segment === ".")) return false;
   if (path.includes("://")) return false;
   if (path.includes("?") || path.includes("#")) return false;
   if (/[\s\\]/.test(path)) return false;
@@ -213,8 +233,9 @@ export function fillTargetPath(
     (whole: string, braced?: string, colon?: string) => {
       const key = (braced ?? colon) as string;
       const given = values[key];
+      // An empty string is no value: it would leave an empty segment.
       if (
-        typeof given === "string" ||
+        (typeof given === "string" && given !== "") ||
         typeof given === "number" ||
         typeof given === "boolean"
       ) {
@@ -252,8 +273,18 @@ export interface Reconciliation<T> {
  * never quietly switch it back on, which is exactly what would happen if the
  * publication policy were applied again on every deploy.
  */
-export function reconcileCapabilities<T extends { name: string; risk: CapabilityRisk }>(
-  existing: readonly { id: string; name: string; enabled: boolean }[],
+export function reconcileCapabilities<
+  T extends { name: string; risk: CapabilityRisk; method: string; path: string },
+>(
+  existing: readonly {
+    id: string;
+    name: string;
+    enabled: boolean;
+    /** As stored, which can be older than today's two grades. */
+    risk?: string;
+    method?: string;
+    path?: string;
+  }[],
   detected: readonly T[],
 ): Reconciliation<T> {
   const previous = new Map(existing.map((row) => [row.name, row]));
@@ -269,8 +300,21 @@ export function reconcileCapabilities<T extends { name: string; risk: Capability
 
   for (const item of detected) {
     const prior = previous.get(item.name);
+    // A decision a person made survives a redeploy - but only about the thing
+    // they decided on. A read that has become a write, or a write that now
+    // points somewhere else, is not what anyone agreed to, and goes back to
+    // waiting for review. Otherwise `syncInventory` switching from GET to POST
+    // stayed on, and so did `refundOrder` quietly moving to `/refunds/bulk`.
+    const riskRose = prior?.risk === "read" && item.risk === "write";
+    const writeMoved =
+      item.risk === "write" &&
+      prior !== undefined &&
+      (prior.method !== undefined || prior.path !== undefined) &&
+      (prior.method !== item.method || prior.path !== item.path);
     const enabled =
-      prior === undefined ? publicationFor({ risk: item.risk }).enabled : prior.enabled;
+      prior === undefined || riskRose || writeMoved
+        ? publicationFor({ risk: item.risk }).enabled
+        : prior.enabled;
 
     if (enabled) result.enabledCount += 1;
     else result.reviewCount += 1;

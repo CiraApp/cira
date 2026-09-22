@@ -7,7 +7,10 @@ export default async function CliPage({
 }: {
   searchParams: Promise<{ code?: string }>;
 }) {
-  const [{ code }, user] = await Promise.all([searchParams, requireCurrentUser()]);
+  const { code } = await searchParams;
+  const user = await requireCurrentUser(
+    code === undefined ? "/cli" : `/cli?code=${encodeURIComponent(code)}`,
+  );
 
   return (
     <EntryFrame title="Connect the Cira CLI" subtitle={`Signed in as ${user.email}.`}>

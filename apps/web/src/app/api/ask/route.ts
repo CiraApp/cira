@@ -1,4 +1,4 @@
-import { and, count, eq, gt } from "drizzle-orm";
+import { and, count, eq, gt, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { askUsage, db } from "@cira/db";
 import { newId } from "@cira/core";
@@ -32,8 +32,17 @@ export const maxDuration = 120;
  */
 const DAILY_QUESTIONS = 100;
 
+/**
+ * Every request per person per rolling day, answers to confirmations
+ * included. Each one is a model call, and a browser can send a history that
+ * ends on a tool call it made up and answer it over and over, so a ceiling on
+ * questions alone was no ceiling on spend. Three answers per question is far
+ * past what anyone confirms.
+ */
+const DAILY_REQUESTS = DAILY_QUESTIONS * 3;
+
 /** Far above any real conversation, and cheap to refuse before parsing. */
-const MAX_BODY_BYTES = 2_000_000;
+const MAX_BODY_BYTES = 1_000_000;
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -77,23 +86,25 @@ export async function POST(request: Request) {
   const asking = "question" in parsed.data;
   const database = db();
 
-  if (asking) {
+  {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const [row] = await database
-      .select({ asked: count() })
-      .from(askUsage)
-      .where(
-        and(
-          eq(askUsage.userId, user.id),
-          eq(askUsage.kind, "question"),
-          gt(askUsage.createdAt, since),
+      .select({
+        all: count(),
+        asked: sql<number>`count(*) filter (where ${askUsage.kind} = 'question')`.mapWith(
+          Number,
         ),
-      );
+      })
+      .from(askUsage)
+      .where(and(eq(askUsage.userId, user.id), gt(askUsage.createdAt, since)));
 
-    if ((row?.asked ?? 0) >= DAILY_QUESTIONS) {
+    const questionsLeft = !asking || (row?.asked ?? 0) < DAILY_QUESTIONS;
+    if (!questionsLeft || (row?.all ?? 0) >= DAILY_REQUESTS) {
       return NextResponse.json(
         {
-          error: `That's ${DAILY_QUESTIONS} questions today, which is as many as Cira answers in a day. It will be ready again tomorrow.`,
+          error: !questionsLeft
+            ? `That's ${DAILY_QUESTIONS} questions today, which is as many as Cira answers in a day. It will be ready again tomorrow.`
+            : "That's as much as Cira answers for one person in a day. It will be ready again tomorrow.",
         },
         { status: 429 },
       );
@@ -129,8 +140,9 @@ export async function POST(request: Request) {
               runTool(user, name, args, {
                 via: "ask",
                 origin: new URL(request.url).origin,
+                inSpace: parsed.data.space,
               }),
-            capability: (id) => getCapabilityForUser(user, id),
+            capability: (id) => getCapabilityForUser(user, id, parsed.data.space),
           },
           system: askSystemPrompt(new Date()),
           tools: askTools(),

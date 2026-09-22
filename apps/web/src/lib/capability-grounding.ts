@@ -3,6 +3,7 @@ import {
   CAPABILITY_METHODS,
   isCapabilityName,
   isSafeTargetPath,
+  riskFor,
   type CapabilityMethod,
 } from "@cira/core";
 
@@ -103,6 +104,8 @@ export function keepGrounded(
     if (inputSchema === null) continue;
 
     taken.add(item.name);
+    // The method decides whether it can be a read, not the model.
+    const risk = riskFor(item.method, item.risk);
     kept.push({
       name: item.name,
       description: item.description.trim(),
@@ -110,8 +113,8 @@ export function keepGrounded(
       path: item.path,
       inputSchema,
       outputSchema: null,
-      risk: item.risk,
-      probe: item.risk === "read" ? (readSchema(item.probe) ?? {}) : undefined,
+      risk,
+      probe: risk === "read" ? (readSchema(item.probe) ?? {}) : undefined,
     });
   }
 

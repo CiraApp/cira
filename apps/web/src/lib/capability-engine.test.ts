@@ -262,6 +262,48 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         return;
       }
 
+      // Says back exactly what arrived: the body as bytes decoded, and every
+      // query value, repeated keys included.
+      if (url.pathname === "/api/echo") {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          const raw = Buffer.concat(chunks).toString("utf8");
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              body: raw === "" ? null : (JSON.parse(raw) as unknown),
+              declared: request.headers["content-length"] ?? null,
+              received: Buffer.concat(chunks).byteLength,
+              tags: url.searchParams.getAll("tag"),
+            }),
+          );
+        });
+        return;
+      }
+
+      // A write that worked, answered the way plain web apps answer a form.
+      if (url.pathname === "/api/after-write") {
+        response.writeHead(303, { location: "/orders/1" }).end();
+        return;
+      }
+      // A lookup by query that has nothing to return, in its own words.
+      if (url.pathname === "/api/lookup") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "no order with that id" }));
+        return;
+      }
+      if (url.pathname === "/api/html-write") {
+        response.writeHead(200, { "content-type": "text/html" }).end("<p>Saved</p>");
+        return;
+      }
+
+      if (url.pathname === "/api/payouts" && request.method === "POST") {
+        response.writeHead(201, { "content-type": "application/json" });
+        response.end(JSON.stringify({ paid: true }));
+        return;
+      }
+
       if (url.pathname === "/api/html") {
         response.writeHead(200, { "content-type": "text/html" }).end("<html>hi</html>");
         return;
@@ -362,6 +404,41 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
       capabilityId: revenueId,
     });
     expect(described).toEqual({ content: NO_SUCH_CAPABILITY, isError: true });
+  });
+
+  // Ask Cira is opened inside one space. A person in two used to get the
+  // other company's apps mixed into its answers.
+  it("keeps a surface opened in one space to that space", async () => {
+    const { runTool } = await import("./mcp");
+    const elsewhere = {
+      via: "ask" as const,
+      origin: "https://cira.test",
+      inSpace: "globex",
+    };
+    const here = { ...elsewhere, inSpace: "demo" };
+
+    const search = await runTool(
+      employee,
+      "search_capabilities",
+      { query: "revenue" },
+      here,
+    );
+    expect(search.content).toContain("getRevenue");
+
+    const away = await runTool(employee, "search_capabilities", { query: "" }, elsewhere);
+    expect(away.content).not.toContain("getRevenue");
+    const invoked = await runTool(
+      employee,
+      "invoke_capability",
+      {
+        capabilityId: revenueId,
+        input: { startDate: "2026-01-01", endDate: "2026-01-31" },
+      },
+      elsewhere,
+    );
+    expect(invoked).toEqual({ content: NO_SUCH_CAPABILITY, isError: true });
+    const status = await runTool(employee, "app_status", { app: "" }, elsewhere);
+    expect(status.content).not.toContain("Revenue Dashboard");
   });
 
   it("gives a missing capability and a forbidden one the very same answer", async () => {
@@ -899,10 +976,14 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
     ]);
 
     try {
-      const wrote = await runTool(founder, "invoke_capability", {
-        capabilityId: lockId,
-        input: {},
-      });
+      // Through Ask Cira, which asked its person in its own window: over MCP
+      // the write would first wait for an approval, which is tested below.
+      const wrote = await runTool(
+        founder,
+        "invoke_capability",
+        { capabilityId: lockId, input: {} },
+        "ask",
+      );
       expect(wrote.isError).toBe(true);
       expect(wrote.content).toContain("will not let Cira call it");
 
@@ -942,6 +1023,465 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
    * console's own action and compare it with what an agent is told: the two
    * agree on every refusal because they are the same call.
    */
+  /**
+   * A write asked for over MCP runs only once its person has approved it, on
+   * a page in Cira. An assistant's client asking first is not enough: once
+   * someone clicks "always allow" there, it never asks again.
+   */
+  describe("a write over MCP", () => {
+    const payoutId = newId("capability");
+    const pay = { vendor: "Globex", cents: 125_000 };
+
+    beforeAll(async () => {
+      const { capabilities } = await import("@cira/db");
+      await database.insert(capabilities).values({
+        id: payoutId,
+        appId,
+        spaceId,
+        name: "payVendor",
+        description: "Pay a vendor.",
+        inputSchema: {
+          type: "object",
+          properties: { vendor: { type: "string" }, cents: { type: "integer" } },
+          required: ["vendor", "cents"],
+        },
+        method: "POST",
+        path: "/api/payouts",
+        risk: "write",
+        verifiedAt: new Date(),
+        reach: "callable" as const,
+        answeredBy: deploymentId,
+        enabled: true,
+      });
+    });
+
+    const payouts = () => received.filter((r) => r.url === "/api/payouts");
+
+    /** Ask over MCP, and read back the approval Cira handed out. */
+    async function ask(person: User, input: Record<string, unknown> = pay) {
+      const runTool = await toolsAs();
+      const first = await runTool(person, "invoke_capability", {
+        capabilityId: payoutId,
+        input,
+      });
+      expect(first.isError).toBe(false);
+      return JSON.parse(first.content) as {
+        status: string;
+        approvalId: string;
+        approvalUrl: string;
+        expiresInMinutes: number;
+      };
+    }
+
+    const again = async (
+      person: User,
+      approvalId: string,
+      input: Record<string, unknown> = pay,
+    ) => {
+      const runTool = await toolsAs();
+      return runTool(person, "invoke_capability", {
+        capabilityId: payoutId,
+        input,
+        approvalId,
+      });
+    };
+
+    it("does nothing at first, and hands back a link for its person", async () => {
+      received.length = 0;
+      const asked = await ask(employee);
+      expect(asked).toMatchObject({ status: "needs_approval", expiresInMinutes: 15 });
+      expect(asked.approvalUrl).toBe(`https://cira.test/approve/${asked.approvalId}`);
+      expect(payouts()).toHaveLength(0);
+
+      // Still waiting: calling again with the id is not approving it.
+      const early = await again(employee, asked.approvalId);
+      expect(early.isError).toBe(true);
+      expect(early.content).toContain("not approved this yet");
+      expect(payouts()).toHaveLength(0);
+    });
+
+    it("runs once its person approves, exactly once", async () => {
+      const { decideApproval } = await import("./approval-actions");
+      received.length = 0;
+      const asked = await ask(employee);
+
+      signedIn = employee;
+      expect(await decideApproval(asked.approvalId, "approve")).toEqual({ ok: true });
+
+      const ran = await again(employee, asked.approvalId);
+      expect(ran.isError).toBe(false);
+      expect(JSON.parse(ran.content)).toEqual({ paid: true });
+      expect(payouts()).toHaveLength(1);
+
+      // The record of who ran what says a person agreed to it.
+      const { invocations } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      const runs = await database
+        .select()
+        .from(invocations)
+        .where(eq(invocations.approvalId, asked.approvalId));
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ userId: employee.id, via: "mcp", status: 201 });
+
+      // The same approval, spent, does not pay twice.
+      const twice = await again(employee, asked.approvalId);
+      expect(twice.isError).toBe(true);
+      expect(twice.content).toContain("already been used");
+      expect(payouts()).toHaveLength(1);
+    });
+
+    it("covers exactly what was shown, not a different amount", async () => {
+      const { decideApproval } = await import("./approval-actions");
+      received.length = 0;
+      const asked = await ask(employee);
+      signedIn = employee;
+      await decideApproval(asked.approvalId, "approve");
+
+      const swapped = await again(employee, asked.approvalId, {
+        ...pay,
+        cents: 9_900_000,
+      });
+      expect(swapped.isError).toBe(true);
+      expect(swapped.content).toContain("different input");
+      expect(payouts()).toHaveLength(0);
+
+      // The same input with its keys in another order is the same input.
+      const same = await again(employee, asked.approvalId, {
+        cents: pay.cents,
+        vendor: pay.vendor,
+      });
+      expect(same.isError).toBe(false);
+      expect(payouts()).toHaveLength(1);
+    });
+
+    it("is for its person only: nobody else can approve it, see it, or spend it", async () => {
+      const { decideApproval } = await import("./approval-actions");
+      const { loadApproval } = await import("./approvals");
+      received.length = 0;
+      const asked = await ask(employee);
+
+      signedIn = founder;
+      expect((await decideApproval(asked.approvalId, "approve")).ok).toBe(false);
+      expect(await loadApproval(founder, asked.approvalId)).toBeNull();
+      expect(await loadApproval(employee, asked.approvalId)).toMatchObject({
+        status: "pending",
+        input: pay,
+        capability: { name: "payVendor", method: "POST", path: "/api/payouts" },
+      });
+
+      signedIn = employee;
+      await decideApproval(asked.approvalId, "approve");
+      const theirs = await again(founder, asked.approvalId);
+      expect(theirs.isError).toBe(true);
+      expect(payouts()).toHaveLength(0);
+    });
+
+    it("stays undone when its person declines", async () => {
+      const { decideApproval } = await import("./approval-actions");
+      received.length = 0;
+      const asked = await ask(employee);
+      signedIn = employee;
+      expect(await decideApproval(asked.approvalId, "deny")).toEqual({ ok: true });
+      // A second answer does not overturn the first.
+      expect((await decideApproval(asked.approvalId, "approve")).ok).toBe(false);
+
+      const ran = await again(employee, asked.approvalId);
+      expect(ran.isError).toBe(true);
+      expect(ran.content).toContain("declined");
+      expect(payouts()).toHaveLength(0);
+    });
+
+    it("lapses after fifteen minutes, approved or not", async () => {
+      const { approvals } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      const { decide, loadApproval } = await import("./approvals");
+      received.length = 0;
+
+      const late = await ask(employee);
+      const inTime = await ask(employee);
+      await decide(employee, inTime.approvalId, "approve");
+      const past = new Date(Date.now() - 60_000);
+      await database
+        .update(approvals)
+        .set({ expiresAt: past })
+        .where(eq(approvals.id, late.approvalId));
+      await database
+        .update(approvals)
+        .set({ expiresAt: past })
+        .where(eq(approvals.id, inTime.approvalId));
+
+      expect(await decide(employee, late.approvalId, "approve")).toBe(false);
+      expect(await loadApproval(employee, late.approvalId)).toMatchObject({
+        status: "expired",
+      });
+      const ran = await again(employee, inTime.approvalId);
+      expect(ran.isError).toBe(true);
+      expect(ran.content).toContain("lapsed");
+      expect(payouts()).toHaveLength(0);
+    });
+
+    it("leaves reads, and Ask Cira, which asks in its own window, as they were", async () => {
+      const runTool = await toolsAs();
+      received.length = 0;
+      const read = await runTool(employee, "invoke_capability", {
+        capabilityId: revenueId,
+        input: { startDate: "2026-01-01", endDate: "2026-02-01" },
+      });
+      expect(read.isError).toBe(false);
+      expect(read.content).not.toContain("needs_approval");
+
+      const viaAsk = await runTool(
+        employee,
+        "invoke_capability",
+        { capabilityId: payoutId, input: pay },
+        "ask",
+      );
+      expect(viaAsk.isError).toBe(false);
+      expect(payouts()).toHaveLength(1);
+    });
+  });
+
+  /** What a real call puts on the wire, and what it makes of the answer. */
+  describe("a call, on the wire", () => {
+    const ids = {
+      echoWrite: newId("capability"),
+      echoRead: newId("capability"),
+      redirectWrite: newId("capability"),
+      htmlWrite: newId("capability"),
+    };
+
+    beforeAll(async () => {
+      const { capabilities } = await import("@cira/db");
+      const common = {
+        appId,
+        spaceId,
+        verifiedAt: new Date(),
+        reach: "callable" as const,
+        answeredBy: deploymentId,
+        enabled: true,
+      };
+      await database.insert(capabilities).values([
+        {
+          ...common,
+          id: ids.echoWrite,
+          name: "saveNote",
+          description: "Save a note.",
+          inputSchema: {
+            type: "object",
+            properties: { note: { type: "string" } },
+            required: ["note"],
+          },
+          method: "POST",
+          path: "/api/echo",
+          risk: "write",
+        },
+        {
+          ...common,
+          id: ids.echoRead,
+          name: "findByTags",
+          description: "Find by tags.",
+          inputSchema: {
+            type: "object",
+            properties: { tag: { type: "array", items: { type: "string" } } },
+            required: [],
+          },
+          method: "GET",
+          path: "/api/echo",
+          risk: "read",
+        },
+        {
+          ...common,
+          id: ids.redirectWrite,
+          name: "placeOrder",
+          description: "Place an order.",
+          inputSchema: { type: "object", properties: {}, required: [] },
+          method: "POST",
+          path: "/api/after-write",
+          risk: "write",
+        },
+        {
+          ...common,
+          id: ids.htmlWrite,
+          name: "saveForm",
+          description: "Save a form.",
+          inputSchema: { type: "object", properties: {}, required: [] },
+          method: "POST",
+          path: "/api/html-write",
+          risk: "write",
+        },
+      ]);
+    });
+
+    // Ask Cira, which asked its person already, so the call goes straight out.
+    const run = async (capabilityId: string, input: Record<string, unknown>) => {
+      const runTool = await toolsAs();
+      return runTool(employee, "invoke_capability", { capabilityId, input }, "ask");
+    };
+
+    it("sends a body with accents and other scripts at its length in bytes", async () => {
+      const note = "Café Zoë paid 1 250 € - 東京支店";
+      const sent = await run(ids.echoWrite, { note });
+      expect(sent.isError).toBe(false);
+      const echoed = JSON.parse(sent.content) as {
+        body: unknown;
+        declared: string;
+        received: number;
+      };
+      expect(echoed.body).toEqual({ note });
+      expect(Number(echoed.declared)).toBe(echoed.received);
+    });
+
+    it("sends a list in a query as the key once per item", async () => {
+      const found = await run(ids.echoRead, { tag: ["urgent", "vip"] });
+      expect(found.isError).toBe(false);
+      expect(JSON.parse(found.content)).toMatchObject({ tags: ["urgent", "vip"] });
+    });
+
+    it("never tells anyone a write that redirected did not happen", async () => {
+      const placed = await run(ids.redirectWrite, {});
+      expect(placed.isError).toBe(true);
+      expect(placed.content).toContain("may still have been made");
+      expect(placed.content).not.toContain("not reachable");
+    });
+
+    it("reports a write the app accepted with HTML as done", async () => {
+      const saved = await run(ids.htmlWrite, {});
+      expect(saved.isError).toBe(false);
+      expect(JSON.parse(saved.content)).toMatchObject({ accepted: true });
+    });
+
+    // Confirmed once used to mean confirmed for good, through every deploy.
+    it("sends a capability whose route is gone back to be checked again", async () => {
+      const { capabilities } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      const goneId = newId("capability");
+      const recordId = newId("capability");
+      const lookupId = newId("capability");
+      const common = {
+        appId,
+        spaceId,
+        inputSchema: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: [],
+        },
+        method: "GET" as const,
+        risk: "read" as const,
+        verifiedAt: new Date(),
+        reach: "callable" as const,
+        answeredBy: deploymentId,
+        enabled: true,
+      };
+      await database.insert(capabilities).values([
+        {
+          ...common,
+          id: goneId,
+          name: "oldReport",
+          description: "Old.",
+          path: "/api/removed",
+        },
+        // A 404 in the app's own words is the record, not the route.
+        {
+          ...common,
+          id: lookupId,
+          name: "lookupOrder",
+          description: "Look up an order.",
+          path: "/api/lookup",
+        },
+        // An id in the path: a 404 there is the record, not the route.
+        {
+          ...common,
+          id: recordId,
+          name: "getThing",
+          description: "A thing.",
+          path: "/api/things/{id}",
+        },
+      ]);
+      try {
+        expect((await run(goneId, {})).content).toContain("failed (404)");
+        expect((await run(recordId, { id: "nope" })).content).toContain("failed (404)");
+        expect((await run(lookupId, { id: "nope" })).content).toContain("failed (404)");
+        const reach = async (id: string) =>
+          (await database.select().from(capabilities).where(eq(capabilities.id, id)))[0]
+            ?.reach;
+        expect(await reach(goneId)).toBe("pending");
+        expect(await reach(recordId)).toBe("callable");
+        expect(await reach(lookupId)).toBe("callable");
+      } finally {
+        await database.delete(capabilities).where(eq(capabilities.id, goneId));
+        await database.delete(capabilities).where(eq(capabilities.id, recordId));
+        await database.delete(capabilities).where(eq(capabilities.id, lookupId));
+      }
+    });
+
+    it("keeps calling the build that is serving while a new one builds, or after one failed", async () => {
+      const { deployments } = await import("@cira/db");
+      const { eq } = await import("drizzle-orm");
+      const building = newId("deployment");
+      const failed = newId("deployment");
+      await database.insert(deployments).values([
+        {
+          id: failed,
+          appId,
+          provider: "cloudrun",
+          providerDeploymentId: "b_failed",
+          status: "failed",
+          createdAt: new Date(Date.now() + 1_000),
+        },
+        {
+          id: building,
+          appId,
+          provider: "cloudrun",
+          providerDeploymentId: "b_building",
+          status: "building",
+          createdAt: new Date(Date.now() + 2_000),
+        },
+      ]);
+      try {
+        const found = await run(ids.echoRead, { tag: ["a"] });
+        expect(found.isError).toBe(false);
+      } finally {
+        await database.delete(deployments).where(eq(deployments.id, building));
+        await database.delete(deployments).where(eq(deployments.id, failed));
+      }
+    });
+
+    it("gives up on an answer that trickles, within the deadline, and says a write may have landed", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const real = globalThis.fetch;
+      // Headers at once, then a body that never finishes - until the deadline
+      // aborts it, as a real connection would be.
+      vi.stubGlobal("fetch", (_url: unknown, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(stream) {
+            stream.enqueue(new TextEncoder().encode('{"par'));
+            init?.signal?.addEventListener("abort", () =>
+              stream.error(new DOMException("aborted", "AbortError")),
+            );
+          },
+        });
+        return Promise.resolve(
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      });
+      try {
+        const pending = run(ids.echoWrite, { note: "x" });
+        await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
+        await vi.advanceTimersByTimeAsync(15_000);
+        const result = await pending;
+        expect(result.isError).toBe(true);
+        expect(result.content).toContain("took longer than 15 seconds");
+        expect(result.content).toContain("may still have been made");
+      } finally {
+        vi.stubGlobal("fetch", real);
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("through the console", () => {
     const input = { startDate: "2026-08-01", endDate: "2026-08-31" };
     // Their own rows, because the cases above rewrite the app's capability
@@ -1247,6 +1787,46 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
         input: { startDate: "2026-08-01", endDate: "2026-08-31" },
       });
       expect(other.isError).toBe(false);
+    });
+
+    /**
+     * A burst in parallel, the way a script or an agent fanning out sends
+     * one. Counting before the call and writing after let every one of them
+     * see the same count and pass.
+     */
+    it("holds the limit against calls made all at once", async () => {
+      const { invocations } = await import("@cira/db");
+      const runTool = await toolsAs();
+      const { invocationsPerPersonPerMinute } = DEFAULT_LIMITS;
+      const room = 3;
+
+      await database.insert(invocations).values(
+        Array.from({ length: invocationsPerPersonPerMinute - room }, () => ({
+          id: newId("invocation"),
+          spaceId,
+          appId,
+          capabilityId: readId,
+          capabilityName: "recordedRevenue",
+          userId: founder.id,
+          via: "mcp" as const,
+          outcome: "ran" as const,
+          status: 200,
+        })),
+      );
+
+      const burst = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          runTool(founder, "invoke_capability", {
+            capabilityId: readId,
+            input: { startDate: "2026-08-01", endDate: "2026-08-31" },
+          }),
+        ),
+      );
+      const through = burst.filter((r) => !r.isError).length;
+      expect(through).toBeLessThanOrEqual(room);
+      expect(burst.filter((r) => r.content.includes("in the last minute")).length).toBe(
+        10 - through,
+      );
     });
   });
 });

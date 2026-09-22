@@ -64,9 +64,18 @@ export interface CapabilityWithApp extends Capability {
 }
 
 /** Everything the signed-in user may see, across every space they are in. */
-export async function listCapabilitiesForUser(user: User): Promise<CapabilityWithApp[]> {
+export async function listCapabilitiesForUser(
+  user: User,
+  /** Only this space's, for a surface opened inside one. */
+  inSpace?: string,
+): Promise<CapabilityWithApp[]> {
   const { rows } = await visibleCapabilities(user);
-  return rows;
+  return within(rows, inSpace);
+}
+
+/** Rows from one space, or all of them when no space was named. */
+function within(rows: CapabilityWithApp[], inSpace: string | undefined) {
+  return inSpace === undefined ? rows : rows.filter((row) => row.spaceSlug === inSpace);
 }
 
 /**
@@ -80,8 +89,9 @@ export async function searchCapabilitiesForUser(
   user: User,
   query: string,
   limit = 20,
+  inSpace?: string,
 ): Promise<CapabilityWithApp[]> {
-  const { rows } = await visibleCapabilities(user);
+  const rows = within((await visibleCapabilities(user)).rows, inSpace);
   const needle = query.trim().toLowerCase();
   if (needle === "") return rows.slice(0, limit);
 
@@ -106,9 +116,10 @@ export async function searchCapabilitiesForUser(
 export async function getCapabilityForUser(
   user: User,
   capabilityId: string,
+  inSpace?: string,
 ): Promise<CapabilityWithApp | null> {
   const { rows } = await visibleCapabilities(user);
-  return rows.find((row) => row.id === capabilityId) ?? null;
+  return within(rows, inSpace).find((row) => row.id === capabilityId) ?? null;
 }
 
 /**
@@ -170,6 +181,7 @@ export async function replaceCapabilities(args: {
       enabled: capabilities.enabled,
       method: capabilities.method,
       path: capabilities.path,
+      risk: capabilities.risk,
     })
     .from(capabilities)
     .where(eq(capabilities.appId, args.appId));
@@ -327,6 +339,24 @@ async function tellRefused(
     subject: `${capability.id}:${deploymentId}`,
     compose: (app) => refusedMessage({ app, operation: humanize(capability.name) }),
   });
+}
+
+/**
+ * Put a capability back in front of verification, after a real call to it
+ * found nothing at its address.
+ *
+ * A capability was only ever checked once: confirmed, it stayed confirmed
+ * through every later deploy, so a route the app no longer serves - renamed,
+ * removed, in a deploy whose analysis failed and left the old list standing -
+ * was offered to agents indefinitely. Only a path with no parameters is
+ * demoted, because `/orders/{id}` answering 404 is usually the order, not the
+ * route. Verification then asks the app, and deletes it if it is really gone.
+ */
+export async function recordAbsence(capabilityId: string): Promise<void> {
+  await db()
+    .update(capabilities)
+    .set({ reach: "pending", answeredBy: null, updatedAt: new Date() })
+    .where(and(eq(capabilities.id, capabilityId), eq(capabilities.reach, "callable")));
 }
 
 /**

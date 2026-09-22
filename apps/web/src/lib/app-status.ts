@@ -46,9 +46,13 @@ export async function appStatusForUser(
   query: string,
   /** Cira's own origin, so the pages an answer points to are real links. */
   origin: string,
+  /** Only this space's apps, for a surface opened inside one. */
+  inSpace?: string,
 ): Promise<AppStatusOutcome> {
   const principal = await principalFor(user);
-  const mine = principal === null ? [] : await appsFor(principal);
+  const mine = (principal === null ? [] : await appsFor(principal)).filter(
+    (visible) => inSpace === undefined || visible.spaceSlug === inSpace,
+  );
 
   if (principal === null || mine.length === 0) {
     return { ok: false, error: "You cannot open any apps in Cira yet." };

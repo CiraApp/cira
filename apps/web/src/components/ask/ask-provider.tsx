@@ -276,7 +276,7 @@ export function AskProvider({
         const response = await fetch("/api/ask", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: history.current, ...body }),
+          body: JSON.stringify({ messages: history.current, space: spaceSlug, ...body }),
         });
 
         if (!response.ok || response.body === null) {
