@@ -11,6 +11,8 @@ import {
   scimUsers,
   spaceJoinBlocks,
   spaceScim,
+  spaceSso,
+  spaces,
   teamMembers,
   teams,
   users,
@@ -19,6 +21,7 @@ import { newId, slugify, slugWithSuffix, type User } from "@cira/core";
 import { hashToken } from "@/lib/token-hash";
 import { record } from "@/lib/change-record";
 import { depart } from "@/lib/departure";
+import { emailDomain, isPublicEmailDomain } from "@/lib/email-domain";
 import {
   SCHEMA,
   ScimError,
@@ -47,6 +50,54 @@ type ScimGroupRow = typeof scimGroups.$inferSelect;
 
 /** The base every identity provider is given. */
 export const SCIM_PATH = "/api/scim/v2";
+
+// ----- Whose people -------------------------------------------------------
+
+/**
+ * The email domains a company has shown it holds, and so the only people its
+ * directory may put in it: the domain the space was founded on, which came
+ * from a verified address there, and the one it set up single sign-on for,
+ * which takes an address there too. Never a provider anyone can sign up at.
+ *
+ * Without this, directory sync was a way into someone else's account list:
+ * any admin of any space - a trial made a minute ago - could push
+ * someone@bigco.com over SCIM, and that person, already on Cira or the next
+ * time they signed in, became a member with no invitation and nothing to
+ * accept. Every other way into a company needs the person's own address at
+ * its domain, or their own consent; this one now does too.
+ */
+export async function directoryDomains(spaceId: string): Promise<string[]> {
+  const [space] = await db()
+    .select({ domain: spaces.domain })
+    .from(spaces)
+    .where(eq(spaces.id, spaceId))
+    .limit(1);
+  const [sso] = await db()
+    .select({ domain: spaceSso.domain })
+    .from(spaceSso)
+    .where(eq(spaceSso.spaceId, spaceId))
+    .limit(1);
+  const found = [space?.domain, sso?.domain]
+    .filter((d): d is string => typeof d === "string" && d !== "")
+    .map((d) => d.toLowerCase())
+    .filter((d) => !isPublicEmailDomain(d));
+  return [...new Set(found)];
+}
+
+/** Refuse, in SCIM's own terms, a person at a domain the company has not shown. */
+async function mustBeOurs(spaceId: string, userName: string): Promise<void> {
+  const domain = emailDomain(userName);
+  const ours = await directoryDomains(spaceId);
+  if (domain === null || !ours.includes(domain)) {
+    throw new ScimError(
+      400,
+      ours.length === 0
+        ? "This company has no domain of its own, so its directory cannot add anyone."
+        : `${userName} is not at ${ours.map((d) => `@${d}`).join(" or ")}, so this directory cannot add them.`,
+      "invalidValue",
+    );
+  }
+}
 
 // ----- The token ---------------------------------------------------------
 
@@ -176,6 +227,7 @@ export async function createUser(
   spaceId: string,
   input: UserInput,
 ): Promise<ScimUserRow> {
+  await mustBeOurs(spaceId, input.userName);
   const [taken] = await db()
     .select({ id: scimUsers.id })
     .from(scimUsers)
@@ -216,6 +268,9 @@ async function updateUser(
   change: Partial<UserInput>,
 ): Promise<ScimUserRow> {
   const before = await getUser(spaceId, id);
+  if (change.userName !== undefined && change.userName !== before.userName) {
+    await mustBeOurs(spaceId, change.userName);
+  }
   // A new address is a different person as far as Cira's members go: the one
   // who held the old address is taken out, then the new one reconciled.
   if (change.userName !== undefined && change.userName !== before.userName) {
@@ -262,6 +317,16 @@ async function reconcileUser(row: ScimUserRow): Promise<void> {
     .from(memberships)
     .where(and(eq(memberships.spaceId, row.spaceId), eq(memberships.userId, user.id)))
     .limit(1);
+
+  // Checked again here, not only when the directory sends someone: rows made
+  // before the rule existed must not be the way around it. Taking someone
+  // out never needs this - only letting them in does.
+  if (
+    row.active &&
+    !(await directoryDomains(row.spaceId)).includes(emailDomain(row.userName) ?? "")
+  ) {
+    return;
+  }
 
   if (row.active) {
     // The directory decides now: an address someone once removed by hand is

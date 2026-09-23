@@ -220,6 +220,18 @@ async function forward(
   const upstream = new URL(url.pathname + url.search, target.origin);
 
   const headers = new Headers(request.headers);
+  // Nothing a browser sends may pass for something Cira or Cloud Run says.
+  // `x-cira-*` is the channel Cira speaks to apps on - who is calling, which
+  // capability - and on this path Cira says nothing, so any such header here
+  // was written by whoever is on the other end of the browser. An app that
+  // trusted one without checking its signature would take a forged identity.
+  // Found in a penetration test: a page sent `x-cira-identity: forged` and the
+  // app received it verbatim.
+  for (const name of [...headers.keys()]) {
+    if (name.startsWith("x-cira-") || name.startsWith("x-serverless-")) {
+      headers.delete(name);
+    }
+  }
   // Cira's own credential, on every request. Not `authorization`: Cloud Run
   // consumes this one and leaves the app's alone, which matters because the
   // app was not written for Cira and may use it for something.

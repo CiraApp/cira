@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { roleAtLeast } from "@cira/core";
 import { NotFoundError, requireSpaceMember } from "@/lib/authz";
 import { finishSso, removeSso, startSso, type SsoDetails } from "@/lib/sso";
-import { issueScimToken, revokeScim } from "@/lib/scim";
+import { directoryDomains, issueScimToken, revokeScim } from "@/lib/scim";
 import { record } from "@/lib/change-record";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -98,6 +98,15 @@ export async function makeScimToken(
 ): Promise<ActionResult<{ token: string }>> {
   const ctx = await admin(spaceSlug);
   if (ctx === null) return REFUSED;
+  // Said now, before a token exists, rather than by every person the
+  // directory then sends being refused one at a time.
+  if ((await directoryDomains(ctx.space.id)).length === 0) {
+    return {
+      ok: false,
+      error:
+        "Directory sync keeps the people at your company's own domain in step, and this space has none: it was started from a personal address. Set up single sign-on for your domain first.",
+    };
+  }
   const token = await issueScimToken(ctx.space.id, ctx.user.id);
   // The token itself is never written down here, any more than it is anywhere
   // else: only that one was made, by whom, and when.

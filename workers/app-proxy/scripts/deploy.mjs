@@ -19,10 +19,16 @@ import { homedir } from "node:os";
  * that name which shadows a script, and `pnpm deploy` here fails with an error
  * about deploy targets that has nothing to do with anything.
  *
- * The bindings are deliberately re-sent every time rather than kept. A deploy
- * that leaves configuration behind is a deploy whose result depends on what
- * happened to be there already, and the first time that matters is the first
- * time someone deploys into an account that has never had this worker.
+ * The plain bindings are deliberately re-sent every time rather than kept. A
+ * deploy that leaves configuration behind is a deploy whose result depends on
+ * what happened to be there already, and the first time that matters is the
+ * first time someone deploys into an account that has never had this worker.
+ *
+ * The secret is the exception. Shipping new code keeps the secret the worker
+ * already has, and never needs to know it: nothing hands a sensitive value
+ * back, and the one time a copy was fetched to re-send, it was the wrong one
+ * and locked everyone out of every app. Set CIRA_PROXY_SECRET only to rotate
+ * it, and then it is checked with Cira before anything is sent.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -67,27 +73,27 @@ const appsDomain = required(
   "CIRA_APPS_DOMAIN",
   "Apps are served under this, e.g. cira.dev.",
 );
-const secret = required(
-  "CIRA_PROXY_SECRET",
-  "The same value Cira signs with. Cira verifies nothing it did not sign, so a mismatch locks everyone out of every app.",
-);
+const given = process.env["CIRA_PROXY_SECRET"]?.trim();
+const secret = given === undefined || given === "" ? null : given;
 
 // The secret has to be the one Cira runs with, and nothing here can see
 // that - Vercel does not hand a sensitive value back, and a pulled copy of one
 // was once shipped and locked everyone out of every app until it was rotated.
 // So Cira is asked: its proxy-only route refuses a wrong secret with 401 and
 // answers a right one, for a name no app has, with 404.
-const probe = await fetch(new URL("/api/proxy/domain", ciraOrigin), {
-  method: "POST",
-  headers: { "content-type": "application/json", "x-cira-proxy-secret": secret },
-  body: JSON.stringify({ hostname: "secret-check.invalid" }),
-});
-if (probe.status !== 404) {
-  throw new Error(
-    probe.status === 401
-      ? "Cira does not accept this CIRA_PROXY_SECRET. Nothing was deployed: shipping it would lock everyone out of every app."
-      : `Could not check the secret with Cira (${probe.status}). Nothing was deployed.`,
-  );
+if (secret !== null) {
+  const probe = await fetch(new URL("/api/proxy/domain", ciraOrigin), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-cira-proxy-secret": secret },
+    body: JSON.stringify({ hostname: "secret-check.invalid" }),
+  });
+  if (probe.status !== 404) {
+    throw new Error(
+      probe.status === 401
+        ? "Cira does not accept this CIRA_PROXY_SECRET. Nothing was deployed: shipping it would lock everyone out of every app."
+        : `Could not check the secret with Cira (${probe.status}). Nothing was deployed.`,
+    );
+  }
 }
 
 const worker = join(root, "build", "worker.js");
@@ -104,8 +110,12 @@ const metadata = {
   bindings: [
     { type: "plain_text", name: "CIRA_ORIGIN", text: ciraOrigin },
     { type: "plain_text", name: "APPS_DOMAIN", text: appsDomain },
-    { type: "secret_text", name: "CIRA_PROXY_SECRET", text: secret },
+    ...(secret === null
+      ? []
+      : [{ type: "secret_text", name: "CIRA_PROXY_SECRET", text: secret }]),
   ],
+  // Cloudflare keeps the secret it has when this upload does not name one.
+  ...(secret === null ? { keep_bindings: ["secret_text"] } : {}),
 };
 
 const form = new FormData();
@@ -127,9 +137,24 @@ if (!response.ok || body.success !== true) {
   throw new Error(`Cloudflare refused the deploy: ${said || response.status}`);
 }
 
+// Read back, because a worker without its secret refuses every app, and the
+// place to find that out is here rather than from the first person locked out.
+const settings = await fetch(
+  `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${SCRIPT}/settings`,
+  { headers: { authorization: `Bearer ${token}` } },
+).then((r) => r.json());
+const hasSecret = (settings.result?.bindings ?? []).some(
+  (b) => b.type === "secret_text" && b.name === "CIRA_PROXY_SECRET",
+);
+if (!hasSecret) {
+  throw new Error(
+    "The proxy is deployed WITHOUT its secret, so every app is refused. Rotate it now: set CIRA_PROXY_SECRET in Vercel and ship again with it.",
+  );
+}
+
 process.stdout.write(
   `deployed ${SCRIPT} (${Math.round(size / 1024)} KB) to account ${account.slice(0, 8)}…\n` +
     `  apps domain: ${appsDomain}\n` +
     `  cira origin: ${ciraOrigin}\n` +
-    `  secret:      set (${secret.length} chars)\n`,
+    `  secret:      ${secret === null ? "kept as it was" : `set (${secret.length} chars)`}\n`,
 );

@@ -69,7 +69,9 @@ describe.skipIf(!hasDatabase)("SCIM", () => {
       { id: owner.id, externalId: "x_owner", name: "Owner", email: owner.email },
       { id: dana.id, externalId: "x_dana", name: "Dana", email: dana.email },
     ]);
-    await database.insert(spaces).values({ id: spaceId, name: "Acme", slug: "acme" });
+    await database
+      .insert(spaces)
+      .values({ id: spaceId, name: "Acme", slug: "acme", domain: "acme.test" });
     await database.insert(memberships).values({
       id: newId("membership"),
       userId: owner.id,
@@ -249,5 +251,100 @@ describe.skipIf(!hasDatabase)("SCIM", () => {
         .from(appAccess)
         .where(and(eq(appAccess.type, "team"), eq(appAccess.targetId, group!.teamId))),
     ).toEqual([]);
+  });
+
+  /**
+   * A directory adds only people at a domain the company has shown it holds.
+   * Before this, any admin of any space could push anyone's address and they
+   * became a member with no invitation - reproduced on production.
+   */
+  describe("whose people a directory may add", () => {
+    it("refuses someone at another domain, and keeps no row of them", async () => {
+      const refused = await call("POST", "/Users", {
+        schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        userName: "victim@bigco.test",
+        active: true,
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.body.scimType).toBe("invalidValue");
+      expect(refused.body.detail).toContain("@acme.test");
+
+      const listed = await call("GET", '/Users?filter=userName eq "victim@bigco.test"');
+      expect(listed.body.totalResults).toBe(0);
+    });
+
+    it("refuses renaming someone to another domain", async () => {
+      const created = await call("POST", "/Users", {
+        schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        userName: "rena@acme.test",
+        active: true,
+      });
+      expect(created.status).toBe(201);
+
+      const renamed = await call("PATCH", `/Users/${created.body.id}`, {
+        schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        Operations: [{ op: "replace", path: "userName", value: "rena@bigco.test" }],
+      });
+      expect(renamed.status).toBe(400);
+    });
+
+    it("lets in someone at the domain single sign-on was set up for", async () => {
+      const { spaceSso } = await import("@cira/db");
+      await database.insert(spaceSso).values({
+        spaceId,
+        connectionId: "conn_test",
+        domain: "acme-labs.test",
+        createdByUserId: owner.id,
+      });
+      const created = await call("POST", "/Users", {
+        schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        userName: "lab@acme-labs.test",
+        active: true,
+      });
+      expect(created.status).toBe(201);
+      await database.delete(spaceSso).where(eq(spaceSso.spaceId, spaceId));
+    });
+
+    it("gives a space founded from a personal address no directory at all", async () => {
+      const { spaces } = await import("@cira/db");
+      const { directoryDomains } = await import("./scim");
+      const personal = newId("space");
+      await database
+        .insert(spaces)
+        .values({
+          id: personal,
+          name: "Personal",
+          slug: "personal-co",
+          domain: "gmail.com",
+        });
+      expect(await directoryDomains(personal)).toEqual([]);
+    });
+
+    it("does not let a row from before the rule make anyone a member", async () => {
+      const { scimUsers, users } = await import("@cira/db");
+      const { claimProvisioned } = await import("./scim");
+      const outsider = { id: newId("user"), email: "someone@bigco.test" };
+      await database.insert(users).values({
+        id: outsider.id,
+        externalId: "x_outsider",
+        name: "Someone",
+        email: outsider.email,
+      });
+      // Written straight into the table, as a row pushed before the check was.
+      await database.insert(scimUsers).values({
+        id: newId("scimUser"),
+        spaceId,
+        userName: outsider.email,
+        active: true,
+      });
+
+      await claimProvisioned({
+        id: outsider.id,
+        name: "Someone",
+        email: outsider.email,
+        createdAt: new Date(),
+      } as User);
+      expect(await memberOf(outsider.id)).toBeNull();
+    });
   });
 });

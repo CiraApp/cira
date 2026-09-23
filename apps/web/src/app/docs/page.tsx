@@ -113,7 +113,7 @@ claims = jwt.decode(
     request.headers["x-cira-identity"],
     key=cira_keys(),                    # https://cira.dev/.well-known/cira-jwks.json
     algorithms=["ES256"],
-    audience="https://your-app.example",  # your own address
+    audience="https://" + request.headers["host"],  # the address it reached you on
     issuer="https://cira.dev",
 )
 user = find_user_by_email(claims["email"])`}
@@ -121,9 +121,12 @@ user = find_user_by_email(claims["email"])`}
         <p>
           It carries who they are - id, name, verified email - which company, and whether
           a person or their assistant is asking (<code>via</code>). It carries nothing
-          anyone could be signed in with, it names your app as its audience, and it lasts
-          sixty seconds. Verify it; never trust the header unchecked, because anyone who
-          can reach your app can set a header.
+          anyone could be signed in with, and it lasts sixty seconds. Its audience is the
+          address Cira calls your app on, which is the host the request arrived at - not
+          your app&rsquo;s public address, which Cira&rsquo;s own calls never use.
+          Checking it means a statement meant for another app is refused by yours. Verify
+          it; never trust the header unchecked. Cira removes any such header a browser
+          sends, but your app should not depend on that.
         </p>
       </Section>
 

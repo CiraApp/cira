@@ -102,6 +102,30 @@ describe("the app proxy", () => {
     expect(sent.headers.get("cookie")).toBe("theme=dark");
   });
 
+  it("passes on nothing a browser sends in Cira's name or Cloud Run's", async () => {
+    // Reproduced on production before the fix: an app received a forged
+    // x-cira-identity from a page exactly as the page wrote it.
+    await proxy.fetch(
+      new Request(`https://${LABEL}.cira.dev/api/refund`, {
+        headers: {
+          cookie: `__Host-cira=${await session(LABEL)}`,
+          "x-cira-identity": "forged.token.value",
+          "X-Cira-Capability": "refund",
+          "x-serverless-authorization": "Bearer stolen",
+          "x-request-id": "kept",
+        },
+      }),
+      env,
+    );
+    const sent = upstream[0]!;
+    expect(sent.headers.get("x-cira-identity")).toBeNull();
+    expect(sent.headers.get("x-cira-capability")).toBeNull();
+    // Only the credential the proxy adds, never one the browser brought.
+    expect(sent.headers.get("x-serverless-authorization")).toBe("Bearer google-id-token");
+    // Everything else the app may rely on still arrives.
+    expect(sent.headers.get("x-request-id")).toBe("kept");
+  });
+
   it("will not take one app's session on another app's name", async () => {
     const response = await browse(
       "https://tools.acme.com/",
