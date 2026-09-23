@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { Portal } from "@/components/ui/portal";
+import { Dialog } from "@/components/ui/dialog";
 import {
   createAssistantToken,
   listAssistantTokens,
@@ -61,12 +61,20 @@ export function ConnectAssistant({ connected }: { connected: TokenSummary | null
         )}
       </button>
 
-      {open ? <Dialog onClose={() => setOpen(false)} /> : null}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Connect your assistant"
+        description="Your assistant can search and run the company software you already have access to. It sees what you can see, not what your colleagues can."
+        width="max-w-lg"
+      >
+        <ConnectSteps onClose={() => setOpen(false)} />
+      </Dialog>
     </>
   );
 }
 
-function Dialog({ onClose }: { onClose: () => void }) {
+function ConnectSteps({ onClose }: { onClose: () => void }) {
   const [endpoint, setEndpoint] = useState("");
   const [tokens, setTokens] = useState<TokenSummary[] | null>(null);
   const [client, setClient] = useState<ClientId>("claude-code");
@@ -81,132 +89,93 @@ function Dialog({ onClose }: { onClose: () => void }) {
 
   const token = state?.ok === true ? state.data.token : null;
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [onClose]);
-
   return (
-    <Portal>
-      <div
-        className="enter-fade fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-sunken/70 px-5 py-[8vh] backdrop-blur-[3px]"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="connect-title"
-          className="enter-pop w-full max-w-lg rounded-[var(--radius-edge)] border border-line-strong bg-raised p-6 shadow-[var(--shadow-panel)]"
-        >
-          <h2
-            id="connect-title"
-            className="text-[15px] font-semibold tracking-[-0.01em] text-ink"
+    <>
+      <Step n={1} label="Endpoint" />
+      <Copyable value={endpoint} />
+
+      <Step n={2} label="Token" />
+      {token === null ? (
+        <form action={create} className="flex items-center gap-2">
+          <label htmlFor="token-label" className="sr-only">
+            What is this token for
+          </label>
+          <input
+            id="token-label"
+            name="label"
+            required
+            defaultValue={deviceName()}
+            className="field flex-1 py-2 text-[13px]"
+          />
+          <button type="submit" disabled={creating} className="btn btn-primary">
+            {creating ? "Creating..." : "Create"}
+          </button>
+        </form>
+      ) : (
+        <>
+          <Copyable value={token} mono />
+          <p className="mt-1.5 text-[11.5px] text-ink-subtle">
+            Shown once. Create another if you lose it - they cost nothing.
+          </p>
+        </>
+      )}
+      {state?.ok === false ? (
+        <p role="alert" className="mt-1.5 text-[12.5px] text-failed">
+          {state.error}
+        </p>
+      ) : null}
+
+      <Step n={3} label="Add it" />
+      <div className="flex flex-wrap gap-1.5">
+        {CLIENTS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => setClient(entry.id)}
+            aria-pressed={client === entry.id}
+            data-current={client === entry.id ? "true" : undefined}
+            className="rounded-[var(--radius-edge)] border border-line px-2.5 py-1 text-[12px] text-ink-subtle transition-colors hover:text-ink data-[current]:border-accent data-[current]:text-ink"
           >
-            Connect your assistant
-          </h2>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
-            Your assistant can search and run the company software you already have access
-            to. It sees what you can see, not what your colleagues can.
-          </p>
-
-          <Step n={1} label="Endpoint" />
-          <Copyable value={endpoint} />
-
-          <Step n={2} label="Token" />
-          {token === null ? (
-            <form action={create} className="flex items-center gap-2">
-              <label htmlFor="token-label" className="sr-only">
-                What is this token for
-              </label>
-              <input
-                id="token-label"
-                name="label"
-                required
-                defaultValue={deviceName()}
-                className="field flex-1 py-2 text-[13px]"
-              />
-              <button type="submit" disabled={creating} className="btn btn-primary">
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </form>
-          ) : (
-            <>
-              <Copyable value={token} mono />
-              <p className="mt-1.5 text-[11.5px] text-ink-subtle">
-                Shown once. Create another if you lose it - they cost nothing.
-              </p>
-            </>
-          )}
-          {state?.ok === false ? (
-            <p role="alert" className="mt-1.5 text-[12.5px] text-failed">
-              {state.error}
-            </p>
-          ) : null}
-
-          <Step n={3} label="Add it" />
-          <div className="flex flex-wrap gap-1.5">
-            {CLIENTS.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={() => setClient(entry.id)}
-                data-current={client === entry.id ? "true" : undefined}
-                className="rounded-[var(--radius-edge)] border border-line px-2.5 py-1 text-[12px] text-ink-subtle transition-colors hover:text-ink data-[current]:border-accent data-[current]:text-ink"
-              >
-                {entry.name}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2.5">
-            <Copyable
-              value={snippet(client, endpoint, token ?? "YOUR_TOKEN")}
-              mono
-              block
-            />
-          </div>
-          <p className="mt-2 text-[11.5px] text-ink-subtle">
-            {CLIENTS.find((entry) => entry.id === client)?.hint}
-          </p>
-
-          <p className="mt-4 rounded-[var(--radius-edge)] bg-sunken/60 px-3 py-2.5 text-[12.5px] text-ink-muted">
-            Then ask it:{" "}
-            <span className="text-ink">&ldquo;what can I do here?&rdquo;</span>
-          </p>
-
-          <div className="mt-5 border-t border-line pt-3.5">
-            <p className="eyebrow">Your tokens</p>
-            {tokens === null ? (
-              <p className="mt-2 text-[12px] text-ink-subtle">Loading...</p>
-            ) : tokens.length === 0 ? (
-              <p className="mt-2 text-[12px] text-ink-subtle">None yet.</p>
-            ) : (
-              <ul className="mt-2 flex flex-col gap-1">
-                {tokens.map((entry) => (
-                  <TokenRow
-                    key={entry.id}
-                    token={entry}
-                    onRevoked={() => void listAssistantTokens().then(setTokens)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="mt-5 flex justify-end">
-            <button type="button" onClick={onClose} className="btn btn-ghost">
-              Done
-            </button>
-          </div>
-        </div>
+            {entry.name}
+          </button>
+        ))}
       </div>
-    </Portal>
+      <div className="mt-2.5">
+        <Copyable value={snippet(client, endpoint, token ?? "YOUR_TOKEN")} mono block />
+      </div>
+      <p className="mt-2 text-[11.5px] text-ink-subtle">
+        {CLIENTS.find((entry) => entry.id === client)?.hint}
+      </p>
+
+      <p className="mt-4 rounded-[var(--radius-edge)] bg-sunken/60 px-3 py-2.5 text-[12.5px] text-ink-muted">
+        Then ask it: <span className="text-ink">&ldquo;what can I do here?&rdquo;</span>
+      </p>
+
+      <div className="mt-5 border-t border-line pt-3.5">
+        <p className="eyebrow">Your tokens</p>
+        {tokens === null ? (
+          <p className="mt-2 text-[12px] text-ink-subtle">Loading...</p>
+        ) : tokens.length === 0 ? (
+          <p className="mt-2 text-[12px] text-ink-subtle">None yet.</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1">
+            {tokens.map((entry) => (
+              <TokenRow
+                key={entry.id}
+                token={entry}
+                onRevoked={() => void listAssistantTokens().then(setTokens)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <button type="button" onClick={onClose} className="btn btn-ghost">
+          Done
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -247,7 +216,7 @@ function TokenRow({ token, onRevoked }: { token: TokenSummary; onRevoked: () => 
 
 function Step({ n, label }: { n: number; label: string }) {
   return (
-    <p className="eyebrow mt-5 mb-2">
+    <p className="eyebrow mt-5 mb-2 first:mt-0">
       {n} &middot; {label}
     </p>
   );

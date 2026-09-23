@@ -33,9 +33,32 @@ export function AskPanel() {
     if (el !== null && pinned.current) el.scrollTop = el.scrollHeight;
   }, [exchanges, open]);
 
+  // Where focus was when the panel opened, to give it back on close. Read
+  // while rendering the opening, before the field below takes focus.
+  const returnTo = useRef<HTMLElement | null>(null);
+  if (open && returnTo.current === null && typeof document !== "undefined") {
+    returnTo.current = document.activeElement as HTMLElement | null;
+  }
   useEffect(() => {
-    if (open) field.current?.focus();
+    if (open) return;
+    returnTo.current?.focus();
+    returnTo.current = null;
   }, [open]);
+
+  // What a screen reader hears: that Cira is working, then the answer once it
+  // is whole. The answer streams in word by word, and reading that out as it
+  // arrives would be a sentence restarted a hundred times.
+  const last = exchanges.at(-1);
+  const said =
+    last === undefined
+      ? ""
+      : last.status === "streaming"
+        ? "Cira is working on it."
+        : last.error !== null
+          ? last.error
+          : last.confirm !== null
+            ? "Cira needs you to confirm before it goes on."
+            : last.text;
 
   // Grown to its content, up to about six lines, the same bargain the app
   // description field makes.
@@ -60,6 +83,9 @@ export function AskPanel() {
 
   return (
     <Portal>
+      <p role="status" className="sr-only">
+        {said}
+      </p>
       <section
         role="dialog"
         aria-label="Ask Cira"
@@ -160,6 +186,10 @@ export function AskPanel() {
           >
             <textarea
               ref={field}
+              // Focused as the panel appears. An effect ran before the field
+              // existed - the panel is portalled a render later - and so
+              // never focused anything.
+              autoFocus
               rows={1}
               value={draft}
               maxLength={MAX_QUESTION_CHARS}

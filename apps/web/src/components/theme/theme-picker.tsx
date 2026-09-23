@@ -89,7 +89,11 @@ export function ThemePicker() {
       setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+        // Back to the swatch, not to the top of the page.
+        buttonRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -97,6 +101,16 @@ export function ThemePicker() {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
+  }, [open, panelEl]);
+
+  // Into the panel as it opens, on the colours in use: portalled to the end of
+  // the page, it was otherwise the last thing Tab would ever reach.
+  useEffect(() => {
+    if (!open || panelEl === null) return;
+    const start =
+      panelEl.querySelector<HTMLElement>("[data-current]") ??
+      panelEl.querySelector<HTMLElement>("button");
+    start?.focus();
   }, [open, panelEl]);
 
   // A preview left running after the panel closes would be a theme nobody
@@ -155,6 +169,9 @@ export function ThemePicker() {
                   onFocus={() => preview(preset)}
                   onBlur={() => preview(null)}
                   onClick={() => setTheme({ base: preset.base, accent: preset.accent })}
+                  aria-pressed={
+                    chosen.base === preset.base && chosen.accent === preset.accent
+                  }
                   data-current={
                     chosen.base === preset.base && chosen.accent === preset.accent
                       ? "true"

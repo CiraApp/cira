@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { Role, Space } from "@cira/core";
 import { SidebarNav, type NavItem } from "./sidebar-nav";
 import { SpaceMenu } from "./space-menu";
 import { Wordmark } from "./wordmark";
 import type { Route } from "next";
-import { Portal } from "@/components/ui/portal";
 import { SettingsLink } from "./settings-link";
 
 /**
@@ -15,6 +14,10 @@ import { SettingsLink } from "./settings-link";
  *
  * It closes on navigation, because a menu still covering the page you just
  * asked for is the most common way this pattern goes wrong.
+ *
+ * A native modal `<dialog>`, like every other overlay: focus moves into the
+ * sheet, the page behind is out of reach until it closes, Escape closes it,
+ * and focus returns to the button that opened it.
  */
 export function MobileNav({
   spaceSlug,
@@ -30,16 +33,17 @@ export function MobileNav({
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const sheet = useRef<HTMLDialogElement>(null);
 
   useEffect(() => setOpen(false), [pathname]);
 
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
+    const element = sheet.current;
+    if (element === null) return;
+    if (open && !element.open) element.showModal();
+    else if (!open && element.open) element.close();
+    document.body.style.overflow = open ? "hidden" : "";
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
   }, [open]);
@@ -65,37 +69,41 @@ export function MobileNav({
         </svg>
       </button>
 
-      {open ? (
-        <Portal>
-          <div className="fixed inset-0 z-50 md:hidden">
-            <button
-              type="button"
-              aria-label="Close navigation"
-              onClick={() => setOpen(false)}
-              className="enter-fade absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-            />
-
-            <div className="enter-right absolute inset-y-0 left-0 flex w-[264px] flex-col border-r border-line bg-panel">
-              <div className="flex h-14 shrink-0 items-center border-b border-line px-2.5">
-                <div className="min-w-0 flex-1">
-                  <SpaceMenu spaces={spaces} currentSlug={spaceSlug} />
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-2.5">
-                <SidebarNav items={items} />
-              </div>
-
-              <div className="flex shrink-0 items-center gap-[3px] border-t border-line p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))]">
-                <div className="flex min-w-0 flex-1 justify-center">
-                  <Wordmark href={`/${spaceSlug}` as Route} />
-                </div>
-                <SettingsLink href={settingsHref} />
+      <dialog
+        ref={sheet}
+        aria-label="Navigation"
+        onCancel={(event) => {
+          event.preventDefault();
+          setOpen(false);
+        }}
+        onClose={() => setOpen(false)}
+        // The backdrop is the dialog itself; the sheet fills what is not.
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setOpen(false);
+        }}
+        className="enter-right m-0 mr-auto h-dvh max-h-none w-[264px] max-w-none border-0 border-r border-line bg-panel p-0 text-ink backdrop:bg-black/55 backdrop:backdrop-blur-[2px] md:hidden"
+      >
+        {open ? (
+          <div className="flex h-full flex-col">
+            <div className="flex h-14 shrink-0 items-center border-b border-line px-2.5">
+              <div className="min-w-0 flex-1">
+                <SpaceMenu spaces={spaces} currentSlug={spaceSlug} />
               </div>
             </div>
+
+            <div className="flex-1 overflow-y-auto p-2.5">
+              <SidebarNav items={items} />
+            </div>
+
+            <div className="flex shrink-0 items-center gap-[3px] border-t border-line p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))]">
+              <div className="flex min-w-0 flex-1 justify-center">
+                <Wordmark href={`/${spaceSlug}` as Route} />
+              </div>
+              <SettingsLink href={settingsHref} />
+            </div>
           </div>
-        </Portal>
-      ) : null}
+        ) : null}
+      </dialog>
     </>
   );
 }

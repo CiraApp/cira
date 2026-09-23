@@ -57,11 +57,28 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  // Where focus was before the palette opened, to put it back on close
+  // rather than on the page's body, where a keyboard user starts over.
+  const returnTo = useRef<HTMLElement | null>(null);
+
   const close = useCallback(() => {
     setOpen(false);
     setQuery("");
     setCursor(0);
+    returnTo.current?.focus();
+    returnTo.current = null;
   }, []);
+
+  // Taken as it opens, not after: the palette's field takes focus while it
+  // renders, so anything later would record the palette itself.
+  const openPalette = useCallback(() => {
+    returnTo.current = document.activeElement as HTMLElement | null;
+    setOpen(true);
+  }, []);
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   // The one global shortcut in the product. It toggles, so the same keystroke
   // gets you out of somewhere you did not mean to be.
@@ -69,12 +86,13 @@ export function CommandPalette({
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen((value) => !value);
+        if (openRef.current) close();
+        else openPalette();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [close, openPalette]);
 
   // Loaded once per visit, on first open. A space's shelf does not change
   // often enough to be worth re-fetching every time the palette is summoned.
@@ -179,10 +197,14 @@ export function CommandPalette({
     row?.scrollIntoView({ block: "nearest" });
   }, [cursor, matches]);
 
-  if (!open) return <PaletteTrigger onOpen={() => setOpen(true)} />;
+  if (!open) return <PaletteTrigger onOpen={openPalette} />;
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
+    if (event.key === "Tab") {
+      // One field and a list it drives: Tab has nowhere to go but out, onto
+      // the page this is covering.
+      event.preventDefault();
+    } else if (event.key === "Escape") {
       event.preventDefault();
       close();
     } else if (event.key === "ArrowDown") {
@@ -209,7 +231,7 @@ export function CommandPalette({
 
   return (
     <>
-      <PaletteTrigger onOpen={() => setOpen(true)} />
+      <PaletteTrigger onOpen={openPalette} />
 
       <Portal>
         <div
@@ -230,6 +252,16 @@ export function CommandPalette({
                 ref={inputRef}
                 name="command-search"
                 autoFocus
+                // A combobox driving a listbox, so a screen reader follows the
+                // highlighted row as the arrows move it; before, it heard
+                // nothing and Enter ran something unannounced.
+                role="combobox"
+                aria-expanded={matches.length > 0}
+                aria-controls="palette-list"
+                aria-autocomplete="list"
+                aria-activedescendant={
+                  matches.length > 0 ? `palette-option-${cursor}` : undefined
+                }
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={
@@ -245,7 +277,20 @@ export function CommandPalette({
               </kbd>
             </div>
 
-            <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-1.5">
+            <p role="status" className="sr-only">
+              {loading && apps === null
+                ? "Loading"
+                : matches.length === 0
+                  ? "Nothing matches"
+                  : `${matches.length} ${matches.length === 1 ? "result" : "results"}`}
+            </p>
+            <div
+              ref={listRef}
+              id="palette-list"
+              role="listbox"
+              aria-label="Results"
+              className="max-h-[52vh] overflow-y-auto p-1.5"
+            >
               {loading && apps === null ? (
                 <p className="px-2.5 py-8 text-center text-[13px] text-ink-subtle">
                   Reading the shelf...
@@ -260,13 +305,22 @@ export function CommandPalette({
                   group = command.group;
 
                   return (
-                    <div key={command.id}>
+                    <div key={command.id} role="presentation">
                       {heading !== null ? (
-                        <p className="eyebrow px-2.5 pt-3 pb-1.5 first:pt-1">{heading}</p>
+                        <p
+                          role="presentation"
+                          className="eyebrow px-2.5 pt-3 pb-1.5 first:pt-1"
+                        >
+                          {heading}
+                        </p>
                       ) : null}
 
                       <button
                         type="button"
+                        id={`palette-option-${index}`}
+                        role="option"
+                        aria-selected={index === cursor}
+                        tabIndex={-1}
                         data-cursor={index === cursor ? "true" : undefined}
                         onMouseMove={() => setCursor(index)}
                         onClick={() => {

@@ -70,7 +70,7 @@ export function Dialog({
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
-      className={`enter-pop mx-auto mt-[12vh] w-[calc(100%-2.5rem)] ${width} rounded-[var(--radius-edge)] border border-line-strong bg-raised p-0 text-ink shadow-[var(--shadow-panel)] backdrop:bg-sunken/70 backdrop:backdrop-blur-[3px]`}
+      className={`enter-pop mx-auto mt-[12vh] max-h-[calc(100dvh-12vh-2rem)] w-[calc(100%-2.5rem)] overflow-y-auto ${width} rounded-[var(--radius-edge)] border border-line-strong bg-raised p-0 text-ink shadow-[var(--shadow-panel)] backdrop:bg-sunken/70 backdrop:backdrop-blur-[3px]`}
     >
       {open ? (
         <div className="p-6">
