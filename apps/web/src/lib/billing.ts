@@ -121,7 +121,16 @@ export async function portalFor(space: Space): Promise<BillingOutcome> {
     return session.url === undefined
       ? { ok: false, error: "Stripe did not return a billing page." }
       : { ok: true, url: session.url };
-  } catch {
+  } catch (error) {
+    // A customer Stripe does not have is not a customer: forgotten here, so
+    // the page offers to subscribe rather than a door that opens on an error.
+    if (gone(error)) {
+      await forgetSubscription(space.id);
+      return {
+        ok: false,
+        error: "Stripe has no billing record for this space any more. Subscribe again.",
+      };
+    }
     return { ok: false, error: "Stripe could not be reached just now." };
   }
 }
@@ -330,11 +339,18 @@ export async function syncQuantities(
     alwaysOn: summary.alwaysOn,
   });
 
-  const subscription = await stripe<{
-    items?: {
-      data?: Array<{ id: string; quantity?: number; price?: { lookup_key?: string } }>;
-    };
-  }>(`subscriptions/${subscriptionId}`, "GET");
+  let subscription;
+  try {
+    subscription = await stripe<{
+      items?: {
+        data?: Array<{ id: string; quantity?: number; price?: { lookup_key?: string } }>;
+      };
+    }>(`subscriptions/${subscriptionId}`, "GET");
+  } catch (error) {
+    if (!gone(error)) throw error;
+    await forgetSubscription(spaceId);
+    return "changed";
+  }
 
   const items = subscription.items?.data ?? [];
   const changes: Record<string, string> = {};
@@ -401,6 +417,49 @@ async function priceId(lookupKey: string): Promise<string> {
   return id;
 }
 
+/**
+ * What Stripe refused, in the two facts Cira can act on. Its message is not
+ * one of them: it names the account and the request, and belongs in a log
+ * rather than in front of anybody.
+ */
+export class StripeCallError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super("Stripe refused the request.");
+    this.name = "StripeCallError";
+  }
+}
+
+/** Whether Stripe says the thing Cira asked about does not exist. */
+function gone(error: unknown): boolean {
+  return (
+    error instanceof StripeCallError &&
+    (error.status === 404 || error.code === "resource_missing")
+  );
+}
+
+/**
+ * Forget a subscription Stripe no longer has: deleted there, or belonging to
+ * the other mode after a switch from test keys to live ones. The plan is left
+ * alone - nothing a company runs is switched off because its payment record
+ * moved - and its Billing page offers to subscribe again, which is the one
+ * thing a stale record made impossible.
+ */
+async function forgetSubscription(spaceId: string): Promise<void> {
+  await db()
+    .update(spaces)
+    .set({
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      subscriptionStatus: null,
+      paidUntil: null,
+    })
+    .where(eq(spaces.id, spaceId));
+  console.warn(`stripe: forgot a subscription it no longer has for ${spaceId}`);
+}
+
 async function stripe<T>(
   path: string,
   method: "GET" | "POST" | "DELETE",
@@ -427,7 +486,10 @@ async function stripe<T>(
     console.warn(
       `stripe ${path} refused: ${response.status} ${response.headers.get("request-id") ?? ""}`,
     );
-    throw new Error("Stripe refused the request.");
+    const said = (await response.json().catch(() => null)) as {
+      error?: { code?: string };
+    } | null;
+    throw new StripeCallError(response.status, said?.error?.code ?? null);
   }
   return (await response.json()) as T;
 }

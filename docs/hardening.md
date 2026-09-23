@@ -121,23 +121,24 @@ the test lives. When one is deliberately left alone, it says why.
 
 ## Money
 
-| ID      | Sev      | Finding                                                                                                                                    | Status |
-| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| BILL-1  | critical | The trial never ends. Its end date is only displayed.                                                                                      | fixed  |
-| BILL-2  | critical | Workers and warm apps switched on after checkout are never added to the subscription. Checkout breaks when the always-on price is missing. | fixed  |
-| BILL-3  | critical | After a cancel, workers and warm apps keep running for free.                                                                               | fixed  |
-| BILL-4  | high     | After an abandoned or cancelled checkout a space can never subscribe again: it only offers the portal.                                     | fixed  |
-| BILL-5  | high     | Webhooks are applied in whatever order they arrive, for whichever subscription they name.                                                  | fixed  |
-| BILL-6  | high     | Two admins, or two tabs, can create two customers and two subscriptions.                                                                   | fixed  |
-| BILL-7  | high     | Deleting a space while a checkout is open leaves a subscription charging for a space that no longer exists.                                | fixed  |
-| BILL-8  | high     | The five-minute health probe keeps apps with sidecars running all the time (they are billed per instance), and nobody pays for it.         | fixed  |
-| BILL-9  | medium   | A subscription set to cancel at the end of its period, or one that has expired, still blocks deleting the space.                           | fixed  |
-| BILL-10 | medium   | Cira never emails anyone about a failed payment or a cancellation, and Stripe's own emails go to whichever admin first clicked subscribe.  | fixed  |
-| BILL-11 | medium   | Apps deleted this month disappear from this month's usage.                                                                                 | fixed  |
-| BILL-12 | medium   | One person can open any number of trial spaces.                                                                                            | fixed  |
-| BILL-13 | low      | Only one `v1` signature is checked, so rotating the webhook secret can fail.                                                               | fixed  |
-| BILL-14 | low      | Coming back from checkout before the webhook arrives still shows "Trial".                                                                  | fixed  |
-| BILL-15 | low      | Keep-warm can end up on at Google but off in Cira if the database write fails.                                                             | fixed  |
+| ID      | Sev      | Finding                                                                                                                                                                          | Status |
+| ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| BILL-1  | critical | The trial never ends. Its end date is only displayed.                                                                                                                            | fixed  |
+| BILL-2  | critical | Workers and warm apps switched on after checkout are never added to the subscription. Checkout breaks when the always-on price is missing.                                       | fixed  |
+| BILL-3  | critical | After a cancel, workers and warm apps keep running for free.                                                                                                                     | fixed  |
+| BILL-4  | high     | After an abandoned or cancelled checkout a space can never subscribe again: it only offers the portal.                                                                           | fixed  |
+| BILL-5  | high     | Webhooks are applied in whatever order they arrive, for whichever subscription they name.                                                                                        | fixed  |
+| BILL-6  | high     | Two admins, or two tabs, can create two customers and two subscriptions.                                                                                                         | fixed  |
+| BILL-7  | high     | Deleting a space while a checkout is open leaves a subscription charging for a space that no longer exists.                                                                      | fixed  |
+| BILL-8  | high     | The five-minute health probe keeps apps with sidecars running all the time (they are billed per instance), and nobody pays for it.                                               | fixed  |
+| BILL-9  | medium   | A subscription set to cancel at the end of its period, or one that has expired, still blocks deleting the space.                                                                 | fixed  |
+| BILL-10 | medium   | Cira never emails anyone about a failed payment or a cancellation, and Stripe's own emails go to whichever admin first clicked subscribe.                                        | fixed  |
+| BILL-11 | medium   | Apps deleted this month disappear from this month's usage.                                                                                                                       | fixed  |
+| BILL-12 | medium   | One person can open any number of trial spaces.                                                                                                                                  | fixed  |
+| BILL-13 | low      | Only one `v1` signature is checked, so rotating the webhook secret can fail.                                                                                                     | fixed  |
+| BILL-14 | low      | Coming back from checkout before the webhook arrives still shows "Trial".                                                                                                        | fixed  |
+| BILL-15 | low      | Keep-warm can end up on at Google but off in Cira if the database write fails.                                                                                                   | fixed  |
+| BILL-16 | medium   | A subscription Stripe no longer has - deleted there, or from the other mode after going live - left a space unable to subscribe again, and its billing page opening on an error. | fixed  |
 
 ## Alerts
 
@@ -225,6 +226,7 @@ What changed for each finding, and where its test is.
 - **BILL-13** (fixed). Every `v1` in the header is checked, so rotating the webhook secret works. Tests: `billing.test.ts`.
 - **BILL-14** (fixed). Coming back from checkout before Stripe confirms shows that the payment was received and is being confirmed, and the page refreshes until it is.
 - **BILL-15** (fixed). Keep-warm is written down first, then asked of Google, and put back if Google refuses.
+- **BILL-16** (fixed). Found switching production to the live key, which left Paradym holding a test-mode subscription. Stripe's refusals now carry their status and code (`StripeCallError`), and a missing subscription or customer is forgotten - the plan left alone, so nothing a company runs is switched off - which is also what makes its page offer to subscribe again. Tested in billing.test.ts.
 - **ALERT-1** (fixed). The message and whoever it has not reached are kept on the row (migration 0036), and the watcher retries up to five times over a day. Sends are spaced for Resend's rate limit. Tests: `notifications.test.ts`.
 - **ALERT-2** (fixed). Each notice has a topic. There are at most two outage emails per topic in two hours and one failing-run email in six, and no 'back up' for an outage nobody was told about. What is held back is recorded. Tests: `notifications.test.ts`.
 - **ALERT-4** (fixed). Spaces - trial notices, plan enforcement, billing sync - now come before app checks, and a pass stops starting checks after four minutes.

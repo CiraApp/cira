@@ -96,10 +96,12 @@ what it uses.
       enforced through 1.2's limits, seats and workers kept in step by the
       watcher. A failed payment warns and changes nothing; a cancelled one
       falls back to a trial's allowance (2026-09-19). In test mode.
-  - [ ] _You:_ switch Stripe to live mode when there is a customer: finish
-        Stripe's account activation, then set `STRIPE_SECRET_KEY` in Vercel to
-        the live key. Cira makes the live product, prices and webhook itself on
-        the next watcher pass (`ensureStripeSetup`, 2026-09-22).
+  - [x] Live since 2026-09-22: `STRIPE_SECRET_KEY` is the live key, and Cira
+        made the live product, its three prices and the webhook itself on the
+        next watcher pass. Paradym's test-mode subscription is forgotten by
+        the same code that handles one deleted in Stripe.
+  - [ ] _You:_ Stripe still wants bank details (`external_account`) before it
+        pays out. Charges work without them.
 - [x] **2.3 Usage and cost per company.** Cloud Monitoring is asked what each
       service, job and worker pool ran for, attributed to apps by Cira's own
       records, priced by `pricing.ts`, and shown to admins at

@@ -412,6 +412,25 @@ describe.skipIf(!hasDatabase)("billing", () => {
       ).toBe(false);
       expect(await syncQuantities(spaceId)).toBe("same");
     });
+
+    it("forgets a subscription Stripe no longer has, and keeps the plan", async () => {
+      // What a switch from test keys to live ones leaves behind: a
+      // subscription id that means nothing in the mode Cira is now in.
+      const { applySubscription, syncQuantities } = await import("./billing");
+      const { spaces } = await import("@cira/db");
+      stripe.subscriptions.set("sub_gone", subscription({ id: "sub_gone" }));
+      await applySubscription({ id: "sub_gone" });
+      stripe.subscriptions.delete("sub_gone");
+
+      expect(await syncQuantities(spaceId)).toBe("changed");
+      const [space] = await database.select().from(spaces).where(eq(spaces.id, spaceId));
+      expect(space?.stripeSubscriptionId).toBeNull();
+      expect(space?.stripeCustomerId).toBeNull();
+      expect(space?.subscriptionStatus).toBeNull();
+      // Nothing a company runs is switched off because its payment record moved.
+      expect(space?.plan).toBe("team");
+      expect(await syncQuantities(spaceId)).toBe("skipped");
+    });
   });
 });
 
