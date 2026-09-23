@@ -24,6 +24,7 @@ can reach it.
 | `cira cache url`     | The app's cache address, for `redis-cli`.                           |
 | `cira status`        | What this folder is linked to.                                      |
 | `cira whoami`        | Who you are signed in as, and your spaces.                          |
+| `cira --version`     | Which version of the CLI this is.                                   |
 | `cira skill install` | Add the Cira Skill to your coding agents.                           |
 | `cira update`        | Update Cira, and the Skill copies you approved.                     |
 | `cira logout`        | Forget the stored credential.                                       |
