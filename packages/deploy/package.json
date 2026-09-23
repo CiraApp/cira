@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@cira/core": "workspace:*",
-    "@vercel/oidc": "^3.8.7",
-    "google-auth-library": "^11.0.2"
+    "@vercel/oidc": "^3.8.8",
+    "google-auth-library": "^11.1.0"
   }
 }

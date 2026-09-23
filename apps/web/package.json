@@ -9,11 +9,11 @@
     "start": "next start"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
+    "@anthropic-ai/sdk": "^0.127.0",
     "@cira/core": "workspace:*",
     "@cira/db": "workspace:*",
     "@cira/deploy": "workspace:*",
-    "@clerk/nextjs": "^7.9.2",
+    "@clerk/nextjs": "^7.9.4",
     "@sentry/nextjs": "^10.75.0",
     "drizzle-orm": "^0.45.2",
     "next": "^16.3.5",

@@ -44,7 +44,7 @@
     "@cira/core": "workspace:*",
     "@cira/deploy": "workspace:*",
     "@cira/skill": "workspace:*",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "ignore": "^7.0.9"
   }
 }
