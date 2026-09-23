@@ -1,0 +1,36 @@
+# Dependency updates, so a known vulnerability in something Cira depends on is
+# a pull request rather than something nobody notices.
+#
+# Weekly rather than daily: this is one person's repository, and a queue of
+# pull requests nobody reads is the same as no updates at all, with more noise.
+# Everything a package manager could update is grouped into one pull request
+# per ecosystem, except a security fix, which Dependabot raises on its own and
+# which is the one to act on the day it appears.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      # Patches and minors together: they are the ones CI's word can be taken
+      # for. A major waits on its own, because that is a decision.
+      everything:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "Update"
+    labels: ["dependencies"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Update"
+    labels: ["dependencies"]
