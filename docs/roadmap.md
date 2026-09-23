@@ -186,6 +186,33 @@ what it uses.
 - [ ] **3.6 Penetration test** of the app proxy, sessions and MCP, by an
       outside firm. _You._
 
+## Phase 4 - Release readiness
+
+The things a company would notice missing the first week it ran on Cira, found
+by asking what Cira could not answer for after something went wrong.
+
+- [x] **4.1 Rollback and redeploy.** A manager puts an app back on any build it
+      ran before, from that deploy under Deploys: nothing is rebuilt, the
+      variables, warmth and memory stay as they are, and its workers and
+      scheduled runs move with the web traffic. A release command never runs
+      again on the way back, and a rollback past one says plainly that the
+      database does not go back with the code. The newest deploy offers the
+      same as "Deploy this version again" (2026-09-23). Verified on production
+      on a web app and a worker-only app; the web app answered afterwards.
+- [x] **4.2 A record of who changed what.** Roles, removals, joins,
+      invitations, teams, app access, capability switches, telling an app who
+      is calling, addresses, single sign-on, directory sync, rollbacks, deleted
+      apps, the company name and joining by domain, written by the actions
+      themselves and read by admins at `/<space>/~/changes`. Append-only, in
+      the words rather than the ids, and holding no token, variable or input
+      (2026-09-23). The other half of 1.4.
+- [x] **4.3 Dependency updates.** Dependabot raises one grouped pull request a
+      week for npm and one a month for actions, with security fixes on their
+      own (2026-09-23).
+- [ ] **4.4 A restore drill.** Restore Cira's own database to a branch at a
+      past time, check it, and write down how long it took. Never done, so
+      "there are backups" is a belief rather than a fact.
+
 ---
 
 ## Done
