@@ -18,10 +18,13 @@ import { Portal } from "./ui/portal";
 export function InviteDialog({
   spaceSlug,
   emailing,
+  teams,
 }: {
   spaceSlug: string;
   /** Whether invitations go out by email here, so the dialog promises only that. */
   emailing: boolean;
+  /** The company's teams, to put someone on one before they ever sign in. */
+  teams: Array<{ id: string; name: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -129,6 +132,33 @@ export function InviteDialog({
                       <option value="member">Member - can use apps they are given</option>
                       <option value="admin">Admin - can manage apps and invite</option>
                     </select>
+
+                    {/* Chosen here rather than after they arrive, because the
+                        first day is exactly when nobody goes back to a roster:
+                        they accept and the apps their team opens are open. */}
+                    {teams.length > 0 ? (
+                      <fieldset className="rounded-[var(--radius-edge)] border border-line bg-surface px-3.5 py-3">
+                        <legend className="px-1 text-[12px] text-ink-subtle">
+                          Teams, if they join one
+                        </legend>
+                        <div className="mt-1 flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+                          {teams.map((team) => (
+                            <label
+                              key={team.id}
+                              className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink"
+                            >
+                              <input
+                                type="checkbox"
+                                name="teams"
+                                value={team.id}
+                                className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+                              />
+                              <span className="min-w-0 truncate">{team.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                    ) : null}
 
                     {state?.ok === false ? (
                       <p role="alert" className="text-[12.5px] text-failed">

@@ -9,6 +9,8 @@ export interface PendingInvite {
   email: string;
   role: string;
   invitedBy: string;
+  /** The teams they land on when they accept, by name. */
+  teams: string[];
   /** "in 6 days", already worded by the page. */
   expires: string;
 }
@@ -48,7 +50,8 @@ export function PendingInvites({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] text-ink">{invite.email}</span>
               <span className="block truncate text-[11.5px] text-ink-subtle">
-                As {invite.role === "admin" ? "an admin" : "a member"}, by{" "}
+                As {invite.role === "admin" ? "an admin" : "a member"}
+                {invite.teams.length === 0 ? "" : ` on ${invite.teams.join(", ")}`}, by{" "}
                 {invite.invitedBy}. Expires {invite.expires}.
               </span>
             </span>

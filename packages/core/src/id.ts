@@ -42,6 +42,8 @@ export const ID_PREFIXES = {
   scimGroup: "scg",
   /** One change to a company: who made it, what it was, never with what. */
   change: "chg",
+  /** A team an invitation puts someone on the moment they accept it. */
+  inviteTeam: "itm",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

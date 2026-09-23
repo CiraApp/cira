@@ -113,4 +113,25 @@ describe("messages", () => {
     expect(message.text).toContain("for sam@paradym.test and works once");
     expect(message.html).toContain('href="https://cira.dev/invite/abc"');
   });
+
+  it("names the teams someone is invited onto, and reads as a list", () => {
+    const onto = (teams: string[]) =>
+      inviteMessage({
+        inviter: "Aumit",
+        spaceName: "Paradym",
+        role: "member",
+        email: "sam@paradym.test",
+        url: "https://cira.dev/invite/abc",
+        expiresAt: new Date("2026-09-26T12:00:00Z"),
+        teams,
+      }).text;
+
+    expect(onto(["Support"])).toContain("lives, on Support.");
+    expect(onto(["Support", "Engineering"])).toContain("on Support and Engineering.");
+    expect(onto(["Support", "Engineering", "Finance"])).toContain(
+      "on Support, Engineering and Finance.",
+    );
+    // Nothing said about teams when there are none to say.
+    expect(onto([])).toContain("software lives.");
+  });
 });

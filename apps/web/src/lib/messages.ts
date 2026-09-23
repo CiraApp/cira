@@ -99,11 +99,21 @@ export function inviteMessage(args: {
   email: string;
   url: string;
   expiresAt: Date;
+  /** The teams they are put on the moment they accept, if any. */
+  teams?: readonly string[];
 }): Message {
+  // Said in the invitation because it is the useful half of it: what someone
+  // will be able to open the minute they are in.
+  const teams = args.teams ?? [];
+  const onTeams =
+    teams.length === 0
+      ? ""
+      : `, on ${teams.length === 1 ? teams[0] : `${teams.slice(0, -1).join(", ")} and ${teams.at(-1)}`}`;
+
   return letter({
     subject: `${args.inviter} invited you to ${args.spaceName} on Cira`,
     paragraphs: [
-      `${args.inviter} invited you to join ${args.spaceName} on Cira, where ${args.spaceName}'s internal software lives${args.role === "admin" ? ", as an admin" : ""}.`,
+      `${args.inviter} invited you to join ${args.spaceName} on Cira, where ${args.spaceName}'s internal software lives${args.role === "admin" ? ", as an admin" : ""}${onTeams}.`,
       `The invitation is for ${args.email} and works once, until ${utc(args.expiresAt)}. Sign in with that address to accept it.`,
     ],
     action: { label: "Accept the invitation", href: args.url },

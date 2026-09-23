@@ -1,12 +1,22 @@
 import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { apps, db, invites, memberships, teamMembers, teams, users } from "@cira/db";
+import {
+  apps,
+  db,
+  inviteTeams,
+  invites,
+  memberships,
+  teamMembers,
+  teams,
+  users,
+} from "@cira/db";
 import { roleAtLeast } from "@cira/core";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageTitle } from "@/components/shell/page-title";
 import { InviteDialog } from "@/components/invite-dialog";
 import { MemberControls } from "@/components/member-controls";
 import { PendingInvites } from "@/components/pending-invites";
+import { PersonTeams } from "@/components/person-teams";
 import { TeamsPanel } from "@/components/teams-panel";
 import { NotFoundError, listMySpaces, requireSpaceMember } from "@/lib/authz";
 import { emailConfigured } from "@/lib/email";
@@ -45,7 +55,7 @@ export default async function MembersPage({
     const canInvite = roleAtLeast(ctx.role, "admin");
     const database = db();
 
-    const [rows, teamRows, owned, outstanding] = await Promise.all([
+    const [rows, teamRows, owned, outstanding, invitedTeamRows] = await Promise.all([
       database
         .select({ user: users, role: memberships.role, joined: memberships.createdAt })
         .from(memberships)
@@ -78,7 +88,21 @@ export default async function MembersPage({
             )
             .orderBy(asc(invites.createdAt))
         : Promise.resolve([]),
+      // Which teams each outstanding invitation already puts someone on, so
+      // the list says what was promised and not only who was asked.
+      canInvite
+        ? database
+            .select({ inviteId: inviteTeams.inviteId, name: teams.name })
+            .from(inviteTeams)
+            .innerJoin(teams, eq(teams.id, inviteTeams.teamId))
+            .where(eq(teams.spaceId, ctx.space.id))
+        : Promise.resolve([]),
     ]);
+
+    const invitedOnto = new Map<string, string[]>();
+    for (const row of invitedTeamRows) {
+      invitedOnto.set(row.inviteId, [...(invitedOnto.get(row.inviteId) ?? []), row.name]);
+    }
 
     const teamList = new Map<
       string,
@@ -100,7 +124,7 @@ export default async function MembersPage({
     const teamsFor = new Map<string, string[]>();
     for (const row of teamRows) {
       if (row.userId === null) continue;
-      teamsFor.set(row.userId, [...(teamsFor.get(row.userId) ?? []), row.team.name]);
+      teamsFor.set(row.userId, [...(teamsFor.get(row.userId) ?? []), row.team.id]);
     }
 
     const appsOwned = new Map(owned.map((o) => [o.ownerUserId, o.n]));
@@ -133,7 +157,11 @@ export default async function MembersPage({
         }
         actions={
           canInvite ? (
-            <InviteDialog spaceSlug={spaceSlug} emailing={emailConfigured()} />
+            <InviteDialog
+              spaceSlug={spaceSlug}
+              emailing={emailConfigured()}
+              teams={teamsByName.map((team) => ({ id: team.id, name: team.name }))}
+            />
           ) : null
         }
       >
@@ -186,11 +214,16 @@ export default async function MembersPage({
                           {person.user.email}
                         </span>
                       )}
-                      {memberOf.length > 0 ? (
-                        <span className="mt-0.5 block truncate text-[11.5px] text-ink-subtle">
-                          {memberOf.sort().join(" · ")}
-                        </span>
-                      ) : null}
+                      <PersonTeams
+                        spaceSlug={spaceSlug}
+                        canEdit={canInvite}
+                        person={{ userId: person.user.id, name: person.user.name }}
+                        teams={teamsByName.map((team) => ({
+                          id: team.id,
+                          name: team.name,
+                          on: memberOf.includes(team.id),
+                        }))}
+                      />
                     </span>
 
                     <MemberControls
@@ -223,6 +256,7 @@ export default async function MembersPage({
                 email: invite.email,
                 role: invite.role,
                 invitedBy: inviter,
+                teams: (invitedOnto.get(invite.id) ?? []).sort(),
                 expires: inDays(invite.expiresAt),
               }))}
             />

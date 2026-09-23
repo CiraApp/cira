@@ -10,6 +10,7 @@ import {
   deployments,
   services,
   spaces,
+  teams,
 } from "@cira/db";
 import type { Deployment, Service } from "@cira/core";
 import { newId } from "@cira/core";
@@ -152,4 +153,19 @@ export async function appSlugMovedTo(
     .limit(1);
 
   return row?.slug ?? null;
+}
+
+/**
+ * A company's teams, by name. For the places that offer them - inviting
+ * someone onto one, putting an app in front of one - rather than for showing
+ * who is on each, which the members page reads with its own join.
+ */
+export async function teamsInSpace(
+  spaceId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  return db()
+    .select({ id: teams.id, name: teams.name })
+    .from(teams)
+    .where(eq(teams.spaceId, spaceId))
+    .orderBy(teams.name);
 }

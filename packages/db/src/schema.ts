@@ -557,6 +557,30 @@ export const invites = pgTable(
 );
 
 /**
+ * The teams an invitation already puts someone on.
+ *
+ * Kept with the invitation rather than applied when it is sent, because the
+ * person does not exist here yet - and the point is that they arrive with
+ * their access rather than being chased onto a roster afterwards, which is
+ * how a team quietly stops meaning what it says.
+ *
+ * A team deleted before the invitation is accepted takes its row with it.
+ */
+export const inviteTeams = pgTable(
+  "invite_teams",
+  {
+    id: text("id").primaryKey(),
+    inviteId: text("invite_id")
+      .notNull()
+      .references(() => invites.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+  },
+  (t) => [uniqueIndex("invite_teams_idx").on(t.inviteId, t.teamId)],
+);
+
+/**
  * A long-lived credential held by the `cira` CLI on a developer's machine.
  *
  * Only the hash is stored. A stolen database therefore yields no working

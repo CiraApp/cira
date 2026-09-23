@@ -358,6 +358,13 @@
       "when": 1790139163395,
       "tag": "0050_record_who_changed_what_about_a_company",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790140980720,
+      "tag": "0051_let_an_invitation_carry_the_teams_someone_joins",
+      "breakpoints": true
     }
   ]
 }

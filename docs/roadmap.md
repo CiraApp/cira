@@ -209,7 +209,11 @@ by asking what Cira could not answer for after something went wrong.
 - [x] **4.3 Dependency updates.** Dependabot raises one grouped pull request a
       week for npm and one a month for actions, with security fixes on their
       own (2026-09-23).
-- [ ] **4.4 A restore drill.** Restore Cira's own database to a branch at a
+- [x] **4.4 Teams people actually land on.** An invitation carries the teams
+      someone joins, said in the email and applied the moment they accept; each
+      person's row on Members opens their teams to tick, so the roster can be
+      kept from either side (2026-09-23).
+- [ ] **4.5 A restore drill.** Restore Cira's own database to a branch at a
       past time, check it, and write down how long it took. Never done, so
       "there are backups" is a belief rather than a fact.
 

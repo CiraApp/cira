@@ -1,14 +1,17 @@
 "use server";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   atomically,
   db,
+  inviteTeams,
   invites,
   memberships,
   spaceJoinBlocks,
   spaces,
+  teamMembers,
+  teams,
   users,
 } from "@cira/db";
 import { isInviteToken, newId, newInviteToken } from "@cira/core";
@@ -31,6 +34,9 @@ const createInput = z.object({
     .toLowerCase()
     .email("That does not look like an email address."),
   role: z.enum(["member", "admin"]),
+  /** The teams they land on when they accept. Any that are not this space's
+      are dropped rather than refused: the invitation is the point. */
+  teamIds: z.array(z.string()).max(50).default([]),
 });
 
 export interface CreatedInvite {
@@ -54,6 +60,7 @@ export async function createInvite(
     spaceSlug: formData.get("spaceSlug"),
     email: formData.get("email"),
     role: formData.get("role") ?? "member",
+    teamIds: formData.getAll("teams").map(String),
   });
 
   if (!parsed.success) {
@@ -63,7 +70,7 @@ export async function createInvite(
     };
   }
 
-  const { spaceSlug, email, role } = parsed.data;
+  const { spaceSlug, email, role, teamIds } = parsed.data;
 
   let ctx;
   try {
@@ -113,10 +120,21 @@ export async function createInvite(
       ),
     );
 
+  // Only this space's teams, read here rather than trusted from the form: the
+  // browser sends ids, not a right to put someone on another company's team.
+  const chosen =
+    teamIds.length === 0
+      ? []
+      : await database
+          .select({ id: teams.id, name: teams.name })
+          .from(teams)
+          .where(and(eq(teams.spaceId, ctx.space.id), inArray(teams.id, teamIds)));
+
   const token = newInviteToken();
   const expiresAt = inviteExpiry();
+  const inviteId = newId("invite");
   await database.insert(invites).values({
-    id: newId("invite"),
+    id: inviteId,
     spaceId: ctx.space.id,
     email,
     role: role as Role,
@@ -125,6 +143,18 @@ export async function createInvite(
     invitedByUserId: ctx.user.id,
     expiresAt,
   });
+  if (chosen.length > 0) {
+    await database
+      .insert(inviteTeams)
+      .values(
+        chosen.map((team) => ({
+          id: newId("inviteTeam"),
+          inviteId,
+          teamId: team.id,
+        })),
+      )
+      .onConflictDoNothing();
+  }
 
   const path = `/invite/${token}`;
   const sent = await sendEmail({
@@ -136,6 +166,7 @@ export async function createInvite(
       email,
       url: `${appOrigin()}${path}`,
       expiresAt,
+      teams: chosen.map((team) => team.name),
     }),
   });
 
@@ -145,7 +176,10 @@ export async function createInvite(
     actor: ctx.user.name,
     actorUserId: ctx.user.id,
     subject: email,
-    detail: role,
+    detail:
+      chosen.length === 0
+        ? role
+        : `${role}, on ${chosen.map((team) => team.name).join(", ")}`,
   });
 
   return { ok: true, data: { url: path, email, emailed: sent.sent } };
@@ -213,6 +247,15 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
     .where(and(eq(memberships.userId, user.id), eq(memberships.spaceId, row.space.id)))
     .limit(1);
 
+  // The teams the invitation carries, read now: a team deleted while the
+  // invitation sat in someone's inbox took its row with it, so what is here is
+  // what still exists.
+  const joining = await database
+    .select({ id: teams.id, name: teams.name })
+    .from(inviteTeams)
+    .innerJoin(teams, eq(teams.id, inviteTeams.teamId))
+    .where(eq(inviteTeams.inviteId, row.invite.id));
+
   // Joining and spending the invite are one act. Were the second to fail on its
   // own, the person would be inside and the link would still work - a single
   // invite that admits whoever else it is forwarded to.
@@ -232,6 +275,14 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
             .onConflictDoNothing(),
         ]
       : []),
+    // On their teams in the same act as joining, so nobody is ever a member of
+    // a company with the access the invitation promised still to come.
+    ...joining.map((team) =>
+      on
+        .insert(teamMembers)
+        .values({ id: newId("teamMember"), teamId: team.id, userId: user.id })
+        .onConflictDoNothing(),
+    ),
     on
       .update(invites)
       .set({ acceptedAt: new Date() })
@@ -255,7 +306,10 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
       actor: user.name,
       actorUserId: user.id,
       subject: user.email,
-      detail: `as ${row.invite.role}, by invitation`,
+      detail:
+        joining.length === 0
+          ? `as ${row.invite.role}, by invitation`
+          : `as ${row.invite.role}, by invitation, on ${joining.map((t) => t.name).join(", ")}`,
     });
   }
 

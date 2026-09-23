@@ -11,7 +11,7 @@ import {
   listVisibleApps,
   requireSpaceMember,
 } from "@/lib/authz";
-import { recentlyOpened } from "@/lib/queries";
+import { recentlyOpened, teamsInSpace } from "@/lib/queries";
 import { emailConfigured } from "@/lib/email";
 import { spaceTitle } from "@/lib/page-title";
 
@@ -33,9 +33,10 @@ export default async function SpacePage({
   try {
     const ctx = await requireSpaceMember(spaceSlug);
     const canInvite = ctx.role === "admin" || ctx.role === "owner";
-    const [apps, spaces] = await Promise.all([
+    const [apps, spaces, teams] = await Promise.all([
       listVisibleApps(spaceSlug),
       listMySpaces(),
+      canInvite ? teamsInSpace(ctx.space.id) : [],
     ]);
 
     // The shortcut row only earns its place once there is something to skip
@@ -66,7 +67,11 @@ export default async function SpacePage({
         }
         actions={
           canInvite ? (
-            <InviteDialog spaceSlug={spaceSlug} emailing={emailConfigured()} />
+            <InviteDialog
+              spaceSlug={spaceSlug}
+              emailing={emailConfigured()}
+              teams={teams}
+            />
           ) : null
         }
       >
