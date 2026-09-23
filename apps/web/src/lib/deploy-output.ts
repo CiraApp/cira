@@ -23,6 +23,8 @@ export async function deployOutput(
     | "releaseDoneAt"
   >,
   limit = 200,
+  /** Wait for a failed start's log to be complete, for a reader who asked at once. */
+  waitForEnd = false,
 ): Promise<{
   step: "build" | "release" | "start";
   lines: Array<{ timestamp: Date; message: string }>;
@@ -55,13 +57,29 @@ export async function deployOutput(
 
   // A version exists only once its build succeeded, so a failed deploy with
   // one to read failed as it started.
-  if (deployment.status === "failed") {
-    const started = await provider
-      .getStartupLogs?.(deployment.providerDeploymentId, limit)
-      .catch(() => null);
-    const printed = (started ?? []).filter(
-      (entry) => entry.message !== "" && !isProviderRecord(entry.message),
-    );
+  if (deployment.status === "failed" && provider.getStartupLogs !== undefined) {
+    const read = async () =>
+      (
+        (await provider
+          .getStartupLogs?.(deployment.providerDeploymentId, limit)
+          .catch(() => null)) ?? []
+      ).filter(
+        (entry) =>
+          entry.message !== "" &&
+          !isProviderRecord(entry.message) &&
+          !STARTING.test(entry.message),
+      );
+
+    // Google takes a few seconds to file what a container printed, and the
+    // terminal asks the moment the deploy fails: read then, it had the first
+    // lines of the stack trace and not the one naming the missing file. So it
+    // waits, briefly, for Cloud Run's own last word on the container.
+    let printed = await read();
+    for (let waited = 0; waitForEnd && !ended(printed) && waited < SETTLE_MS;) {
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_STEP_MS));
+      waited += SETTLE_STEP_MS;
+      printed = await read();
+    }
     if (printed.length > 0) return { step: "start", lines: printed };
   }
 
@@ -70,3 +88,18 @@ export async function deployOutput(
     lines: await provider.getLogs(deployment.providerDeploymentId),
   };
 }
+
+/** Cloud Run noting that it started a container, which says nothing about why it failed. */
+const STARTING = /^Starting new instance\. Reason:/;
+
+/** Cloud Run's own account of a container that did not come up: its last word on it. */
+function ended(lines: ReadonlyArray<{ message: string }>): boolean {
+  return lines.some((line) =>
+    /Container called exit|STARTUP \w+ probe failed|The instance was not started|Container terminated/i.test(
+      line.message,
+    ),
+  );
+}
+
+const SETTLE_MS = 15_000;
+const SETTLE_STEP_MS = 2_500;

@@ -49,7 +49,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const output = await deployOutput(row.deployment as Deployment);
+    // The terminal asks the moment a deploy fails, before Google has filed
+    // everything the app printed; this waits for it.
+    const output = await deployOutput(row.deployment as Deployment, 200, true);
     return NextResponse.json({
       step: output.step,
       lines: output.lines.slice(-TAIL).map((line) => line.message),
