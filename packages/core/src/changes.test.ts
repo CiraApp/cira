@@ -61,6 +61,15 @@ describe("wording the record", () => {
 
     expect(
       describeChange({
+        kind: "access-revoked",
+        actor: "Ada",
+        subject: "everyone in the company",
+        detail: "Env Probe",
+      }),
+    ).toBe("Ada took away everyone in the company's access to Env Probe");
+
+    expect(
+      describeChange({
         kind: "capability-enabled",
         actor: "Ada",
         subject: "Refund an order on Ledger",

@@ -149,7 +149,9 @@ describe.skipIf(!hasDatabase)("managing an app through a grant", () => {
     const sentences = (await changesIn(spaceId)).map(describeChange);
     expect(sentences).toContain(`${owner.name} gave ${engineer.email} access to Payroll`);
     // Named by who lost it, although the grant itself is gone by then.
-    expect(sentences).toContain(`${owner.name} took away ${engineer.email}'s access`);
+    expect(sentences).toContain(
+      `${owner.name} took away ${engineer.email}'s access to Payroll`,
+    );
   });
 
   it("follows a rename only for someone who may open the app", async () => {

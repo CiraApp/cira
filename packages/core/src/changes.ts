@@ -115,7 +115,9 @@ export function describeChange(change: {
     case "access-level-changed":
       return `${actor} changed ${subject}'s access${to === "" ? "" : ` to${to}`}`;
     case "access-revoked":
-      return `${actor} took away ${subject}'s access`;
+      return detail === null
+        ? `${actor} took away ${subject}'s access`
+        : `${actor} took away ${subject}'s access to ${detail}`;
     case "capability-enabled":
       return `${actor} let agents run ${subject}`;
     case "capability-disabled":
