@@ -51,7 +51,7 @@ export function AppCard({
           "--glow": color.glow,
         } as React.CSSProperties
       }
-      className="enter-rise group relative isolate flex h-full min-w-0 flex-col gap-3.5 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface p-4 pb-9 transition-[transform,border-color,box-shadow] duration-300 ease-[var(--ease-settle)] outline-none hover:-translate-y-[3px] hover:border-[rgb(var(--glow)/0.3)] hover:shadow-[0_18px_40px_-22px_rgb(var(--glow)/0.65)] active:translate-y-0 active:duration-75 data-[selected]:-translate-y-[3px] data-[selected]:border-[rgb(var(--glow)/0.55)] data-[selected]:shadow-[0_18px_40px_-22px_rgb(var(--glow)/0.65)]"
+      className="enter-rise group relative isolate flex h-full min-w-0 flex-col gap-3.5 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface p-4 pb-9 transition-[transform,border-color,box-shadow] duration-300 ease-[var(--ease-settle)] hover:-translate-y-[3px] hover:border-[rgb(var(--glow)/0.3)] hover:shadow-[0_18px_40px_-22px_rgb(var(--glow)/0.65)] active:translate-y-0 active:duration-75 data-[selected]:-translate-y-[3px] data-[selected]:border-[rgb(var(--glow)/0.55)] data-[selected]:shadow-[0_18px_40px_-22px_rgb(var(--glow)/0.65)]"
     >
       <span aria-hidden="true" className="lit-wash" />
       <span aria-hidden="true" className="lit-edge" />

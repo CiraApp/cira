@@ -54,6 +54,15 @@ describe("runtimeLogFilter", () => {
     );
   });
 
+  it("reads one revision when asked, and refuses a name that is not one", () => {
+    expect(
+      runtimeLogFilter({ ...base, revision: "paradym-orders-3f9a1c2e-00007-xoz" }),
+    ).toContain(
+      'resource.labels.service_name = "paradym-orders-3f9a1c2e" AND resource.labels.revision_name = "paradym-orders-3f9a1c2e-00007-xoz"',
+    );
+    expect(() => runtimeLogFilter({ ...base, revision: 'x" OR "1"="1' })).toThrow();
+  });
+
   it("narrows by level using Google's own severities", () => {
     expect(runtimeLogFilter({ ...base, minimum: "warning" })).toMatch(
       / AND severity >= WARNING$/,

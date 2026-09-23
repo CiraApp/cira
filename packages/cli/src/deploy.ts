@@ -705,7 +705,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
       // only a link to a page that shows it.
       const tail =
         status.status === "failed"
-          ? await api<{ step?: "build" | "release"; lines: string[] }>(
+          ? await api<{ step?: "build" | "release" | "start"; lines: string[] }>(
               `/api/cli/deploy/logs?id=${encodeURIComponent(started.deploymentId)}`,
             ).catch(() => ({ step: "build" as const, lines: [] as string[] }))
           : { step: "build" as const, lines: [] as string[] };
@@ -730,7 +730,9 @@ export async function deploy(argv: string[] = []): Promise<number> {
           dim(
             tail.step === "release"
               ? "  What the release command printed:"
-              : "  The end of the build log:",
+              : tail.step === "start"
+                ? "  What the app printed as it started:"
+                : "  The end of the build log:",
           ),
         );
         for (const line of tail.lines) info(dim(`    ${line}`));
@@ -772,10 +774,51 @@ function describeTimetable(expression: string): string {
   return parsed.ok ? describeSchedule(parsed.schedule) : expression;
 }
 
-function prettyName(folder: string): string {
+/**
+ * A folder's name as an app's: "dispatch-api" is "Dispatch API", not
+ * "Dispatch Api". Only letters that are always an acronym in the name of an
+ * internal tool are kept in capitals; anything else is capitalised as a word,
+ * and the name can be changed on the app's page either way.
+ */
+export function prettyName(folder: string): string {
   const cleaned = folder.replace(/[-_]+/g, " ").trim();
-  return cleaned === "" ? "App" : cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+  if (cleaned === "") return "App";
+  return cleaned.replace(/\b\w+/g, (word) =>
+    ACRONYMS.has(word.toLowerCase())
+      ? word.toUpperCase()
+      : word.charAt(0).toUpperCase() + word.slice(1),
+  );
 }
+
+const ACRONYMS = new Set([
+  "ai",
+  "api",
+  "bi",
+  "cms",
+  "crm",
+  "csv",
+  "db",
+  "erp",
+  "etl",
+  "hr",
+  "id",
+  "it",
+  "kpi",
+  "llm",
+  "ml",
+  "okr",
+  "pdf",
+  "pos",
+  "qa",
+  "sdk",
+  "sla",
+  "sms",
+  "sql",
+  "sso",
+  "ui",
+  "url",
+  "ux",
+]);
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

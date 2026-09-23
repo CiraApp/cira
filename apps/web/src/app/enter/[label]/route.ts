@@ -91,9 +91,11 @@ export async function GET(
 
     return NextResponse.redirect(handover);
   } catch (error) {
-    if (error instanceof NotFoundError) {
-      return NextResponse.redirect(new URL(`/${address.spaceSlug}`, origin));
-    }
+    // To the app's page, which answers "not found" - with the reasons it
+    // could be, one of them being that nobody shared it - for an app that is
+    // not there and one this person cannot see alike. The shelf it used to
+    // land on said nothing, to someone following a colleague's link.
+    if (error instanceof NotFoundError) return NextResponse.redirect(home);
     // An unconfigured proxy is a deployment problem, not this person's, and
     // the app page says plainly that opening apps is unavailable.
     if (error instanceof Error && error.message.includes("not configured")) {

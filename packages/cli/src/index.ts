@@ -7,7 +7,12 @@ import { addonCommand } from "./addons.js";
 import { login } from "./login.js";
 import { mcpCommand } from "./mcp.js";
 import { skillCommand } from "./skill/command.js";
-import { beginUpdateCheck, finishUpdateCheck, updateCommand } from "./update/index.js";
+import {
+  beginUpdateCheck,
+  currentVersion,
+  finishUpdateCheck,
+  updateCommand,
+} from "./update/index.js";
 import { detectFramework, readProjectLink } from "./project.js";
 import { bold, dim, fail, info, success } from "./ui.js";
 import { unknownArgument } from "./args.js";
@@ -45,6 +50,7 @@ const USAGE = `
     update     Update Cira and the Skill copies you approved
     logout     Forget the stored credential
     whoami     Show who you are signed in as
+    version    Show which version of Cira this is
     status     Show what this folder is linked to
 
   ${bold("Environment")}
@@ -139,6 +145,13 @@ async function main(): Promise<number> {
       return whoami();
     case "status":
       return status();
+    // Every CLI answers these, and asking one that did not got the whole help
+    // text under "Unknown command".
+    case "version":
+    case "--version":
+    case "-v":
+      info(currentVersion());
+      return 0;
     case undefined:
     case "help":
     case "--help":

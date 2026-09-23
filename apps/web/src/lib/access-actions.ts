@@ -120,6 +120,14 @@ export async function loadAccess(
       continue;
     }
 
+    // The owner's own grant, written when they deployed it, is not shown. The
+    // line under the list already says the app is always open to its owner,
+    // and a "Can use" row with a Remove button beside that contradicted it -
+    // the owner manages it, and removing the row changed nothing. It stays in
+    // the table for the reason deploy writes it, and shows again if the app
+    // changes hands.
+    if (grant.targetId === ctx.app.ownerUserId) continue;
+
     const member = byId.get(grant.targetId);
     entries.push({
       id: grant.id,

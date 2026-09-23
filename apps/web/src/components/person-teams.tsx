@@ -1,5 +1,6 @@
 "use client";
 
+import { possessive } from "@cira/core";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setTeamMembership } from "@/lib/team-actions";
@@ -79,13 +80,15 @@ export function PersonTeams({
         className="mt-0.5 block max-w-full truncate text-left text-[11.5px] text-ink-subtle underline decoration-line-strong underline-offset-4 transition-colors duration-150 hover:text-ink-muted hover:decoration-current"
       >
         {on.length === 0 ? "Not on a team" : names}
-        <span className="sr-only">, change {person.name}&rsquo;s teams</span>
+        <span className="sr-only">
+          , change {possessive(person.name, "\u2019")} teams
+        </span>
       </button>
 
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={`${person.name}'s teams`}
+        title={`${possessive(person.name, "\u2019")} teams`}
         description="What they are on decides which apps open for them, without anyone editing an app."
       >
         <ul className="max-h-64 divide-y divide-line overflow-y-auto rounded-[var(--radius-edge)] border border-line bg-surface">

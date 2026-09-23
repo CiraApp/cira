@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   createInvite,
   type ActionResult,
@@ -34,14 +35,19 @@ export function InviteDialog({
   openOnArrival?: boolean;
 }) {
   const [open, setOpen] = useState(openOnArrival);
+  const router = useRouter();
 
   // Opened once for having arrived, not every time the address is revisited.
+  // Through the router rather than `history.replaceState`: the router kept
+  // its own copy of the address, put `?invite=1` back at its next refresh
+  // (creating a team was enough), and a reload then opened this again.
   useEffect(() => {
     if (!openOnArrival) return;
     const url = new URL(window.location.href);
+    if (!url.searchParams.has("invite")) return;
     url.searchParams.delete("invite");
-    window.history.replaceState(window.history.state, "", url);
-  }, [openOnArrival]);
+    router.replace(`${url.pathname}${url.search}${url.hash}`, { scroll: false });
+  }, [openOnArrival, router]);
 
   return (
     <>
@@ -108,9 +114,14 @@ function InviteForm({
   // The form, and the button that was pressed, are gone once the invitation
   // exists. Focus goes to what replaced them, so it is read out rather than
   // left somewhere that no longer is.
+  const router = useRouter();
   useEffect(() => {
-    if (inviteUrl !== null) outcome.current?.focus();
-  }, [inviteUrl]);
+    if (inviteUrl === null) return;
+    outcome.current?.focus();
+    // The list of invitations out is on the page behind this; without a
+    // refresh it went on missing the one just sent until a reload.
+    router.refresh();
+  }, [inviteUrl, router]);
 
   if (inviteUrl !== null && state?.ok === true) {
     return (

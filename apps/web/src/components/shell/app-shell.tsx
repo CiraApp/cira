@@ -92,7 +92,12 @@ export async function AppShell({
 
   // The card shows the most recent token rather than a count: "connected, and
   // this is the one that has been working" is the useful fact.
-  const [assistant] = await listAssistantTokens();
+  // Only an assistant's own token means an assistant is connected. The CLI's
+  // is listed beside them, and counting it said "Assistant connected" to
+  // everyone who had only ever run `cira login`.
+  const assistant = (await listAssistantTokens()).find(
+    (token) => token.scope === "assistant",
+  );
 
   return (
     <div className="flex min-h-dvh">

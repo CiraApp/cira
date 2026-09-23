@@ -39,12 +39,15 @@ export function Onboarding({
   lastName,
   domain,
   joinable,
+  home,
 }: {
   /** What is known already, to fill the name step with. */
   firstName: string | null;
   lastName: string | null;
   domain: string | null;
   joinable: JoinableSpace[];
+  /** A space they are already in, when they came here to start another. */
+  home: { name: string; slug: string } | null;
 }) {
   const [created, setCreated] = useState<{ name: string; slug: string } | null>(null);
   const [founding, setFounding] = useState(joinable.length === 0);
@@ -136,8 +139,10 @@ export function Onboarding({
 
   return (
     <EntryFrame
-      eyebrow={welcome}
-      title="Create your space"
+      // Someone who already has a space is not new to Cira, and this is not
+      // their first company; the words say so.
+      eyebrow={home === null ? welcome : "Another space"}
+      title={home === null ? "Create your space" : "Create a space"}
       subtitle="A space is your company. Everything your team deploys lives inside it."
       footer={
         joinable.length > 0 ? (
@@ -148,6 +153,13 @@ export function Onboarding({
           >
             Back to joining {joinable.length === 1 ? joinable[0]?.name : "your team"}
           </button>
+        ) : home !== null ? (
+          <Link
+            href={`/${home.slug}`}
+            className="text-[13px] text-ink-muted underline decoration-line-strong underline-offset-4 transition-colors duration-150 hover:text-ink hover:decoration-ink-subtle"
+          >
+            Back to {home.name}
+          </Link>
         ) : undefined
       }
     >

@@ -6,7 +6,7 @@ import { CopyableCommand } from "./copyable-command";
  */
 export function EmptyGallery() {
   return (
-    <div className="enter-up relative flex flex-col items-center overflow-hidden rounded-[var(--radius-edge)] border border-dashed border-line-strong px-6 py-16 text-center">
+    <div className="enter-up relative flex flex-col items-center overflow-hidden rounded-[var(--radius-edge)] border border-dashed border-line-strong bg-base/80 px-6 py-16 text-center">
       <Grid className="mb-6 h-12 w-20 text-ink-subtle" />
 
       <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">

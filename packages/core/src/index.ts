@@ -16,3 +16,4 @@ export * from "./pricing.js";
 export * from "./processes.js";
 export * from "./membership-rules.js";
 export * from "./changes.js";
+export * from "./possessive.js";

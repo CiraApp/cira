@@ -1,7 +1,8 @@
 import { SignInButton } from "@clerk/nextjs";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
-import { db, invites, spaces } from "@cira/db";
+import { redirect } from "next/navigation";
+import { db, invites, inviteTeams, memberships, spaces, teams, users } from "@cira/db";
 import { isInviteToken } from "@cira/core";
 import { getCurrentUser } from "@/lib/identity";
 import { checkInvite } from "@/lib/invite-rules";
@@ -50,6 +51,16 @@ export default async function InvitePage({
     );
   }
 
+  // Already in: the invitation was accepted, and the email is how people find
+  // their way back. "This invite has already been used" told them nothing
+  // they could act on.
+  const [member] = await db()
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.userId, user.id), eq(memberships.spaceId, row.space.id)))
+    .limit(1);
+  if (member !== undefined) redirect(`/${row.space.slug}`);
+
   const verdict = checkInvite({
     invite: row.invite,
     viewerEmail: user.email,
@@ -94,10 +105,28 @@ export default async function InvitePage({
     );
   }
 
+  // Who asked, and what they promised, as the email said - this is the
+  // person it was sent to, so nothing here is news to anyone else.
+  const [[inviter], onto] = await Promise.all([
+    db()
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, row.invite.invitedByUserId))
+      .limit(1),
+    db()
+      .select({ name: teams.name })
+      .from(inviteTeams)
+      .innerJoin(teams, eq(teams.id, inviteTeams.teamId))
+      .where(eq(inviteTeams.inviteId, row.invite.id)),
+  ]);
+  const as = row.invite.role === "admin" ? "an admin" : "a member";
+  const teamNames = onto.map((t) => t.name).sort();
+  const on = teamNames.length === 0 ? "" : `, on ${teamNames.join(", ")}`;
+
   return (
     <EntryFrame
       title={`Join ${row.space.name} on Cira`}
-      subtitle={`You were invited as ${row.invite.role === "admin" ? "an admin" : "a member"}.${
+      subtitle={`${inviter === undefined ? "You were invited" : `${inviter.name} invited you`} as ${as}${on}.${
         user.firstName === null ? " Tell your colleagues who you are." : ""
       }`}
     >

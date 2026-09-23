@@ -1,5 +1,6 @@
 "use client";
 
+import { possessive } from "@cira/core";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Role } from "@cira/core";
@@ -86,7 +87,7 @@ export function MemberControls({
         {canChange ? (
           <>
             <label htmlFor={`role-${person.userId}`} className="sr-only">
-              {person.name}&rsquo;s role
+              {possessive(person.name, "\u2019")} role
             </label>
             <select
               id={`role-${person.userId}`}

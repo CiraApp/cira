@@ -1,5 +1,6 @@
 import "server-only";
 
+import { possessive } from "@cira/core";
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { apps, db, processes } from "@cira/db";
 import { deploymentProvider } from "@cira/deploy";
@@ -77,8 +78,8 @@ export async function enforcePlan(spaceId: string): Promise<Enforced> {
         const app = nameOf.get(extra.appId) ?? "An app";
         out.switchedOff.push(
           kind === "worker"
-            ? `${app}'s worker ${extra.name}`
-            : `${app}'s scheduled run ${extra.name}`,
+            ? `${possessive(app)} worker ${extra.name}`
+            : `${possessive(app)} scheduled run ${extra.name}`,
         );
       }
     }

@@ -1,5 +1,6 @@
 "use client";
 
+import { possessive } from "@cira/core";
 import { LiveStatus } from "./ui/live-status";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -190,13 +191,16 @@ export function AccessPanel({
                   run(
                     entry.id,
                     () => revokeAccess(spaceSlug, appSlug, entry.id),
-                    `Took away ${entry.label}'s access`,
+                    `Took away ${possessive(entry.label)} access`,
                   )
                 }
                 className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
               >
                 {busy === entry.id ? "Removing..." : "Remove"}
-                <span className="sr-only"> {entry.label}&rsquo;s access</span>
+                <span className="sr-only">
+                  {" "}
+                  {possessive(entry.label, "\u2019")} access
+                </span>
               </button>
             </li>
           ))

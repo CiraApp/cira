@@ -650,7 +650,7 @@ describe("getStatus", () => {
     expect(result.status).toBe("failed");
     // Said plainly, and without Google's console or project in it.
     expect(result.reason).toBe(
-      "It built, but never started listening. An app has to listen on the port in its PORT variable, and start within four minutes.",
+      "It built, but never started listening. Either it stopped as it started, or it listens somewhere other than the port in its PORT variable. What it printed says which.",
     );
   });
 
@@ -1366,6 +1366,59 @@ describe("rolling out both halves", () => {
     // And both halves move to the images this build produced.
     expect(containers.every((c) => c.image.includes(TAG))).toBe(true);
     expect(new Set(containers.map((c) => c.image)).size).toBe(2);
+  });
+});
+
+describe("getStartupLogs", () => {
+  const revision = `projects/proj/locations/us-central1/services/${SERVICE}/revisions/${SERVICE}-00002-abc`;
+
+  it("reads what this deploy's version printed, and only that version", async () => {
+    serve([
+      [
+        /revisions\//,
+        () => ({
+          name: revision,
+          labels: { "cira-build": "b-1" },
+          createTime: "2026-09-23T09:00:00Z",
+        }),
+      ],
+      [
+        /logging\.googleapis/,
+        () => ({
+          entries: [
+            {
+              insertId: "1",
+              timestamp: "2026-09-23T09:00:03Z",
+              severity: "ERROR",
+              textPayload:
+                "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/workspace/lib/forms.js'",
+            },
+          ],
+        }),
+      ],
+      [/services\//, () => serviceAt("img", { latestCreatedRevision: revision })],
+    ]);
+
+    const lines = await provider().getStartupLogs(`b-1:${SERVICE}:${TAG}`);
+
+    expect(lines?.map((l) => l.message)).toEqual([
+      "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/workspace/lib/forms.js'",
+    ]);
+    const filter = (
+      calls.find((c) => c.url.includes("logging"))?.body as { filter: string }
+    ).filter;
+    expect(filter).toContain(`resource.labels.revision_name = "${SERVICE}-00002-abc"`);
+    expect(filter).toContain('timestamp >= "2026-09-23T09:00:00.000Z"');
+  });
+
+  it("reads nothing when the newest version came from another deploy", async () => {
+    serve([
+      [/revisions\//, () => ({ name: revision, labels: { "cira-build": "b-2" } })],
+      [/services\//, () => serviceAt("img", { latestCreatedRevision: revision })],
+    ]);
+
+    expect(await provider().getStartupLogs(`b-1:${SERVICE}:${TAG}`)).toBeNull();
+    expect(calls.some((c) => c.url.includes("logging"))).toBe(false);
   });
 });
 

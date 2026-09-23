@@ -1,5 +1,6 @@
 "use client";
 
+import { spoken } from "@/lib/spoken";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppIcon } from "@/components/app-icon";
 import { CiraMark } from "@/components/shell/mark";
@@ -58,7 +59,7 @@ export function AskPanel() {
           ? last.error
           : last.confirm !== null
             ? "Cira needs you to confirm before it goes on."
-            : last.text;
+            : spoken(last.text);
 
   // Grown to its content, up to about six lines, the same bargain the app
   // description field makes.

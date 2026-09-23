@@ -137,6 +137,15 @@ export function SpaceMenu({
               )}
             </Link>
           ))}
+          {/* The only other way to a second space was typing /onboarding. */}
+          <Link
+            href="/onboarding"
+            onClick={() => setOpen(false)}
+            className="mt-1 flex items-center gap-2 rounded-[var(--radius-edge)] border-t border-line px-2 pt-2 pb-1.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink"
+          >
+            <span aria-hidden="true">+</span>
+            Start another space
+          </Link>
         </nav>
       ) : null}
     </div>

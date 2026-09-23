@@ -9,7 +9,9 @@ import { isProviderRecord, type Deployment } from "@cira/core";
  * Usually the build's. For a deploy that failed at its release command - the
  * migration - the build went fine and its log says nothing useful; the
  * release run's own output is where the error is, and it was nowhere a
- * person could read it.
+ * person could read it. The same goes for a deploy that built and then would
+ * not start: the build log ends "Successfully built image", and the crash is
+ * in what the app printed as it came up.
  */
 export async function deployOutput(
   deployment: Pick<
@@ -22,7 +24,7 @@ export async function deployOutput(
   >,
   limit = 200,
 ): Promise<{
-  step: "build" | "release";
+  step: "build" | "release" | "start";
   lines: Array<{ timestamp: Date; message: string }>;
 }> {
   const provider = deploymentProvider();
@@ -49,6 +51,18 @@ export async function deployOutput(
         .filter((entry) => entry.message !== "" && !isProviderRecord(entry.message))
         .map((entry) => ({ timestamp: entry.timestamp, message: entry.message })),
     };
+  }
+
+  // A version exists only once its build succeeded, so a failed deploy with
+  // one to read failed as it started.
+  if (deployment.status === "failed") {
+    const started = await provider
+      .getStartupLogs?.(deployment.providerDeploymentId, limit)
+      .catch(() => null);
+    const printed = (started ?? []).filter(
+      (entry) => entry.message !== "" && !isProviderRecord(entry.message),
+    );
+    if (printed.length > 0) return { step: "start", lines: printed };
   }
 
   return {

@@ -103,6 +103,24 @@ describe.skipIf(!hasDatabase)("managing an app through a grant", () => {
     });
   });
 
+  it("does not list the owner's own grant beside the line that says they always have it", async () => {
+    const { loadAccess } = await import("./access-actions");
+    const { appAccess } = await import("@cira/db");
+    // The grant deploy writes for whoever deployed it.
+    await database.insert(appAccess).values({
+      id: newId("access"),
+      appId,
+      type: "user",
+      targetId: owner.id,
+    });
+
+    signedIn = owner;
+    const access = await loadAccess("acme", "payroll");
+    expect(access.entries.map((e) => e.label)).not.toContain("Owner");
+    expect(access.implicit.ownerName).toBe("Owner");
+    expect((await grants()).some((g) => g.targetId === owner.id)).toBe(true);
+  });
+
   it("never lets everyone at the company manage an app", async () => {
     const { grantAccess, setAccessLevel } = await import("./access-actions");
     signedIn = owner;

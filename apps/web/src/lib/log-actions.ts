@@ -7,7 +7,12 @@ import { deployOutput } from "@/lib/deploy-output";
 import { requireAppAccess } from "@/lib/authz";
 
 export type LogsResult =
-  | { ok: true; lines: Array<{ time: string; message: string }> }
+  | {
+      ok: true;
+      /** Which step's output this is: whichever the deploy stopped at. */
+      step: "build" | "release" | "start";
+      lines: Array<{ time: string; message: string }>;
+    }
   | { ok: false; error: string };
 
 /**
@@ -34,12 +39,13 @@ export async function fetchBuildLogs(
   if (row === undefined) return { ok: false, error: "No such deploy." };
 
   try {
-    const { lines } = await deployOutput(row as Deployment);
+    const { step, lines } = await deployOutput(row as Deployment);
     if (lines.length === 0) {
       return { ok: false, error: "The provider kept no logs for this deploy." };
     }
     return {
       ok: true,
+      step,
       lines: lines.map((l) => ({
         time: l.timestamp.toISOString(),
         message: l.message,

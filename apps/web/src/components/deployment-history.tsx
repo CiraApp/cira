@@ -32,6 +32,13 @@ const LABEL: Record<DeploymentStatus, string> = {
   superseded: "Replaced by a newer deploy",
 };
 
+/** Named for the step it came from, which is the one the deploy stopped at. */
+const LOG_TITLE = {
+  build: "Build log",
+  release: "What the release command printed",
+  start: "What the app printed as it started",
+} as const;
+
 /**
  * What has been shipped, and why a deploy failed.
  *
@@ -203,17 +210,22 @@ export function DeploymentHistory({
                   {result === undefined ? (
                     <p className="text-[12.5px] text-ink-muted">Fetching logs...</p>
                   ) : result.ok ? (
-                    <pre
-                      ref={logRef}
-                      // Scrollable, so it has to be reachable to be read by
-                      // anyone not using a mouse wheel.
-                      tabIndex={0}
-                      role="region"
-                      aria-label="Build log"
-                      className="max-h-80 overflow-auto font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-muted"
-                    >
-                      {result.lines.map((l) => l.message).join("\n")}
-                    </pre>
+                    <>
+                      <p className="mb-2 text-[11.5px] text-ink-subtle">
+                        {LOG_TITLE[result.step]}
+                      </p>
+                      <pre
+                        ref={logRef}
+                        // Scrollable, so it has to be reachable to be read by
+                        // anyone not using a mouse wheel.
+                        tabIndex={0}
+                        role="region"
+                        aria-label={LOG_TITLE[result.step]}
+                        className="max-h-80 overflow-auto font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-muted"
+                      >
+                        {result.lines.map((l) => l.message).join("\n")}
+                      </pre>
+                    </>
                   ) : (
                     <p className="text-[12.5px] text-ink-muted">{result.error}</p>
                   )}

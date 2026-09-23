@@ -302,6 +302,16 @@ export interface DeploymentProvider {
   getLogs(deploymentId: string): Promise<DeploymentLogLine[]>;
 
   /**
+   * What the version this deploy built printed while it tried to start, for a
+   * deploy that built and then never came up. Null when that version is not
+   * there to read. Optional: a provider that runs no containers has none.
+   */
+  getStartupLogs?(
+    deploymentId: string,
+    limit?: number,
+  ): Promise<DeploymentLogLine[] | null>;
+
+  /**
    * What the app has printed while running, and the requests that reached it.
    *
    * Any deployment of the app will do: runtime logs belong to the app's

@@ -63,6 +63,12 @@ export interface RuntimeLogQuery {
    * scheduled run by name. Absent means the web service.
    */
   process?: { kind: "worker" | "scheduled"; name: string } | undefined;
+  /**
+   * One version of the web service, by the provider's name for it. For what a
+   * version that never started printed, without the requests the version
+   * still serving was answering at the same time.
+   */
+  revision?: string | undefined;
 }
 
 /**

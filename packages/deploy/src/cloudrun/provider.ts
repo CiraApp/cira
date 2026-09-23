@@ -611,6 +611,60 @@ export class CloudRunProvider implements DeploymentProvider {
   }
 
   /**
+   * What the version built by this deploy printed while it tried to start,
+   * when it never did.
+   *
+   * Cloud Run says the same thing for an app that crashed on its first line
+   * and one listening on the wrong port - "failed to start and listen on the
+   * port" - so the reason alone sent people looking at ports while the answer,
+   * `Cannot find module './lib/forms.js'`, sat in a log nobody showed them.
+   *
+   * Only the revision this deploy made, confirmed by its build label: when an
+   * older version is still serving, its requests would otherwise bury the
+   * crash. Null when this deploy's revision is not the one to read - never
+   * created, or since replaced by another deploy.
+   */
+  async getStartupLogs(
+    deploymentId: string,
+    limit = 200,
+  ): Promise<DeploymentLogLine[] | null> {
+    const { buildId, service } = parseHandle(deploymentId);
+    const current = await this.getService(service);
+    const created = current?.latestCreatedRevision;
+    if (created === undefined) return null;
+
+    const access = await this.tokens.accessToken();
+    const response = await fetch(`${RUN_API}/${created}`, {
+      headers: { authorization: `Bearer ${access}` },
+    });
+    if (!response.ok) return null;
+    const revision = (await response.json()) as {
+      name?: string;
+      labels?: Record<string, string>;
+      createTime?: string;
+    };
+    if (revision.labels?.[BUILD_LABEL] !== buildId) return null;
+
+    const name = (revision.name ?? created).split("/").pop();
+    if (name === undefined || name === "") return null;
+
+    const page = await this.getRuntimeLogs(deploymentId, {
+      since: new Date(revision.createTime ?? Date.now() - 30 * 60_000),
+      until: new Date(),
+      minimum: "all",
+      search: null,
+      order: "oldest",
+      pageToken: null,
+      limit,
+      revision: name,
+    });
+    return page.entries.map((entry) => ({
+      timestamp: entry.timestamp,
+      message: entry.message,
+    }));
+  }
+
+  /**
    * What the app printed while it ran, and the requests that reached it.
    *
    * From Cloud Logging, which is the only place Cloud Run writes them - unlike
@@ -631,6 +685,9 @@ export class CloudRunProvider implements DeploymentProvider {
       until: query.until,
       minimum: query.minimum,
       search: query.search,
+      ...(query.revision === undefined || query.process !== undefined
+        ? {}
+        : { revision: query.revision }),
       ...(query.process === undefined
         ? {}
         : {

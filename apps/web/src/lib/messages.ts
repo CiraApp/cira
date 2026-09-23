@@ -11,6 +11,8 @@
  * on its way into HTML. Nothing an app returned or logged is ever included.
  */
 
+import { possessive } from "@cira/core";
+
 export interface Message {
   subject: string;
   text: string;
@@ -113,7 +115,7 @@ export function inviteMessage(args: {
   return letter({
     subject: `${args.inviter} invited you to ${args.spaceName} on Cira`,
     paragraphs: [
-      `${args.inviter} invited you to join ${args.spaceName} on Cira, where ${args.spaceName}'s internal software lives${args.role === "admin" ? ", as an admin" : ""}${onTeams}.`,
+      `${args.inviter} invited you to join ${args.spaceName} on Cira, where ${possessive(args.spaceName)} internal software lives${args.role === "admin" ? ", as an admin" : ""}${onTeams}.`,
       `The invitation is for ${args.email} and works once, until ${utc(args.expiresAt)}. Sign in with that address to accept it.`,
     ],
     action: { label: "Accept the invitation", href: args.url },
@@ -251,7 +253,7 @@ export function refusedMessage(args: {
         : "If the app signs its own users in, turn on \u201cTell this app who is calling\u201d in its settings and have its code accept Cira's signed statement of who the person is. Until then, people and agents asking for this are told it is unavailable.",
     ],
     action: {
-      label: args.told ? `Open ${app.name}` : `Open ${app.name}'s settings`,
+      label: args.told ? `Open ${app.name}` : `Open ${possessive(app.name)} settings`,
       href: args.told ? app.page : `${app.page}#settings`,
     },
     because: manager(app),
@@ -281,7 +283,7 @@ function day(at: Date): string {
 export function trialEndingMessage(args: { space: SpaceRef; endsAt: Date }): Message {
   const { space } = args;
   return letter({
-    subject: `${space.name}'s Cira trial ends ${day(args.endsAt)}`,
+    subject: `${possessive(space.name)} Cira trial ends ${day(args.endsAt)}`,
     paragraphs: [
       `The free trial of Cira for ${space.name} ends on ${day(args.endsAt)}.`,
       "After that, everything already deployed keeps opening and nothing is deleted. New deploys stop, and workers and scheduled runs are switched off, until someone subscribes.",
@@ -295,7 +297,7 @@ export function trialEndingMessage(args: { space: SpaceRef; endsAt: Date }): Mes
 export function trialEndedMessage(args: { space: SpaceRef }): Message {
   const { space } = args;
   return letter({
-    subject: `${space.name}'s Cira trial has ended`,
+    subject: `${possessive(space.name)} Cira trial has ended`,
     paragraphs: [
       `The free trial of Cira for ${space.name} has ended.`,
       "Everything already deployed still opens, and nothing has been deleted. Deploying is paused, and workers and scheduled runs are off, until someone subscribes - then switch them back on from each app's page.",
@@ -318,7 +320,7 @@ export function planEnforcedMessage(args: {
   return letter({
     subject: `${space.name}: Cira switched ${items.length === 1 ? "something" : `${items.length} things`} off`,
     paragraphs: [
-      `${space.name}'s plan no longer covers everything it was running, so Cira switched off what costs money by the hour:`,
+      `${possessive(space.name)} plan no longer covers everything it was running, so Cira switched off what costs money by the hour:`,
       items.join("; ") + ".",
       "Nothing was deleted. Each can be switched back on from its app's page once the plan allows it.",
     ],
@@ -343,9 +345,9 @@ export function paymentFailedMessage(args: { space: SpaceRef }): Message {
 export function subscriptionEndedMessage(args: { space: SpaceRef }): Message {
   const { space } = args;
   return letter({
-    subject: `${space.name}'s Cira subscription has ended`,
+    subject: `${possessive(space.name)} Cira subscription has ended`,
     paragraphs: [
-      `${space.name}'s Cira subscription has ended.`,
+      `${possessive(space.name)} Cira subscription has ended.`,
       "Everything already deployed still opens, and nothing has been deleted. Deploying is paused, and workers, scheduled runs and warm apps are off, until someone subscribes again.",
     ],
     action: { label: "Subscribe again", href: space.billing },

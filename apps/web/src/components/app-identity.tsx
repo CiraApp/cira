@@ -213,7 +213,7 @@ export function AppIdentity({
           if (!pending) picker.current?.click();
         }}
         aria-disabled={pending || undefined}
-        className="group relative shrink-0 rounded-[5px] outline-none"
+        className="group relative shrink-0 rounded-[5px]"
         aria-label={image === null ? "Add a picture" : "Change the picture"}
         title={image === null ? "Add a picture" : "Change the picture"}
       >

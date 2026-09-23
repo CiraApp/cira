@@ -294,28 +294,36 @@ body::after {
 }
 
 /*
- * Keyboard users get a crisp ring; pointer users get nothing. It follows the
- * element's own corners: forcing a radius here squared off every round
- * switch and the colour wheel the moment they took focus.
+ * In the base layer, so a component's own `outline-none` or
+ * `focus-visible:outline-none` wins. Unlayered, this ring beat every utility:
+ * the Ask field drew a second box inside its own focus glow, and headings
+ * that take focus after a change were ringed like buttons.
  */
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
+@layer base {
+  /*
+   * Keyboard users get a crisp ring; pointer users get nothing. It follows the
+   * element's own corners: forcing a radius here squared off every round
+   * switch and the colour wheel the moment they took focus.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 
-/*
- * Text fields show focus their own way (the accent border and glow in
- * `.field:focus`), so only they drop the ring. Checkboxes, radios and
- * sliders keep it: they have no other way to show a keyboard where it is.
- */
-.field:focus-visible,
-.field-bare:focus-visible {
-  outline: none;
-}
+  /*
+   * Text fields show focus their own way (the accent border and glow in
+   * `.field:focus`), so only they drop the ring. Checkboxes, radios and
+   * sliders keep it: they have no other way to show a keyboard where it is.
+   */
+  .field:focus-visible,
+  .field-bare:focus-visible {
+    outline: none;
+  }
 
-/* Where "Skip to content" lands: the page itself, not a control to ring. */
-#content:focus-visible {
-  outline: none;
+  /* Where "Skip to content" lands: the page itself, not a control to ring. */
+  #content:focus-visible {
+    outline: none;
+  }
 }
 
 .tabular {

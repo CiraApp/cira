@@ -51,11 +51,16 @@ export function runtimeLogFilter(args: {
    * own resource type, which is what keeps them apart.
    */
   target?: { type: "job" | "worker-pool"; name: string };
+  /** One revision of the web service; ignored for a job or worker pool. */
+  revision?: string | undefined;
 }): string {
   if (!SERVICE_NAME.test(args.service)) throw new Error("Not a Cloud Run service name.");
   if (!REGION.test(args.region)) throw new Error("Not a Cloud Run region.");
   if (args.target !== undefined && !SERVICE_NAME.test(args.target.name)) {
     throw new Error("Not a Cloud Run name.");
+  }
+  if (args.revision !== undefined && !SERVICE_NAME.test(args.revision)) {
+    throw new Error("Not a Cloud Run revision name.");
   }
 
   const resource =
@@ -63,6 +68,9 @@ export function runtimeLogFilter(args: {
       ? [
           'resource.type = "cloud_run_revision"',
           `resource.labels.service_name = "${args.service}"`,
+          ...(args.revision === undefined
+            ? []
+            : [`resource.labels.revision_name = "${args.revision}"`]),
         ]
       : args.target.type === "job"
         ? [

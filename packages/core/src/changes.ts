@@ -1,3 +1,4 @@
+import { possessive } from "./possessive.js";
 /**
  * The record of who changed what about a company.
  *
@@ -113,11 +114,11 @@ export function describeChange(change: {
     case "access-granted":
       return `${actor} gave ${subject} access to ${detail ?? "an app"}`;
     case "access-level-changed":
-      return `${actor} changed ${subject}'s access${to === "" ? "" : ` to${to}`}`;
+      return `${actor} changed ${possessive(subject)} access${to === "" ? "" : ` to${to}`}`;
     case "access-revoked":
       return detail === null
-        ? `${actor} took away ${subject}'s access`
-        : `${actor} took away ${subject}'s access to ${detail}`;
+        ? `${actor} took away ${possessive(subject)} access`
+        : `${actor} took away ${possessive(subject)} access to ${detail}`;
     case "capability-enabled":
       return `${actor} let agents run ${subject}`;
     case "capability-disabled":

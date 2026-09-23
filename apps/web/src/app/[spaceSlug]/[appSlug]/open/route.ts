@@ -32,8 +32,9 @@ export async function GET(
 
     return NextResponse.redirect(new URL(`/enter/${label}`, origin));
   } catch (error) {
+    // The app's page says "not found" and why that can be, as `/enter` does.
     if (error instanceof NotFoundError) {
-      return NextResponse.redirect(new URL(`/${spaceSlug}`, origin));
+      return NextResponse.redirect(new URL(`/${spaceSlug}/${appSlug}`, origin));
     }
     throw error;
   }

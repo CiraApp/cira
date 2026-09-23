@@ -83,7 +83,10 @@ export function explainStartFailure(message: string | undefined): string {
     const port = /PORT=(\d+)/.exec(text)?.[1];
     return (
       `It built, but never started listening${port === undefined ? "" : ` on port ${port}`}. ` +
-      "An app has to listen on the port in its PORT variable, and start within four minutes."
+      // Google says this for a crash on the first line too, which is the
+      // more common of the two; what the app printed tells them apart.
+      "Either it stopped as it started, or it listens somewhere other than the port " +
+      "in its PORT variable. What it printed says which."
     );
   }
   if (/memory limit|out of memory|OOM/i.test(text)) {
