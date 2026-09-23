@@ -40,7 +40,9 @@ function encode(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
-function decode(text: string): Uint8Array {
+// Over a plain ArrayBuffer, never a shared one, which is what Web Crypto
+// accepts; the type says so, since a bare Uint8Array no longer implies it.
+function decode(text: string): Uint8Array<ArrayBuffer> {
   const padded = text.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
