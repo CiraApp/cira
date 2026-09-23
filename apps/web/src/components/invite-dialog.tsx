@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
   createInvite,
@@ -46,7 +47,7 @@ export function InviteDialog({
     const url = new URL(window.location.href);
     if (!url.searchParams.has("invite")) return;
     url.searchParams.delete("invite");
-    router.replace(`${url.pathname}${url.search}${url.hash}`, { scroll: false });
+    router.replace(`${url.pathname}${url.search}${url.hash}` as Route, { scroll: false });
   }, [openOnArrival, router]);
 
   return (
