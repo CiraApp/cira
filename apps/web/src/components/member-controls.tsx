@@ -1,7 +1,7 @@
 "use client";
 
 import { possessive } from "@cira/core";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Role } from "@cira/core";
 import { changeRole, leaveSpace, removeMember } from "@/lib/member-actions";
@@ -51,6 +51,18 @@ export function MemberControls({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+
+  // Removing someone takes their row away once the page redraws - after the
+  // dialog has handed focus back to this row's Remove button. So focus moves
+  // to the list's heading as the row goes, not before: moved any earlier, the
+  // dialog took it back and it fell to the top of the page with the row.
+  const removed = useRef(false);
+  useEffect(
+    () => () => {
+      if (removed.current) document.getElementById("people")?.focus();
+    },
+    [],
+  );
 
   const self = person.userId === viewer.userId;
   const viewerIsAdmin = viewer.role === "admin" || viewer.role === "owner";
@@ -216,9 +228,7 @@ export function MemberControls({
                       // Their row, and this with it, is about to go: the
                       // words and the focus move to the list's heading.
                       announce(`Removed ${person.name} from ${spaceName}`);
-                      requestAnimationFrame(() =>
-                        document.getElementById("people")?.focus(),
-                      );
+                      removed.current = true;
                     },
                   )
             }

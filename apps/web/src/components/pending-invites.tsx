@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { revokeInvite } from "@/lib/invite-actions";
 import { announce } from "./ui/announcer";
@@ -33,6 +33,17 @@ export function PendingInvites({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+
+  // A revoked invitation's row goes when the page redraws, and with the last
+  // one this whole list. Focus moves then - to this heading while there is a
+  // list, to the people above once there is not - rather than before, when
+  // the row being removed would take it down with it.
+  const revoked = useRef(false);
+  useEffect(() => {
+    if (!revoked.current) return;
+    revoked.current = false;
+    (invites.length > 0 ? heading.current : document.getElementById("people"))?.focus();
+  }, [invites.length]);
 
   if (invites.length === 0) return null;
 
@@ -75,10 +86,9 @@ export function PendingInvites({
                     // The row goes, and with the last one the whole list: the
                     // words go to the shell, and focus to what is still here.
                     announce(`Revoked the invitation to ${invite.email}`);
-                    requestAnimationFrame(() => {
-                      const here = heading.current?.isConnected ? heading.current : null;
-                      (here ?? document.getElementById("people"))?.focus();
-                    });
+                    revoked.current = true;
+                    // Off the row before it goes; the list's heading stays.
+                    heading.current?.focus();
                   }
                   setBusy(null);
                   router.refresh();
