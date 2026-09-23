@@ -166,13 +166,15 @@ what it uses.
   - [x] Caches: `cira deploy --cache`, or yes to the offer for a `REDIS_URL`
         nobody set, makes the app its own Upstash Redis on Google Cloud in the
         apps' region and sets it; `cira cache url`; deleted with the app
-        (2026-09-22).
+        (2026-09-22). Verified end to end on production: a counter app
+        incremented across runs, `cira cache url` read the same cache, and
+        removing the app deleted it.
   - [x] Cira's Upstash account (akirtania17@gmail.com) and its key are in
         Vercel (2026-09-22).
-  - [ ] _You:_ add a payment method in Upstash. The free plan allows one
-        database per account and `wave-test` holds it, so a deploy asking for
-        a cache is told the plan is full until then. Pay as you go is billed
-        per request.
+  - [ ] _You:_ add a payment method in Upstash before a second app needs a
+        cache. The free plan allows one database per account (`wave-test` was
+        deleted on your say-so to free it); a deploy past that is told the
+        plan is full. Pay as you go is billed per request.
 - [x] **3.5 Custom domains** for apps. A manager adds `tools.acme.com` on the
       app page; Cira makes it a Cloudflare custom hostname, shows the CNAME to
       make, and the app proxy serves it once the certificate is issued, behind
