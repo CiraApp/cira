@@ -12,6 +12,17 @@ on:
       - "CHECKLIST.md"
       - "docs/**"
       - "packages/cli/README.md"
+  # A pull request is checked the same way, which is the whole point of
+  # Dependabot raising them: an update nothing ran is an update nobody can
+  # take the word of. Only `verify` runs - the deploy job below is for a push
+  # to prod - and it needs no secret, so it works on Dependabot's own branches.
+  pull_request:
+    branches: [prod]
+    paths-ignore:
+      - "README.md"
+      - "CHECKLIST.md"
+      - "docs/**"
+      - "packages/cli/README.md"
   workflow_dispatch:
 
 concurrency:
