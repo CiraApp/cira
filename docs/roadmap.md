@@ -57,9 +57,8 @@ use its apps, and Cira would know if anything broke for them.
         (Settings, Organization Tokens; the API will not make one) and store
         it with `gh secret set SENTRY_AUTH_TOKEN --repo CiraApp/cira`, so
         stack traces show Cira's source rather than minified code.
-  - [ ] A downtime reaching you, end to end: not yet seen, since nothing has
-        been down. A drill (pointing the monitor at a failing address for a
-        few minutes) is yours to allow.
+  - [x] A downtime reaching you, end to end: drilled 2026-09-23, alert
+        received three minutes in (roadmap 4.7).
 - [x] **1.4 A record of who ran what.** `invocations`, written by the one
       path every surface shares, shown under Capability runs on each app page to whoever
       manages it; never the input or the reply (2026-09-19).
@@ -228,13 +227,13 @@ by asking what Cira could not answer for after something went wrong.
       sign-up and its human check, founded a company, invited someone who
       accepted from the email, deployed an app with the published CLI, opened
       it, was the only one who could, and deleted the company (2026-09-23).
-      Found the published CLI ten changes behind (0.7.0 staged), and two rough
+      Found the published CLI ten changes behind (0.7.0 released the same day), and two rough
       edges in onboarding, both fixed.
-- [ ] **4.7 Downtime reaching you.** Drilled 2026-09-23: `/api/health` failed
-      from 06:34 to 06:55 UTC and recovered on its own. Whether Sentry's alert
-      reached an inbox is not yet confirmed - Sentry has never emailed
-      akirtania17@gmail.com, so its alerts go somewhere else. _You:_ check that
-      inbox for the drill's alert.
+- [x] **4.7 Downtime reaching you.** Drilled 2026-09-23: `/api/health` failed
+      from 06:34 to 06:55 UTC and recovered on its own, and Sentry's downtime
+      alert reached the owner's inbox at 06:37 - three minutes in. Sentry
+      emails the address on its own account, which is not akirtania17@gmail.com;
+      a drill can be run again with `CIRA_HEALTH_DRILL_UNTIL`.
 - [x] **4.8 Accessibility.** An audit against WCAG 2.2 AA, then fixes: dialogs
       that take and return focus, contrast measured on every theme preset,
       focus rings on every control, overlays a keyboard can use, and live
