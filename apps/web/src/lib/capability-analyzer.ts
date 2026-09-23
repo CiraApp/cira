@@ -219,18 +219,18 @@ function knownSection(
 /**
  * Which model reads the source.
  *
- * Haiku while this is being built, because the question being asked of it -
- * does the pipeline find anything at all, and does what it finds survive being
- * checked against the running app - is answered just as well by a cheap model
- * as by an expensive one, and is asked many times a day. The judgement the
- * prompt actually wants is Opus's, and the scores that justify the prompt were
- * measured on Opus; this is a development setting, not a revision of that.
+ * Sonnet. Haiku ran here while the pipeline was being built, on the view that
+ * whether it found anything at all was answered as well by a cheap model - and
+ * on a second deploy it was not: handed the previous list, it returned that
+ * list and nothing new. Dispatch API's added `GET /api/stats` was missed in
+ * three runs of three, so a route written after an app's first deploy never
+ * became a capability. Sonnet found it every time, in about nine seconds
+ * rather than six, once per deploy.
  *
- * Overridable without a deploy, so moving back is an environment variable
- * rather than a release.
+ * Overridable without a deploy, so moving is an environment variable rather
+ * than a release.
  */
-const CHEAP_MODEL = "claude-haiku-4-5-20251001";
-const MODEL = process.env["CIRA_ANALYZER_MODEL"] ?? CHEAP_MODEL;
+const MODEL = process.env["CIRA_ANALYZER_MODEL"] ?? "claude-sonnet-5";
 
 /**
  * Adaptive thinking arrived with the 4.6 generation and earlier models refuse
@@ -238,7 +238,7 @@ const MODEL = process.env["CIRA_ANALYZER_MODEL"] ?? CHEAP_MODEL;
  * that can be left on "for safety". It also costs output tokens, which is the
  * opposite of the reason for being on a cheap model at all.
  */
-const THINKS = MODEL !== CHEAP_MODEL;
+const THINKS = !MODEL.includes("haiku");
 
 export async function analyzeCapabilities(
   source: string,
