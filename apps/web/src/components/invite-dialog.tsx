@@ -137,15 +137,15 @@ export function InviteDialog({
                         first day is exactly when nobody goes back to a roster:
                         they accept and the apps their team opens are open. */}
                     {teams.length > 0 ? (
-                      <fieldset className="rounded-[var(--radius-edge)] border border-line bg-surface px-3.5 py-3">
-                        <legend className="px-1 text-[12px] text-ink-subtle">
-                          Teams, if they join one
+                      <fieldset>
+                        <legend className="mb-1.5 text-[12px] text-ink-subtle">
+                          Teams they start on
                         </legend>
-                        <div className="mt-1 flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+                        <div className="flex max-h-40 flex-col divide-y divide-line overflow-y-auto rounded-[var(--radius-edge)] border border-line bg-surface">
                           {teams.map((team) => (
                             <label
                               key={team.id}
-                              className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink"
+                              className="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 text-[13px] text-ink transition-colors duration-150 hover:bg-sunken/40"
                             >
                               <input
                                 type="checkbox"
