@@ -46,6 +46,11 @@ export default async function LogsPage({
   const { spaceSlug, appSlug } = await params;
   const query = await searchParams;
   const aroundParam = typeof query["around"] === "string" ? query["around"] : null;
+  // When the run being looked at ended, so the window reaches its end.
+  const throughParam =
+    aroundParam !== null && typeof query["through"] === "string"
+      ? query["through"]
+      : null;
   const capability =
     typeof query["capability"] === "string" && query["capability"].length <= 120
       ? query["capability"]
@@ -68,7 +73,12 @@ export default async function LogsPage({
     const [spaces, initial] = await Promise.all([
       listMySpaces(),
       fetchRuntimeLogs(spaceSlug, appSlug, {
-        ...(aroundParam !== null ? { around: aroundParam } : { range: "1h" }),
+        ...(aroundParam !== null
+          ? {
+              around: aroundParam,
+              ...(throughParam === null ? {} : { through: throughParam }),
+            }
+          : { range: "1h" }),
         ...(process === null ? {} : { process }),
       }),
     ]);
@@ -83,7 +93,11 @@ export default async function LogsPage({
     // marker for a window that was never read.
     const around =
       aroundParam !== null && initial.ok
-        ? { at: new Date(aroundParam).toISOString(), label: capability }
+        ? {
+            at: new Date(aroundParam).toISOString(),
+            label: capability,
+            through: throughParam === null ? null : new Date(throughParam).toISOString(),
+          }
         : null;
 
     return (

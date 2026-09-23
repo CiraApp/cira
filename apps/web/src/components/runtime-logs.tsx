@@ -65,7 +65,7 @@ export function RuntimeLogs({
   /** The first page, fetched with the page itself so it arrives filled. */
   initial: RuntimeLogsResult;
   /** A console run to centre on: when it started, and what it ran. */
-  around: { at: string; label: string | null } | null;
+  around: { at: string; label: string | null; through: string | null } | null;
   /** Which process these are the lines of; null for the web service. */
   process: string | null;
   /** What else could be read, for the picker. Shown when there is a choice. */
@@ -111,7 +111,7 @@ export function RuntimeLogs({
   /** A fresh page, for exactly the range, level and search it is given. */
   const load = useCallback(
     async (
-      spec: { range: LogRange } | { around: string },
+      spec: { range: LogRange } | { around: string; through?: string },
       filter: { minimum: RuntimeLogMinimum; search: string },
     ) => {
       const mine = ++generation.current;
@@ -143,8 +143,15 @@ export function RuntimeLogs({
   );
 
   const spec = useCallback(
-    (): { range: LogRange } | { around: string } =>
-      range !== null ? { range } : { around: around?.at ?? new Date().toISOString() },
+    (): { range: LogRange } | { around: string; through?: string } =>
+      range !== null
+        ? { range }
+        : {
+            around: around?.at ?? new Date().toISOString(),
+            ...(around === null || around.through === null
+              ? {}
+              : { through: around.through }),
+          },
     [range, around],
   );
 
@@ -281,7 +288,9 @@ export function RuntimeLogs({
   const words =
     range !== null
       ? RANGES.find((r) => r.value === range)?.words
-      : `the two minutes around ${aroundAt === null ? "the run" : hydrated ? clock(aroundAt) : TIME_PENDING}`;
+      : around !== null && around.through !== null
+        ? "the run and the minute either side of it"
+        : `the two minutes around ${aroundAt === null ? "the run" : hydrated ? clock(aroundAt) : TIME_PENDING}`;
 
   // Nothing here can be read, and nothing on the toolbar would change that:
   // a range, a level or Live would each only ask Google the same question and

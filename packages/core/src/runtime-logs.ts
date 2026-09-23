@@ -118,10 +118,13 @@ export const OLDEST_LOG_MS = 30 * 24 * 60 * 60_000;
  *
  * A named range ends now. A moment - a console run - is the minute either side
  * of it, so the cause and the aftermath are both on screen, and is refused
- * when it is in the future or older than any provider keeps.
+ * when it is in the future or older than any provider keeps. A moment with an
+ * end - a scheduled run that took a while - reaches its end too: a job that
+ * spent two minutes starting printed everything after the minute that was
+ * shown, and its logs read as empty.
  */
 export function logWindow(
-  spec: { range: LogRange } | { around: Date },
+  spec: { range: LogRange } | { around: Date; through?: Date | undefined },
   now: Date,
 ): { since: Date; until: Date } | null {
   if ("range" in spec) {
@@ -135,9 +138,15 @@ export function logWindow(
   if (at > now.getTime() + AROUND_MS) return null;
   if (at < now.getTime() - OLDEST_LOG_MS) return null;
 
+  const through = spec.through?.getTime();
+  const end =
+    through !== undefined && Number.isFinite(through) && through > at
+      ? Math.min(through, at + LOG_RANGES["24h"])
+      : at;
+
   return {
     since: new Date(at - AROUND_MS),
-    until: new Date(Math.min(at + AROUND_MS, now.getTime())),
+    until: new Date(Math.min(end + AROUND_MS, now.getTime())),
   };
 }
 

@@ -36,6 +36,8 @@ export interface RuntimeLogsRequest {
   range?: LogRange;
   /** A moment, for the logs around one console run. ISO 8601. */
   around?: string;
+  /** When the run at `around` ended, for a run that took a while. ISO 8601. */
+  through?: string;
   /** An exact window, as a previous answer gave it, to page within. ISO 8601. */
   window?: { since: string; until: string };
   minimum?: RuntimeLogMinimum;
@@ -250,7 +252,9 @@ function readRequest(request: unknown, now: Date): Asked | null {
 
   if (r["around"] !== undefined) {
     const at = dateOf(r["around"]);
-    const window = at === null ? null : logWindow({ around: at }, now);
+    const through = r["through"] === undefined ? undefined : dateOf(r["through"]);
+    if (through === null) return null;
+    const window = at === null ? null : logWindow({ around: at, through }, now);
     return window === null
       ? null
       : { ...common, ...window, pageToken: null, live: false };

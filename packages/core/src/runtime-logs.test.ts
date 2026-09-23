@@ -4,6 +4,20 @@ import { AROUND_MS, logWindow } from "./runtime-logs.js";
 const now = new Date("2026-09-19T14:00:00.000Z");
 
 describe("logWindow", () => {
+  it("reaches the end of a run that took a while, not only the minute after it began", () => {
+    const now = new Date("2026-09-23T12:00:00.000Z");
+    const started = new Date("2026-09-23T09:54:12.000Z");
+    const ended = new Date("2026-09-23T09:56:32.000Z");
+    expect(logWindow({ around: started, through: ended }, now)).toEqual({
+      since: new Date(started.getTime() - AROUND_MS),
+      until: new Date(ended.getTime() + AROUND_MS),
+    });
+    // An end before the start is no end at all.
+    expect(logWindow({ around: ended, through: started }, now)?.until).toEqual(
+      new Date(ended.getTime() + AROUND_MS),
+    );
+  });
+
   it("ends a named range now", () => {
     expect(logWindow({ range: "1h" }, now)).toEqual({
       since: new Date("2026-09-19T13:00:00.000Z"),

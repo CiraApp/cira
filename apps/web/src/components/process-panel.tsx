@@ -375,7 +375,11 @@ function Row({
               </span>
               {logsHref !== null ? (
                 <SectionLink
-                  href={`${logsHref}&around=${encodeURIComponent(new Date(run.startedAt).toISOString())}`}
+                  href={`${logsHref}&around=${encodeURIComponent(new Date(run.startedAt).toISOString())}${
+                    run.finishedAt === null
+                      ? ""
+                      : `&through=${encodeURIComponent(new Date(run.finishedAt).toISOString())}`
+                  }`}
                 >
                   Logs
                 </SectionLink>
