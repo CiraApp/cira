@@ -147,4 +147,9 @@ export function describeChange(change: {
         ? `${actor} let anyone with an @${subject} address join`
         : `${actor} stopped anyone with an @${subject} address joining`;
   }
+
+  // Unreachable for every kind above, and kept for the row a later version of
+  // Cira wrote and this one has not heard of: a line that reads a little flat
+  // beats a blank one in a record whose whole worth is that nothing is missing.
+  return `${actor} changed something about ${subject}`;
 }
