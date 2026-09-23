@@ -159,7 +159,7 @@ export default async function AppPage({
       <AppShell
         spaceSlug={spaceSlug}
         spaces={spaces}
-        title={<PageTitle title={app.name} detail={space.name} />}
+        title={<PageTitle title={app.name} detail={space.name} pageHasHeading />}
       >
         <div
           className="max-w-3xl"

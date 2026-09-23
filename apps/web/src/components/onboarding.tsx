@@ -48,7 +48,11 @@ export function Onboarding({
 }) {
   const [created, setCreated] = useState<{ name: string; slug: string } | null>(null);
   const [founding, setFounding] = useState(joinable.length === 0);
-  const [named, setNamed] = useState<string | null>(null);
+  // Someone who has already told Cira their name - coming back after leaving
+  // or deleting their only space - is not asked it again. The name step is
+  // for a first visit; a pre-filled form to click through is a question
+  // already answered.
+  const [named, setNamed] = useState<string | null>(firstName);
 
   if (named === null) {
     return (
@@ -85,7 +89,7 @@ export function Onboarding({
         }
       >
         <Link
-          href={`/${created.slug}/~/members`}
+          href={`/${created.slug}/~/members?invite=1`}
           className="btn btn-primary btn-lg w-full"
         >
           Invite your team

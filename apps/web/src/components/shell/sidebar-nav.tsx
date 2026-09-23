@@ -64,7 +64,7 @@ export function SidebarNav({ items }: { items: NavItem[] }) {
   }, []);
 
   return (
-    <nav ref={listRef} className="relative flex flex-col gap-0.5">
+    <nav ref={listRef} aria-label="Space" className="relative flex flex-col gap-0.5">
       {marker !== null ? (
         <>
           <span

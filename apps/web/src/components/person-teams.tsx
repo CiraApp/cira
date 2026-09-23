@@ -76,9 +76,10 @@ export function PersonTeams({
           setError(null);
           setOpen(true);
         }}
-        className="mt-0.5 block max-w-full truncate text-left text-[11.5px] text-ink-subtle underline-offset-4 transition-colors duration-150 hover:text-ink-muted hover:underline"
+        className="mt-0.5 block max-w-full truncate text-left text-[11.5px] text-ink-subtle underline decoration-line-strong underline-offset-4 transition-colors duration-150 hover:text-ink-muted hover:decoration-current"
       >
         {on.length === 0 ? "Not on a team" : names}
+        <span className="sr-only">, change {person.name}&rsquo;s teams</span>
       </button>
 
       <Dialog
@@ -94,8 +95,12 @@ export function PersonTeams({
                 <input
                   type="checkbox"
                   checked={team.on}
-                  disabled={pending}
-                  onChange={(event) => set(team, event.target.checked)}
+                  // Not disabled while saving: that took focus out of the dialog
+                  // after every tick. Presses wait instead.
+                  aria-disabled={pending || undefined}
+                  onChange={(event) => {
+                    if (!pending) set(team, event.target.checked);
+                  }}
                   className="h-3.5 w-3.5 accent-[var(--color-accent)]"
                 />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink">

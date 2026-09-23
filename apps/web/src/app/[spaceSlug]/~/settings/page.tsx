@@ -134,7 +134,7 @@ export default async function SettingsPage({
             An app&rsquo;s own settings live on its page. People, roles and teams are on{" "}
             <Link
               href={`/${spaceSlug}/~/members`}
-              className="text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+              className="text-ink-muted underline underline-offset-4 hover:text-ink"
             >
               Members
             </Link>

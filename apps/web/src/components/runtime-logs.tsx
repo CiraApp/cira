@@ -447,10 +447,17 @@ export function RuntimeLogs({
             </button>
           ) : null}
 
+          {/* Said as a count, not line by line: the list itself was a live
+              region, so in Live mode a screen reader read every new line
+              aloud, without end. */}
+          <p role="status" className="sr-only">
+            {loading
+              ? "Loading lines"
+              : `${entries.length} ${entries.length === 1 ? "line" : "lines"}`}
+          </p>
           <div
             ref={box}
             onScroll={onScroll}
-            aria-live="polite"
             aria-busy={loading}
             className={`max-h-[min(68vh,720px)] min-h-[220px] overflow-auto py-1.5 transition-opacity duration-150 ${
               loading ? "opacity-60" : ""
@@ -543,10 +550,14 @@ function Line({
               message needs the width more than the time needs the precision. */}
           <span className="hidden sm:inline">.{millis(at)}</span>
         </time>
+        {/* The dot is the level for the eye; the words are it for everyone. */}
         <span
-          aria-label={entry.level === "default" ? undefined : entry.level}
+          aria-hidden="true"
           className={`mt-[7px] h-[6px] w-[6px] rounded-full ${tone}`}
         />
+        {entry.level === "default" ? null : (
+          <span className="sr-only">{entry.level}: </span>
+        )}
         <span className="min-w-0 break-words whitespace-pre-wrap">
           {entry.container !== null ? (
             <span className="mr-2 rounded-[2px] border border-line px-1 py-px text-[10.5px] text-ink-subtle">

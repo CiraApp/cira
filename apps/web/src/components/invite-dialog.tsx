@@ -19,14 +19,29 @@ export function InviteDialog({
   spaceSlug,
   emailing,
   teams,
+  openOnArrival = false,
 }: {
   spaceSlug: string;
   /** Whether invitations go out by email here, so the dialog promises only that. */
   emailing: boolean;
   /** The company's teams, to put someone on one before they ever sign in. */
   teams: Array<{ id: string; name: string }>;
+  /**
+   * Open straight away: the new space's "Invite your team" arrives here, and
+   * a button promising an invitation should not end on a page where the
+   * next thing is to find a second button saying the same.
+   */
+  openOnArrival?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(openOnArrival);
+
+  // Opened once for having arrived, not every time the address is revisited.
+  useEffect(() => {
+    if (!openOnArrival) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("invite");
+    window.history.replaceState(window.history.state, "", url);
+  }, [openOnArrival]);
 
   return (
     <>

@@ -74,7 +74,7 @@ export default async function ChangesPage({
             Who ran what is on each app&rsquo;s own page, under Capability runs.{" "}
             <Link
               href={`/${spaceSlug}/~/settings`}
-              className="text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+              className="text-ink-muted underline underline-offset-4 hover:text-ink"
             >
               Back to settings
             </Link>

@@ -71,6 +71,7 @@ export function PendingInvites({
               className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
             >
               {busy === invite.id ? "Revoking..." : "Revoke"}
+              <span className="sr-only"> the invitation to {invite.email}</span>
             </button>
           </li>
         ))}

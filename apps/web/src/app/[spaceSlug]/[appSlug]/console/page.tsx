@@ -53,7 +53,9 @@ export default async function ConsolePage({
       <AppShell
         spaceSlug={spaceSlug}
         spaces={spaces}
-        title={<PageTitle title={`${app.name} console`} detail={space.name} />}
+        title={
+          <PageTitle title={`${app.name} console`} detail={space.name} pageHasHeading />
+        }
       >
         <div className="max-w-5xl">
           <Link

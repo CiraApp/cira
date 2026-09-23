@@ -84,12 +84,21 @@ export function AppGallery({
       if (typingElsewhere) return;
 
       // "/" is the muscle memory from every other search box, but it must not
-      // hijack the key while someone is typing a path into the field itself.
+      // hijack the key while someone is typing a path into the field itself,
+      // nor pull focus out of an open dialog or away from a control someone
+      // is on. Only from the page itself.
       if (event.key === "/" && !focused) {
+        const onPage = target === null || target === document.body;
+        if (!onPage || document.querySelector("dialog[open]") !== null) return;
         event.preventDefault();
         inputRef.current?.focus();
         return;
       }
+
+      // The rest belongs to the search field. Taken from the whole window, the
+      // arrows stopped the page scrolling and a dropdown elsewhere on it from
+      // changing, for anyone using a keyboard.
+      if (!focused) return;
 
       const moves = ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"];
       if (moves.includes(event.key) && matches.length > 0) {
@@ -103,7 +112,7 @@ export function AppGallery({
         }
         const forward = event.key === "ArrowDown" || event.key === "ArrowRight";
         setSelected((i) => (i + (forward ? 1 : -1) + matches.length) % matches.length);
-      } else if (event.key === "Enter" && focused) {
+      } else if (event.key === "Enter") {
         if (!picked && ask !== null && query.trim() !== "") {
           event.preventDefault();
           ask.ask(query);
@@ -131,8 +140,23 @@ export function AppGallery({
 
   const typed = query.trim() !== "";
 
+  // What the highlighted card and the count look like, said: the highlight
+  // is a ring, and a ring is nothing to someone who cannot see it.
+  const chosen = focused && picked ? matches[selected] : undefined;
+  const said =
+    chosen !== undefined
+      ? `${chosen.name}. Press Enter to open.`
+      : typed
+        ? matches.length === 0
+          ? "No apps match."
+          : `${matches.length} ${matches.length === 1 ? "app matches" : "apps match"}.`
+        : "";
+
   return (
     <div className="flex flex-col gap-7">
+      <p role="status" className="sr-only">
+        {said}
+      </p>
       {ask === null ? (
         <div className="group relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-subtle transition-colors duration-200 group-focus-within:text-accent" />

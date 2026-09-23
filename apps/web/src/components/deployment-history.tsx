@@ -60,8 +60,22 @@ export function DeploymentHistory({
   const [armed, setArmed] = useState<string | null>(null);
   const [going, setGoing] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [said, setSaid] = useState("");
   const [, startTransition] = useTransition();
   const logRef = useRef<HTMLPreElement>(null);
+  // Where focus goes as the rollback confirmation opens and closes: the
+  // button pressed disappears each time, and focus must not go with it.
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const offerRef = useRef<HTMLButtonElement>(null);
+  const [returnFocus, setReturnFocus] = useState(false);
+
+  useEffect(() => {
+    if (armed !== null) confirmRef.current?.focus();
+    else if (returnFocus) {
+      offerRef.current?.focus();
+      setReturnFocus(false);
+    }
+  }, [armed, returnFocus]);
 
   // A failed build is read from the bottom: the error is the last thing that
   // happened. Opening at the top means scrolling past the install log to find
@@ -105,8 +119,12 @@ export function DeploymentHistory({
       const result = await rollBackTo(spaceSlug, appSlug, id);
       setGoing(null);
       setArmed(null);
-      if (result.ok) router.refresh();
-      else setFailure(result.error);
+      if (result.ok) {
+        // The row it was on is redrawn as the list refreshes; this is what
+        // tells a screen reader that anything happened at all.
+        setSaid("Going back to that build. The new deploy is at the top of the list.");
+        router.refresh();
+      } else setFailure(result.error);
     });
   };
 
@@ -114,6 +132,9 @@ export function DeploymentHistory({
 
   return (
     <section id="deploys" className="enter-up mt-10 scroll-mt-6">
+      <p role="status" className="sr-only">
+        {said}
+      </p>
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Deploys</h2>
         {logsHref !== null ? (
@@ -133,6 +154,7 @@ export function DeploymentHistory({
                 type="button"
                 onClick={() => toggle(d.id)}
                 aria-expanded={isOpen}
+                aria-controls={`deploy-${d.id}-detail`}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-sunken/50"
               >
                 <StatusDot
@@ -174,12 +196,20 @@ export function DeploymentHistory({
               ) : null}
 
               {isOpen ? (
-                <div className="enter-fade border-t border-line bg-sunken/60 px-4 py-3.5">
+                <div
+                  id={`deploy-${d.id}-detail`}
+                  className="enter-fade border-t border-line bg-sunken/60 px-4 py-3.5"
+                >
                   {result === undefined ? (
                     <p className="text-[12.5px] text-ink-muted">Fetching logs...</p>
                   ) : result.ok ? (
                     <pre
                       ref={logRef}
+                      // Scrollable, so it has to be reachable to be read by
+                      // anyone not using a mouse wheel.
+                      tabIndex={0}
+                      role="region"
+                      aria-label="Build log"
                       className="max-h-80 overflow-auto font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-ink-muted"
                     >
                       {result.lines.map((l) => l.message).join("\n")}
@@ -209,6 +239,7 @@ export function DeploymentHistory({
                           </p>
                           <div className="mt-2.5 flex flex-wrap gap-2">
                             <button
+                              ref={confirmRef}
                               type="button"
                               disabled={going !== null}
                               onClick={() => goBack(d.id)}
@@ -223,7 +254,10 @@ export function DeploymentHistory({
                             <button
                               type="button"
                               disabled={going !== null}
-                              onClick={() => setArmed(null)}
+                              onClick={() => {
+                                setReturnFocus(true);
+                                setArmed(null);
+                              }}
                               className="btn btn-ghost px-2 text-[12px]"
                             >
                               Keep what is running
@@ -233,6 +267,7 @@ export function DeploymentHistory({
                       ) : (
                         <button
                           type="button"
+                          ref={offerRef}
                           onClick={() => {
                             setFailure(null);
                             setArmed(d.id);

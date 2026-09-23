@@ -114,7 +114,7 @@ export function DomainPanel({
                   }
                   className="btn btn-ghost px-2 py-1 text-[12px]"
                 >
-                  Remove
+                  Remove<span className="sr-only"> {domain.hostname}</span>
                 </button>
               </div>
 

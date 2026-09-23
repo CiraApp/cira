@@ -306,6 +306,11 @@ body::after {
   outline: none;
 }
 
+/* Where "Skip to content" lands: the page itself, not a control to ring. */
+#content:focus-visible {
+  outline: none;
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
 }

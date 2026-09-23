@@ -90,7 +90,9 @@ export default async function LogsPage({
       <AppShell
         spaceSlug={spaceSlug}
         spaces={spaces}
-        title={<PageTitle title={`${app.name} logs`} detail={space.name} />}
+        title={
+          <PageTitle title={`${app.name} logs`} detail={space.name} pageHasHeading />
+        }
       >
         <div className="max-w-5xl">
           <Link

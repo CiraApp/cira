@@ -35,7 +35,7 @@ export function SiteFrame({
             <Link href="/" aria-label="Cira" title="Cira" className="shrink-0">
               <CiraWordmark className="h-[15px] w-auto text-ink" />
             </Link>
-            <nav className="flex flex-1 items-center gap-5 text-[13px]">
+            <nav aria-label="Cira" className="flex flex-1 items-center gap-5 text-[13px]">
               {[
                 { label: "Pricing", href: "/pricing" },
                 { label: "Docs", href: "/docs" },

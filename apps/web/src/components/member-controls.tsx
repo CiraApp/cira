@@ -106,7 +106,7 @@ export function MemberControls({
               onClick={() => setConfirming(true)}
               className="btn btn-ghost px-2.5 py-1.5 text-[12.5px] hover:text-failed"
             >
-              Remove
+              Remove<span className="sr-only"> {person.name}</span>
             </button>
           </>
         ) : (

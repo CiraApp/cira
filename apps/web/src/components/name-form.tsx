@@ -62,7 +62,7 @@ export function NameForm({
         </label>
         <label className="flex min-w-0 flex-col gap-1.5">
           <span className="text-[12px] text-ink-subtle">
-            Last name <span className="text-ink-subtle/70">(optional)</span>
+            Last name <span className="text-ink-subtle">(optional)</span>
           </span>
           <input
             name="lastName"

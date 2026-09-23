@@ -231,12 +231,22 @@ export function TeamsPanel({
                       <input
                         type="checkbox"
                         checked={on}
-                        disabled={pending}
-                        onChange={() =>
+                        // Not disabled while saving: that took focus out of the
+                        // dialog after every tick. Presses wait instead.
+                        aria-disabled={pending || undefined}
+                        onChange={(event) => {
+                          if (pending) return;
+                          const wanted = event.target.checked;
+                          if (wanted === on) return;
                           run(() =>
-                            setTeamMembership(spaceSlug, current.id, person.userId, !on),
-                          )
-                        }
+                            setTeamMembership(
+                              spaceSlug,
+                              current.id,
+                              person.userId,
+                              wanted,
+                            ),
+                          );
+                        }}
                         className="h-3.5 w-3.5 accent-[var(--color-accent)]"
                       />
                       <span className="min-w-0 flex-1">

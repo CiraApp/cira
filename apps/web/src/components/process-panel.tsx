@@ -1,5 +1,6 @@
 "use client";
 
+import { Switch } from "./ui/switch";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LIMITS } from "@cira/core/limits";
@@ -227,8 +228,9 @@ function Row({
             </button>
             <Switch
               on={process.enabled}
-              disabled={pending || missing || (noTimetable && !process.enabled)}
-              label={`${process.enabled ? "Turn off" : "Turn on"} ${process.name}`}
+              busy={pending}
+              disabled={missing || (noTimetable && !process.enabled)}
+              label={process.name}
               title={noTimetable ? "Give it a timetable first" : undefined}
               onChange={(on) =>
                 act(() => switchProcess(spaceSlug, appSlug, process.name, on))
@@ -399,50 +401,6 @@ function Kind({ kind }: { kind: "web" | "worker" | "scheduled" }) {
     <span className="rounded-[2px] border border-line bg-sunken px-1.5 py-px text-[9.5px] font-semibold tracking-[0.08em] text-ink-subtle uppercase">
       {kind === "web" ? "Web" : kind === "worker" ? "Worker" : "Scheduled"}
     </span>
-  );
-}
-
-/**
- * On is green, off is a plain track with the same white knob. Off has to read
- * as "can be switched on", not as locked: a grey knob on a grey track is how
- * a disabled control looks, and was mistaken for one. Only a switch that
- * really cannot be used - a scheduled run with no timetable - is faded.
- */
-function Switch({
-  on,
-  disabled,
-  label,
-  title,
-  onChange,
-}: {
-  on: boolean;
-  disabled: boolean;
-  label: string;
-  title?: string | undefined;
-  onChange: (on: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      title={title}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      className={`group relative h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 sm:ml-1 ${
-        on
-          ? "bg-live"
-          : "bg-line-strong shadow-[inset_0_0_0_1px_var(--color-line-strong)] enabled:hover:bg-ink-subtle/60"
-      }`}
-    >
-      <span
-        aria-hidden="true"
-        className={`absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.35)] transition-[left] duration-200 ease-[var(--ease-spring)] ${
-          on ? "left-[18px]" : "left-[2px]"
-        }`}
-      />
-    </button>
   );
 }
 

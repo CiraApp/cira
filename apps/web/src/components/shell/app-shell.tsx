@@ -95,6 +95,14 @@ export async function AppShell({
 
   return (
     <div className="flex min-h-dvh">
+      {/* First thing a keyboard reaches, and invisible until it does: past the
+          sidebar and header, which are the same on every page, to what is not. */}
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-[var(--radius-edge)] focus:bg-raised focus:px-3 focus:py-2 focus:text-[13px] focus:text-ink focus:shadow-[var(--shadow-panel)]"
+      >
+        Skip to content
+      </a>
       <AmbientField />
       <RouteProgress />
 
@@ -143,7 +151,11 @@ export async function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-7 sm:px-6 lg:px-8">
+        <main
+          id="content"
+          tabIndex={-1}
+          className="min-w-0 flex-1 px-4 py-7 outline-none sm:px-6 lg:px-8"
+        >
           <div className="mx-auto w-full max-w-[1180px]">{children}</div>
         </main>
       </div>

@@ -44,10 +44,12 @@ export async function generateMetadata({
  */
 export default async function MembersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ spaceSlug: string }>;
+  searchParams: Promise<{ invite?: string }>;
 }) {
-  const { spaceSlug } = await params;
+  const [{ spaceSlug }, { invite }] = await Promise.all([params, searchParams]);
 
   try {
     const ctx = await requireSpaceMember(spaceSlug);
@@ -160,6 +162,7 @@ export default async function MembersPage({
             <InviteDialog
               spaceSlug={spaceSlug}
               emailing={emailConfigured()}
+              openOnArrival={invite === "1"}
               teams={teamsByName.map((team) => ({ id: team.id, name: team.name }))}
             />
           ) : null

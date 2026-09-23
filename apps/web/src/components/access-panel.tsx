@@ -150,6 +150,7 @@ export function AccessPanel({
                 className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
               >
                 {busy === entry.id ? "Removing..." : "Remove"}
+                <span className="sr-only"> {entry.label}&rsquo;s access</span>
               </button>
             </li>
           ))
