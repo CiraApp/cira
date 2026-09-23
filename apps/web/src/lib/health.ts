@@ -52,6 +52,29 @@ export async function checkProxy(
   }
 }
 
+/** How far ahead a drill may be set to end. Anything later is ignored. */
+export const DRILL_LIMIT_MS = 60 * 60_000;
+
+/**
+ * Down on purpose, for a drill: until the moment `CIRA_HEALTH_DRILL_UNTIL`
+ * names, this check fails, so the monitor sees an outage and whoever is on
+ * call should hear about it - which is the thing being tested, since a
+ * monitor nobody has seen alert is a monitor nobody knows works.
+ *
+ * It ends itself. The variable names when the drill stops rather than
+ * whether one is on, so nobody has to remember to turn it off, and a moment
+ * more than an hour away is ignored: a typo cannot leave Cira reporting
+ * itself down, which would hide a real outage behind a pretend one.
+ */
+export function checkDrill(
+  until: string | undefined,
+  now: number = Date.now(),
+): HealthVerdict {
+  const end = Date.parse(until ?? "");
+  const running = Number.isFinite(end) && end > now && end - now <= DRILL_LIMIT_MS;
+  return running ? { ok: false, failing: "drill" } : { ok: true };
+}
+
 function within<T>(work: Promise<T>): Promise<T> {
   return Promise.race([
     work,

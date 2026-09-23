@@ -1,5 +1,11 @@
 import { db } from "@cira/db";
-import { checkDatabase, checkProxy, combine, healthResponse } from "@/lib/health";
+import {
+  checkDatabase,
+  checkDrill,
+  checkProxy,
+  combine,
+  healthResponse,
+} from "@/lib/health";
 import { proxyConfig } from "@/lib/proxy-config";
 
 /**
@@ -16,6 +22,7 @@ export async function GET() {
           ok: false as const,
           failing: "app proxy",
         })),
+        checkDrill(process.env["CIRA_HEALTH_DRILL_UNTIL"]),
       ]),
     ),
   );

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { checkProxy, combine, healthResponse } from "./health";
+import {
+  DRILL_LIMIT_MS,
+  checkDrill,
+  checkProxy,
+  combine,
+  healthResponse,
+} from "./health";
 
 /** The app proxy counts as up only when it answers as itself. */
 describe("checkProxy", () => {
@@ -44,5 +50,23 @@ describe("checkProxy", () => {
         { ok: false, failing: "app proxy" },
       ]),
     ).toEqual({ ok: false, failing: "database, app proxy" });
+  });
+
+  it("fails on purpose during a drill, and stops on its own", () => {
+    const now = Date.parse("2026-09-23T07:00:00Z");
+
+    expect(checkDrill("2026-09-23T07:10:00Z", now)).toEqual({
+      ok: false,
+      failing: "drill",
+    });
+    // Over once the moment passes, with nobody turning it off.
+    expect(checkDrill("2026-09-23T06:59:59Z", now)).toEqual({ ok: true });
+    // Never set, or set to nonsense: no drill.
+    expect(checkDrill(undefined, now)).toEqual({ ok: true });
+    expect(checkDrill("soon", now)).toEqual({ ok: true });
+    // A moment too far away is a mistake, not a long drill.
+    expect(checkDrill(new Date(now + DRILL_LIMIT_MS + 1000).toISOString(), now)).toEqual({
+      ok: true,
+    });
   });
 });
