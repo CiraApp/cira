@@ -237,7 +237,8 @@ by asking what Cira could not answer for after something went wrong.
 - [x] **4.8 Accessibility.** An audit against WCAG 2.2 AA, then fixes: dialogs
       that take and return focus, contrast measured on every theme preset,
       focus rings on every control, overlays a keyboard can use, and live
-      regions that say something useful (2026-09-23, A11Y-1 to 7).
+      regions that say something useful, focus that survives every change
+      made in place, and an announcement for each (2026-09-23, A11Y-1 to 11).
 
 ---
 

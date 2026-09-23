@@ -163,15 +163,19 @@ the test lives. When one is deliberately left alone, it says why.
 
 From an audit of every page against WCAG 2.2 AA, 2026-09-23, with the blocker confirmed with a keyboard on production first.
 
-| ID     | Sev      | Finding                                                                                                                                                                         | Status |
-| ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| A11Y-1 | critical | Dialogs never took focus: a keyboard user stayed on the button behind the overlay, Tab walked the dimmed page, and closing lost their place.                                    | fixed  |
-| A11Y-2 | high     | Faint text carrying labels, status words and times was 2.7:1 on a dialog; light-theme greens, ambers and reds, the danger button and text-box edges were all below the minimum. | fixed  |
-| A11Y-3 | high     | Checkboxes had no focus ring at all, and ticking one inside a dialog threw focus out of it.                                                                                     | fixed  |
-| A11Y-4 | medium   | The Apps page took the arrow keys from the whole window: the page would not scroll and a dropdown on it would not change.                                                       | fixed  |
-| A11Y-5 | medium   | The logs list was a live region, so Live mode read every new line aloud without end; levels were only a colour.                                                                 | fixed  |
-| A11Y-6 | medium   | The command palette, mobile menu, Ask panel, assistant dialog and colour picker each lost or never took focus, and the palette announced nothing as it moved.                   | fixed  |
-| A11Y-7 | low      | No skip link, two h1s on app pages, switches named for the action rather than the setting, and bare Remove buttons.                                                             | fixed  |
+| ID      | Sev      | Finding                                                                                                                                                                         | Status |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| A11Y-1  | critical | Dialogs never took focus: a keyboard user stayed on the button behind the overlay, Tab walked the dimmed page, and closing lost their place.                                    | fixed  |
+| A11Y-2  | high     | Faint text carrying labels, status words and times was 2.7:1 on a dialog; light-theme greens, ambers and reds, the danger button and text-box edges were all below the minimum. | fixed  |
+| A11Y-3  | high     | Checkboxes had no focus ring at all, and ticking one inside a dialog threw focus out of it.                                                                                     | fixed  |
+| A11Y-4  | medium   | The Apps page took the arrow keys from the whole window: the page would not scroll and a dropdown on it would not change.                                                       | fixed  |
+| A11Y-5  | medium   | The logs list was a live region, so Live mode read every new line aloud without end; levels were only a colour.                                                                 | fixed  |
+| A11Y-6  | medium   | The command palette, mobile menu, Ask panel, assistant dialog and colour picker each lost or never took focus, and the palette announced nothing as it moved.                   | fixed  |
+| A11Y-7  | low      | No skip link, two h1s on app pages, switches named for the action rather than the setting, and bare Remove buttons.                                                             | fixed  |
+| A11Y-8  | medium   | Buttons disabled while they saved dropped focus to the top of the page, and removing a row, a team or a token left focus nowhere.                                               | fixed  |
+| A11Y-9  | medium   | Most changes made in place - grants, roles, teams, domains, sign-in, capability toggles - said nothing to a screen reader when they landed.                                     | fixed  |
+| A11Y-10 | low      | Meaning held only in tooltips, identical Copy and Enable buttons, headings drawn as labels, a heading inside a button, and a usage list with no column headers.                 | fixed  |
+| A11Y-11 | low      | The colour wheel gave no value, the ambient field kept moving after someone asked for less motion, and the dark switch knob was 2:1 on its track.                               | fixed  |
 
 ## Found by hand
 
@@ -327,4 +331,8 @@ What changed for each finding, and where its test is.
 - **A11Y-5** (fixed). The log list says a count instead of reading lines; each line says its level in words.
 - **A11Y-6** (fixed). The palette is a combobox driving a listbox and returns focus on close; the mobile menu and assistant dialog are native dialogs; the Ask panel focuses its field and announces answers once whole; the colour picker moves focus in and marks the colours in use.
 - **A11Y-7** (fixed). A skip link and named navigation in the shell, `PageTitle` steps aside on pages with their own h1, one shared switch named for its setting, and Remove and Revoke buttons that say what they remove.
+- **A11Y-8** (fixed). Pending controls are aria-disabled and refuse a second press; `.btn[aria-disabled]` looks as disabled did. When the pressed control goes away, focus moves to the section heading, the control in its new place, or the next step (the People heading, a moved capability's button, the token's Copy button, the onboarding step's h1).
+- **A11Y-9** (fixed). `LiveStatus` (components/ui/live-status.tsx) is an always-mounted status region used by each panel; `announce()` hands words to the shell's `Announcer` when the speaking row is about to be removed. The console announces a run's outcome in a sentence instead of reading its body.
+- **A11Y-10** (fixed). Tooltip-only meanings repeated in screen-reader text; Copy, Enable and Delete buttons name their object; group labels are h2/h3; team cards put the button inside the heading and stretch it over the card; the usage page is a table with a caption and column headers; the change search has a visible label and a result count.
+- **A11Y-11** (fixed). The wheel is a slider whose value is said as a hue name and saturation; the ambient field listens for the reduced-motion preference changing; `--t-live-fill` gives the dark switch track 4:1 against its knob and the ground.
 - **E2E-12**, **E2E-13** (fixed). Found by the stranger's first day on production: "Invite your team" opens the invite dialog (`?invite=1`), and onboarding skips the name step for someone already named.

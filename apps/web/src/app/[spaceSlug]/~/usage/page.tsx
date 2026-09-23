@@ -151,19 +151,19 @@ export default async function UsagePage({
                       </th>
                       <th
                         scope="col"
-                        className="hidden w-[104px] px-2 py-2 text-right font-medium sm:table-cell"
+                        className="hidden w-[1%] whitespace-nowrap px-3 py-2 text-right font-medium sm:table-cell"
                       >
                         Running time
                       </th>
                       <th
                         scope="col"
-                        className="hidden w-[104px] px-2 py-2 text-right font-medium sm:table-cell"
+                        className="hidden w-[1%] whitespace-nowrap px-3 py-2 text-right font-medium sm:table-cell"
                       >
                         Requests
                       </th>
                       <th
                         scope="col"
-                        className="w-[92px] px-4 py-2 text-right font-medium"
+                        className="w-[1%] px-4 py-2 text-right font-medium whitespace-nowrap"
                       >
                         Cost
                       </th>
@@ -199,13 +199,13 @@ export default async function UsagePage({
                             {app.requests.toLocaleString()} requests
                           </span>
                         </th>
-                        <td className="tabular hidden px-2 py-3 text-right text-[12.5px] text-ink-muted sm:table-cell">
+                        <td className="tabular whitespace-nowrap hidden px-3 py-3 text-right text-[12.5px] text-ink-muted sm:table-cell">
                           {describeInstanceTime(app.instanceSeconds)}
                         </td>
-                        <td className="tabular hidden px-2 py-3 text-right text-[12.5px] text-ink-muted sm:table-cell">
+                        <td className="tabular whitespace-nowrap hidden px-3 py-3 text-right text-[12.5px] text-ink-muted sm:table-cell">
                           {app.requests.toLocaleString()}
                         </td>
-                        <td className="tabular px-4 py-3 text-right text-[12.5px] text-ink">
+                        <td className="tabular whitespace-nowrap px-4 py-3 text-right text-[12.5px] text-ink">
                           {describeDollars(app.dollars)}
                         </td>
                       </tr>

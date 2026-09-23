@@ -203,19 +203,8 @@ export function AccessPanel({
         )}
 
         {always === null ? null : (
-          <li
-            className="px-4 py-3 text-[12px] leading-relaxed text-ink-subtle"
-            title={[implicit.ownerName, ...implicit.adminNames]
-              .filter((name) => name !== null)
-              .join("\n")}
-          >
+          <li className="px-4 py-3 text-[12px] leading-relaxed text-ink-subtle">
             {always}
-            <span className="sr-only">
-              {" "}
-              {[implicit.ownerName, ...implicit.adminNames]
-                .filter((name) => name !== null)
-                .join(", ")}
-            </span>
           </li>
         )}
       </ul>
@@ -262,8 +251,11 @@ export function AccessPanel({
               <>
                 <TeamGlyph />
                 {team.name}
+                {/* In brackets: the button is a flex row, and its parts are
+                    read with a space between them, so ", 1 person" came out
+                    as "Support , 1 person". */}
                 <span className="sr-only">
-                  , {team.size} {team.size === 1 ? "person" : "people"}
+                  ({team.size} {team.size === 1 ? "person" : "people"})
                 </span>
               </>
             )}
@@ -298,7 +290,9 @@ export function AccessPanel({
                 <span className="sr-only">Give access to </span>
                 <span aria-hidden="true">+ </span>
                 {member.name}
-                <span className="sr-only">, {member.email}</span>
+                {member.name === member.email ? null : (
+                  <span className="sr-only">({member.email})</span>
+                )}
               </>
             )}
           </button>
