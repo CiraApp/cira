@@ -19,6 +19,9 @@ can reach it.
 | -------------------- | ------------------------------------------------------------------- |
 | `cira login`         | Connect this machine. Approve it in a browser; works over SSH.      |
 | `cira deploy`        | Deploy this folder. `--space <slug>` when you are in more than one. |
+| `cira remove`        | Take this folder's app down, and delete what it left behind.        |
+| `cira database url`  | The app's database address, for `psql` or `pg_dump`.                |
+| `cira cache url`     | The app's cache address, for `redis-cli`.                           |
 | `cira status`        | What this folder is linked to.                                      |
 | `cira whoami`        | Who you are signed in as, and your spaces.                          |
 | `cira skill install` | Add the Cira Skill to your coding agents.                           |
@@ -62,6 +65,22 @@ reads.
 
 It is a warning, never a refusal. Cira is reading your source and can be wrong.
 `--yes` skips the whole exchange, and CI is never asked at all.
+
+## A database or a cache
+
+An app that keeps anything needs somewhere to keep it. Ask for one and Cira
+makes it, just for this app, and gives it to the app as the variable its code
+reads:
+
+```sh
+cira deploy --database   # Postgres, as DATABASE_URL
+cira deploy --cache      # Redis, as REDIS_URL
+```
+
+When Cira sees code reading a `DATABASE_URL` or `REDIS_URL` that nothing sets,
+it offers the same thing at the prompt. The database or cache belongs to the
+app: it is there on every deploy after, and removing the app deletes it. A
+`DATABASE_URL` the app already has is never replaced.
 
 ## An app that is a frontend and an API
 

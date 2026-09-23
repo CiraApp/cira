@@ -184,7 +184,11 @@ what it uses.
       `probe.acmetest.app`: certificate in about two minutes, opened through
       Cira's sign-in, refused without a session, removed cleanly.
 - [ ] **3.6 Penetration test** of the app proxy, sessions and MCP, by an
-      outside firm. _You._
+      outside firm. _You._ An internal test came first (2026-09-23,
+      `docs/pentest-2026-09.md`): no critical or high findings; SCIM reach,
+      forged Cira headers through the proxy and the audience guidance were
+      fixed and re-tested on production. It ends with where the firm's time is
+      best spent.
 
 ## Phase 4 - Release readiness
 
@@ -219,6 +223,22 @@ by asking what Cira could not answer for after something went wrong.
       `docs/restore.md` is the procedure for a real one. Found doing it: Neon
       keeps only 6 hours of history on the current plan, which is one more
       reason for the paid plan in 3.4.
+
+- [x] **4.6 A stranger's first day.** A new account, made through the real
+      sign-up and its human check, founded a company, invited someone who
+      accepted from the email, deployed an app with the published CLI, opened
+      it, was the only one who could, and deleted the company (2026-09-23).
+      Found the published CLI ten changes behind (0.7.0 staged), and two rough
+      edges in onboarding, both fixed.
+- [ ] **4.7 Downtime reaching you.** Drilled 2026-09-23: `/api/health` failed
+      from 06:34 to 06:55 UTC and recovered on its own. Whether Sentry's alert
+      reached an inbox is not yet confirmed - Sentry has never emailed
+      akirtania17@gmail.com, so its alerts go somewhere else. _You:_ check that
+      inbox for the drill's alert.
+- [x] **4.8 Accessibility.** An audit against WCAG 2.2 AA, then fixes: dialogs
+      that take and return focus, contrast measured on every theme preset,
+      focus rings on every control, overlays a keyboard can use, and live
+      regions that say something useful (2026-09-23, A11Y-1 to 7).
 
 ---
 
