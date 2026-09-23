@@ -72,20 +72,20 @@ Status: **in place** (a control exists and there is evidence), **partial**
 
 ## A1 Availability and C1 Confidentiality
 
-| Control                | Status   | Evidence                                                                       |
-| ---------------------- | -------- | ------------------------------------------------------------------------------ |
-| Backups of Cira's data | partial  | Neon point-in-time restore exists; never restored as a test                    |
-| Customer data export   | in place | Space export (`lib/space-export.ts`), `cira database url` for app data         |
-| Customer data deletion | in place | App removal deletes databases, caches and names; space deletion everything     |
-| Encryption in transit  | in place | TLS everywhere, HSTS on Vercel; `rediss://` and `sslmode=require` for app data |
-| Encryption at rest     | in place | Provider-managed (Neon, Google, Upstash)                                       |
+| Control                | Status   | Evidence                                                                                    |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------- |
+| Backups of Cira's data | partial  | Restore drilled 2026-09-23 (`docs/restore.md`); only 6 hours of history on the current plan |
+| Customer data export   | in place | Space export (`lib/space-export.ts`), `cira database url` for app data                      |
+| Customer data deletion | in place | App removal deletes databases, caches and names; space deletion everything                  |
+| Encryption in transit  | in place | TLS everywhere, HSTS on Vercel; `rediss://` and `sslmode=require` for app data              |
+| Encryption at rest     | in place | Provider-managed (Neon, Google, Upstash)                                                    |
 
 ## The gaps, in the order worth closing
 
 1. **Peer review before production.** GitHub Pro for branch protection, and a
    second person to review; with one person, at least a required CI check.
-2. **A restore drill.** Restore Neon to a branch at a past time, check it,
-   write down how long it took.
+2. **Longer database history.** Restore is drilled (`docs/restore.md`), but
+   Neon keeps only 6 hours on the current plan; a paid plan keeps days.
 3. **Written policies.** Security, access control, incident response, change
    management, vendor management - short, and matching this document.
 4. **Access review.** Quarterly: who holds operator access to each vendor, who

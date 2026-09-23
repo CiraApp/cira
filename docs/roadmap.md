@@ -213,9 +213,12 @@ by asking what Cira could not answer for after something went wrong.
       someone joins, said in the email and applied the moment they accept; each
       person's row on Members opens their teams to tick, so the roster can be
       kept from either side (2026-09-23).
-- [ ] **4.5 A restore drill.** Restore Cira's own database to a branch at a
-      past time, check it, and write down how long it took. Never done, so
-      "there are backups" is a belief rather than a fact.
+- [x] **4.5 A restore drill.** Cira's database restored to a moment 49
+      minutes back, on a new branch: answering in 2.6 seconds, verified in 6.5,
+      right to the row (2026-09-23). `scripts/restore-drill.mjs` repeats it;
+      `docs/restore.md` is the procedure for a real one. Found doing it: Neon
+      keeps only 6 hours of history on the current plan, which is one more
+      reason for the paid plan in 3.4.
 
 ---
 
