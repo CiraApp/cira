@@ -219,6 +219,12 @@ async function reachOf(
       ? "callable"
       : "absent";
   }
+  // A write served on GET - `GET /api/visits` that increments a counter - is
+  // the one case where asking with GET is doing it. Measured on production:
+  // the check ran the app's counter up. Nothing else is safe to send, so the
+  // app is left to say at its first real call.
+  if (capability.method === "GET" || capability.method === "HEAD") return "unknown";
+
   // OPTIONS said nothing useful: no `Allow`, a redirect, a 404, or the same
   // answer it gives a path that does not exist. A 404 used to settle it as
   // absent, but a server that never handles OPTIONS - a plain Node `http`

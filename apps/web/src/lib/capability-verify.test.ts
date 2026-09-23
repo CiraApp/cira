@@ -463,6 +463,27 @@ describe("verifyCapabilities, on what real apps answer", () => {
     expect(result.absent).toEqual(["inventedThing"]);
   });
 
+  it("never calls a write that is served on GET, whatever OPTIONS says", async () => {
+    // Measured on production: `GET /api/visits` increments a counter, and the
+    // check ran it up before this. A write is never performed to check it.
+    const seen: string[] = [];
+    const fetcher = async (url: string, init: RequestInit): Promise<Response> => {
+      const { pathname } = new URL(url);
+      seen.push(`${(init.method ?? "GET").toUpperCase()} ${pathname}`);
+      return new Response('{"error":"not found"}', { status: 404 });
+    };
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [write("countVisit", "GET", "/api/visits")],
+    });
+
+    expect(result.callable).toEqual([]);
+    expect(result.absent).toEqual([]);
+    expect(seen.filter((call) => call === "GET /api/visits")).toEqual([]);
+  });
+
   it("keeps a write on a server that never answers OPTIONS", async () => {
     // A plain Node `http` server: 404 to OPTIONS everywhere, and to anything
     // it has no handler for. Measured on production, where the real
