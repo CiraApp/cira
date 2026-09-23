@@ -22,6 +22,12 @@ import { supersedeEarlierDeploys } from "@/lib/deployment-sync";
  * version's release command did to a database is still done; the app going
  * back does not undo it. So a rollback past a migration is offered with that
  * said plainly, rather than quietly.
+ *
+ * Deliberately not gated on the plan, unlike deploying. A space whose trial
+ * ended cannot ship new code, and everything it deployed keeps answering; a
+ * rollback ships nothing new - it returns to a build this company already
+ * paid to build and already ran. Refusing it would be holding an app broken
+ * over an invoice.
  */
 
 export type RollbackResult = { ok: true } | { ok: false; error: string };
