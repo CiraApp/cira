@@ -139,9 +139,7 @@ export async function setJoinByDomain(
   return { ok: true };
 }
 
-async function adminOf(
-  spaceSlug: string,
-): Promise<
+async function adminOf(spaceSlug: string): Promise<
   | {
       ok: true;
       spaceId: string;
