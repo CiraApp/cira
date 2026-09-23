@@ -309,14 +309,12 @@ describe.skipIf(!hasDatabase)("SCIM", () => {
       const { spaces } = await import("@cira/db");
       const { directoryDomains } = await import("./scim");
       const personal = newId("space");
-      await database
-        .insert(spaces)
-        .values({
-          id: personal,
-          name: "Personal",
-          slug: "personal-co",
-          domain: "gmail.com",
-        });
+      await database.insert(spaces).values({
+        id: personal,
+        name: "Personal",
+        slug: "personal-co",
+        domain: "gmail.com",
+      });
       expect(await directoryDomains(personal)).toEqual([]);
     });
 
