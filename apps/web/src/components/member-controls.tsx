@@ -178,7 +178,7 @@ export function MemberControls({
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            data-dialog-close
+            data-autofocus
             onClick={() => setConfirming(false)}
             className="btn btn-ghost"
           >

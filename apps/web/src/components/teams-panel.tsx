@@ -197,7 +197,16 @@ export function TeamsPanel({
               className="field py-2.5 text-[13.5px]"
             />
           </label>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {editing === "new" ? (
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="btn btn-ghost"
+              >
+                Cancel
+              </button>
+            ) : null}
             <button type="submit" disabled={pending} className="btn btn-secondary">
               {editing === "new"
                 ? pending
@@ -268,7 +277,6 @@ export function TeamsPanel({
               )}
               <button
                 type="button"
-                data-dialog-close
                 onClick={() => setEditing(null)}
                 className="btn btn-ghost"
               >

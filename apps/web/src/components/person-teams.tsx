@@ -113,12 +113,7 @@ export function PersonTeams({
         ) : null}
 
         <div className="mt-5 flex justify-end">
-          <button
-            type="button"
-            data-dialog-close
-            onClick={() => setOpen(false)}
-            className="btn btn-ghost"
-          >
+          <button type="button" onClick={() => setOpen(false)} className="btn btn-ghost">
             Done
           </button>
         </div>

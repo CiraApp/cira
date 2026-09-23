@@ -40,6 +40,7 @@
   --color-sunken: var(--t-sunken);
   --color-line: var(--t-line);
   --color-line-strong: var(--t-line-strong);
+  --color-field-border: var(--t-field-border);
 
   --color-ink: var(--t-ink);
   --color-ink-muted: var(--t-ink-muted);
@@ -53,6 +54,7 @@
   --color-live: var(--t-live);
   --color-failed: var(--t-failed);
   --color-pending: var(--t-pending);
+  --color-danger-fill: var(--t-danger-fill);
 
   /*
    * Lightly softened, never a pill. Three pixels reads as a cut edge rather
@@ -104,10 +106,22 @@
   --t-sunken: color-mix(in oklab, var(--user-base) 92%, #000000);
   --t-line: color-mix(in oklab, var(--user-base) 89%, #ffffff);
   --t-line-strong: color-mix(in oklab, var(--user-base) 81%, #ffffff);
+  /*
+   * The edge of something you type into or switch: at least 3:1 against what
+   * it sits on (WCAG 1.4.11). A divider can be faint; the only visible sign of
+   * a text box cannot, or someone with low vision cannot find it.
+   */
+  --t-field-border: color-mix(in oklab, var(--user-base) 55%, #ffffff);
 
+  /*
+   * Text steps. Subtle carries real information - field labels, status
+   * words, when something happened - so it is held to 4.5:1 on the lightest
+   * surface it sits on (a dialog) for every preset; muted stays a clear step
+   * brighter so the two remain distinguishable.
+   */
   --t-ink: color-mix(in oklab, var(--user-base) 6%, #ffffff);
-  --t-ink-muted: color-mix(in oklab, var(--user-base) 40%, #ffffff);
-  --t-ink-subtle: color-mix(in oklab, var(--user-base) 60%, #ffffff);
+  --t-ink-muted: color-mix(in oklab, var(--user-base) 28%, #ffffff);
+  --t-ink-subtle: color-mix(in oklab, var(--user-base) 43%, #ffffff);
 
   --t-accent-hover: color-mix(in oklab, var(--user-accent) 82%, #ffffff);
   --t-accent-quiet: color-mix(in oklab, var(--user-base) 84%, var(--user-accent));
@@ -115,6 +129,8 @@
   --t-live: #2fbd84;
   --t-failed: #f06d6d;
   --t-pending: #d79a3c;
+  /* Under white button text: the failed red itself is too light for that. */
+  --t-danger-fill: #c43a3a;
 
   --t-shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
   --t-shadow-float:
@@ -148,17 +164,20 @@
   --t-sunken: color-mix(in oklab, var(--user-base) 95%, #000000);
   --t-line: color-mix(in oklab, var(--user-base) 91%, #000000);
   --t-line-strong: color-mix(in oklab, var(--user-base) 80%, #000000);
+  --t-field-border: color-mix(in oklab, var(--user-base) 64%, #000000);
 
   --t-ink: color-mix(in oklab, var(--user-base) 6%, #000000);
   --t-ink-muted: color-mix(in oklab, var(--user-base) 36%, #000000);
-  --t-ink-subtle: color-mix(in oklab, var(--user-base) 55%, #000000);
+  --t-ink-subtle: color-mix(in oklab, var(--user-base) 51%, #000000);
 
   --t-accent-hover: color-mix(in oklab, var(--user-accent) 86%, #000000);
   --t-accent-quiet: color-mix(in oklab, var(--user-base) 90%, var(--user-accent));
 
-  --t-live: #0f8a5f;
-  --t-failed: #cc3838;
-  --t-pending: #b0730f;
+  /* Dark enough to be read as words on every light surface, not only seen. */
+  --t-live: #0a6b49;
+  --t-failed: #b02e2e;
+  --t-pending: #855607;
+  --t-danger-fill: #c43a3a;
 
   --t-shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
   --t-shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
@@ -267,16 +286,23 @@ body::after {
   }
 }
 
-/* Keyboard users get a crisp square ring; pointer users get nothing. */
+/*
+ * Keyboard users get a crisp ring; pointer users get nothing. It follows the
+ * element's own corners: forcing a radius here squared off every round
+ * switch and the colour wheel the moment they took focus.
+ */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
+/*
+ * Text fields show focus their own way (the accent border and glow in
+ * `.field:focus`), so only they drop the ring. Checkboxes, radios and
+ * sliders keep it: they have no other way to show a keyboard where it is.
+ */
+.field:focus-visible,
+.field-bare:focus-visible {
   outline: none;
 }
 
@@ -689,7 +715,7 @@ select:focus-visible {
   }
 
   .btn-danger {
-    background: var(--color-failed);
+    background: var(--color-danger-fill);
     color: #fff;
   }
   @media (hover: hover) {
@@ -708,7 +734,7 @@ select:focus-visible {
     width: 100%;
     min-width: 0;
     border-radius: var(--radius-edge);
-    border: 1px solid var(--color-line);
+    border: 1px solid var(--color-field-border);
     background: var(--color-surface);
     padding: 0.5rem 0.75rem;
     font-size: 13.5px;
@@ -786,7 +812,8 @@ select:focus-visible {
     0 0 0 1px rgb(0 0 0 / 0.45),
     0 2px 6px rgb(0 0 0 / 0.4);
 }
-.track:focus-visible::-webkit-slider-thumb {
+.track:focus-visible::-webkit-slider-thumb,
+.track:focus-visible::-moz-range-thumb {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }

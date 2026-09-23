@@ -7,7 +7,7 @@ import {
   type CreatedInvite,
 } from "@/lib/invite-actions";
 import { CopyableCommand } from "./copyable-command";
-import { Portal } from "./ui/portal";
+import { Dialog } from "./ui/dialog";
 
 /**
  * Inviting is a rare, deliberate act, so it lives behind one button rather
@@ -27,24 +27,6 @@ export function InviteDialog({
   teams: Array<{ id: string; name: string }>;
 }) {
   const [open, setOpen] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  const [state, action, pending] = useActionState<
-    ActionResult<CreatedInvite> | null,
-    FormData
-  >(createInvite, null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  const inviteUrl =
-    state?.ok === true ? `${window.location.origin}${state.data.url}` : null;
 
   return (
     <>
@@ -74,149 +56,161 @@ export function InviteDialog({
         <span className="hidden sm:inline">Invite people</span>
       </button>
 
-      {open ? (
-        <Portal>
-          <div
-            className="enter-fade fixed inset-0 z-50 flex items-start justify-center bg-sunken/70 px-5 pt-[12vh] backdrop-blur-[3px]"
-            onMouseDown={(e) => {
-              if (!dialogRef.current?.contains(e.target as Node)) setOpen(false);
-            }}
+      <Dialog open={open} onClose={() => setOpen(false)} title="Invite to this space">
+        {/* Mounted only while open, so each opening starts from an empty
+            form rather than showing the last invitation's link again. */}
+        <InviteForm
+          spaceSlug={spaceSlug}
+          emailing={emailing}
+          teams={teams}
+          onDone={() => setOpen(false)}
+        />
+      </Dialog>
+    </>
+  );
+}
+
+function InviteForm({
+  spaceSlug,
+  emailing,
+  teams,
+  onDone,
+}: {
+  spaceSlug: string;
+  emailing: boolean;
+  teams: Array<{ id: string; name: string }>;
+  onDone: () => void;
+}) {
+  const [state, action, pending] = useActionState<
+    ActionResult<CreatedInvite> | null,
+    FormData
+  >(createInvite, null);
+  const outcome = useRef<HTMLParagraphElement>(null);
+
+  const inviteUrl =
+    state?.ok === true ? `${window.location.origin}${state.data.url}` : null;
+
+  // The form, and the button that was pressed, are gone once the invitation
+  // exists. Focus goes to what replaced them, so it is read out rather than
+  // left somewhere that no longer is.
+  useEffect(() => {
+    if (inviteUrl !== null) outcome.current?.focus();
+  }, [inviteUrl]);
+
+  if (inviteUrl !== null && state?.ok === true) {
+    return (
+      <>
+        <p
+          ref={outcome}
+          tabIndex={-1}
+          className="text-[12.5px] leading-relaxed text-ink-muted focus:outline-none"
+        >
+          {state.data.emailed
+            ? `Invitation sent to ${state.data.email}. It works once, for that address only, and lapses in a week. If it does not arrive, send them this link yourself.`
+            : `Send this to ${state.data.email}. It works once, for that address only, and lapses in a week.`}
+        </p>
+
+        <div className="mt-5">
+          <CopyableCommand command={inviteUrl} shell={false} />
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <button type="button" onClick={onDone} className="btn btn-primary">
+            Done
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Pulled up under the title, where the dialog's own description sits:
+          it belongs to the form, and goes when the form does. */}
+      <p className="-mt-3.5 text-[12.5px] leading-relaxed text-ink-muted">
+        {emailing
+          ? "We’ll email them an invitation. Only the address you enter can accept it."
+          : "We’ll give you a link to send them. Only the address you enter can use it."}
+      </p>
+
+      <form action={action} className="mt-5 flex flex-col gap-3">
+        <input type="hidden" name="spaceSlug" value={spaceSlug} />
+
+        <label className="flex flex-col gap-1.5 text-[12px] text-ink-subtle">
+          Their email address
+          <input
+            id="invite-email"
+            name="email"
+            type="email"
+            required
+            autoComplete="off"
+            data-autofocus
+            placeholder="colleague@company.com"
+            className="field py-2.5 text-[13.5px] text-ink"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5 text-[12px] text-ink-subtle">
+          What they can do
+          <select
+            id="invite-role"
+            name="role"
+            defaultValue="member"
+            className="field py-2.5 text-[13.5px] text-ink"
           >
-            <div
-              ref={dialogRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="invite-title"
-              className="enter-pop w-full max-w-md rounded-[var(--radius-edge)] border border-line-strong bg-raised p-6 shadow-[var(--shadow-panel)]"
-            >
-              <h2
-                id="invite-title"
-                className="text-[15px] font-semibold tracking-[-0.01em] text-ink"
-              >
-                Invite to this space
-              </h2>
+            <option value="member">Member - can use apps they are given</option>
+            <option value="admin">Admin - can manage apps and invite</option>
+          </select>
+        </label>
 
-              {inviteUrl === null ? (
-                <>
-                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
-                    {emailing
-                      ? "We\u2019ll email them an invitation. Only the address you enter can accept it."
-                      : "We\u2019ll give you a link to send them. Only the address you enter can use it."}
-                  </p>
-
-                  <form action={action} className="mt-5 flex flex-col gap-3">
-                    <input type="hidden" name="spaceSlug" value={spaceSlug} />
-
-                    <label htmlFor="invite-email" className="sr-only">
-                      Email address
-                    </label>
-                    <input
-                      id="invite-email"
-                      name="email"
-                      type="email"
-                      required
-                      autoFocus
-                      placeholder="colleague@company.com"
-                      className="field py-2.5 text-[13.5px]"
-                    />
-
-                    <label htmlFor="invite-role" className="sr-only">
-                      Role
-                    </label>
-                    <select
-                      id="invite-role"
-                      name="role"
-                      defaultValue="member"
-                      className="field py-2.5 text-[13.5px]"
-                    >
-                      <option value="member">Member - can use apps they are given</option>
-                      <option value="admin">Admin - can manage apps and invite</option>
-                    </select>
-
-                    {/* Chosen here rather than after they arrive, because the
-                        first day is exactly when nobody goes back to a roster:
-                        they accept and the apps their team opens are open. */}
-                    {teams.length > 0 ? (
-                      <fieldset>
-                        <legend className="mb-1.5 text-[12px] text-ink-subtle">
-                          Teams they start on
-                        </legend>
-                        <div className="flex max-h-40 flex-col divide-y divide-line overflow-y-auto rounded-[var(--radius-edge)] border border-line bg-surface">
-                          {teams.map((team) => (
-                            <label
-                              key={team.id}
-                              className="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 text-[13px] text-ink transition-colors duration-150 hover:bg-sunken/40"
-                            >
-                              <input
-                                type="checkbox"
-                                name="teams"
-                                value={team.id}
-                                className="h-3.5 w-3.5 accent-[var(--color-accent)]"
-                              />
-                              <span className="min-w-0 truncate">{team.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </fieldset>
-                    ) : null}
-
-                    {state?.ok === false ? (
-                      <p role="alert" className="text-[12.5px] text-failed">
-                        {state.error}
-                      </p>
-                    ) : null}
-
-                    <div className="mt-1 flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setOpen(false)}
-                        className="btn btn-ghost"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={pending}
-                        className="btn btn-primary"
-                      >
-                        {emailing
-                          ? pending
-                            ? "Sending..."
-                            : "Send invite"
-                          : pending
-                            ? "Creating..."
-                            : "Create invite"}
-                      </button>
-                    </div>
-                  </form>
-                </>
-              ) : (
-                <>
-                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
-                    {state?.ok === true && state.data.emailed
-                      ? `Invitation sent to ${state.data.email}. It works once, for that address only, and lapses in a week. If it does not arrive, send them this link yourself.`
-                      : `Send this to ${state?.ok === true ? state.data.email : "them"}. It works once, for that address only, and lapses in a week.`}
-                  </p>
-
-                  <div className="mt-5">
-                    <CopyableCommand command={inviteUrl} shell={false} />
-                  </div>
-
-                  <div className="mt-5 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setOpen(false)}
-                      className="btn btn-primary"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </>
-              )}
+        {/* Chosen here rather than after they arrive, because the first day is
+            exactly when nobody goes back to a roster: they accept and the
+            apps their team opens are open. */}
+        {teams.length > 0 ? (
+          <fieldset>
+            <legend className="mb-1.5 text-[12px] text-ink-subtle">
+              Teams they start on
+            </legend>
+            <div className="flex max-h-40 flex-col divide-y divide-line overflow-y-auto rounded-[var(--radius-edge)] border border-line bg-surface">
+              {teams.map((team) => (
+                <label
+                  key={team.id}
+                  className="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 text-[13px] text-ink transition-colors duration-150 hover:bg-sunken/40"
+                >
+                  <input
+                    type="checkbox"
+                    name="teams"
+                    value={team.id}
+                    className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+                  />
+                  <span className="min-w-0 truncate">{team.name}</span>
+                </label>
+              ))}
             </div>
-          </div>
-        </Portal>
-      ) : null}
+          </fieldset>
+        ) : null}
+
+        {state?.ok === false ? (
+          <p role="alert" className="text-[12.5px] text-failed">
+            {state.error}
+          </p>
+        ) : null}
+
+        <div className="mt-1 flex justify-end gap-2">
+          <button type="button" onClick={onDone} className="btn btn-ghost">
+            Cancel
+          </button>
+          <button type="submit" disabled={pending} className="btn btn-primary">
+            {emailing
+              ? pending
+                ? "Sending..."
+                : "Send invite"
+              : pending
+                ? "Creating..."
+                : "Create invite"}
+          </button>
+        </div>
+      </form>
     </>
   );
 }
