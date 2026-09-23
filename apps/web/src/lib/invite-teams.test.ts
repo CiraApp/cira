@@ -167,6 +167,41 @@ describe.skipIf(!hasDatabase)("inviting someone onto a team", () => {
     expect(await onTeams()).toEqual(["Support"]);
   });
 
+  /**
+   * Found on production: one tick of a team box wrote three alternating lines
+   * into the record a second apart, so the roster and the record disagreed
+   * about where someone ended up.
+   */
+  it("writes down a team change once, however many times it is asked", async () => {
+    const { setTeamMembership } = await import("./team-actions");
+    const { changesIn } = await import("./change-record");
+    const { memberships } = await import("@cira/db");
+
+    await database
+      .insert(memberships)
+      .values({ id: newId("membership"), userId: hire.id, spaceId, role: "member" });
+
+    const lines = async () =>
+      (await changesIn(spaceId)).filter((c) => c.kind === "team-membership-changed");
+
+    expect(await setTeamMembership("teams-co", support, hire.id, true)).toEqual({
+      ok: true,
+      data: null,
+    });
+    // Asked for the same state again - a second click, a stale page, a retry.
+    expect(await setTeamMembership("teams-co", support, hire.id, true)).toEqual({
+      ok: true,
+      data: null,
+    });
+    expect(await onTeams()).toEqual(["Support"]);
+    expect(await lines()).toHaveLength(1);
+
+    await setTeamMembership("teams-co", support, hire.id, false);
+    await setTeamMembership("teams-co", support, hire.id, false);
+    expect(await onTeams()).toEqual([]);
+    expect(await lines()).toHaveLength(2);
+  });
+
   it("says in the record which teams someone was invited onto and joined", async () => {
     const { acceptInvite } = await import("./invite-actions");
     const { changesIn } = await import("./change-record");

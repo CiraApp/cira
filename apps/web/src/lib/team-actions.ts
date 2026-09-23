@@ -171,18 +171,25 @@ export async function setTeamMembership(
     .limit(1);
 
   if (!onTeam) {
-    await database
+    // What actually changed, not what was asked: putting someone on a team
+    // they are already on, or taking off someone who was never there, is a
+    // request that succeeds and changes nothing - and a record that said
+    // otherwise would be a record of things that did not happen.
+    const removed = await database
       .delete(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+      .returning({ id: teamMembers.id });
 
-    await record({
-      spaceId: ctx.spaceId,
-      kind: "team-membership-changed",
-      actor: ctx.actor,
-      actorUserId: ctx.actorUserId,
-      subject: team.name,
-      detail: `${who?.email ?? "someone"} taken out`,
-    });
+    if (removed.length > 0) {
+      await record({
+        spaceId: ctx.spaceId,
+        kind: "team-membership-changed",
+        actor: ctx.actor,
+        actorUserId: ctx.actorUserId,
+        subject: team.name,
+        detail: `${who?.email ?? "someone"} taken out`,
+      });
+    }
 
     revalidatePath(`/${spaceSlug}/~/members`);
     return { ok: true, data: null };
@@ -198,19 +205,22 @@ export async function setTeamMembership(
   if (member === undefined)
     return { ok: false, error: "That person is not in this space." };
 
-  await database
+  const added = await database
     .insert(teamMembers)
     .values({ id: newId("teamMember"), teamId, userId })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: teamMembers.id });
 
-  await record({
-    spaceId: ctx.spaceId,
-    kind: "team-membership-changed",
-    actor: ctx.actor,
-    actorUserId: ctx.actorUserId,
-    subject: team.name,
-    detail: `${who?.email ?? "someone"} put on it`,
-  });
+  if (added.length > 0) {
+    await record({
+      spaceId: ctx.spaceId,
+      kind: "team-membership-changed",
+      actor: ctx.actor,
+      actorUserId: ctx.actorUserId,
+      subject: team.name,
+      detail: `${who?.email ?? "someone"} put on it`,
+    });
+  }
 
   revalidatePath(`/${spaceSlug}/~/members`);
   return { ok: true, data: null };

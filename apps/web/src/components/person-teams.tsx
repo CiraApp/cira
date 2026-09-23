@@ -51,10 +51,15 @@ export function PersonTeams({
     );
   }
 
-  const toggle = (team: TeamChoice) => {
+  // What the box says, not what the props said when this render was made.
+  // Asking for a state rather than an inversion is what makes a repeat - a
+  // double click, a click while the last one is still in flight, a refresh
+  // arriving late - land on the state the person chose instead of undoing it.
+  const set = (team: TeamChoice, wanted: boolean) => {
+    if (wanted === team.on) return;
     setError(null);
     startTransition(async () => {
-      const result = await setTeamMembership(spaceSlug, team.id, person.userId, !team.on);
+      const result = await setTeamMembership(spaceSlug, team.id, person.userId, wanted);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -90,7 +95,7 @@ export function PersonTeams({
                   type="checkbox"
                   checked={team.on}
                   disabled={pending}
-                  onChange={() => toggle(team)}
+                  onChange={(event) => set(team, event.target.checked)}
                   className="h-3.5 w-3.5 accent-[var(--color-accent)]"
                 />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
