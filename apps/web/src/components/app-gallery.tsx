@@ -282,7 +282,7 @@ export function AppGallery({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {ask !== null ? <p className="eyebrow">Your apps</p> : null}
+          {ask !== null ? <h2 className="eyebrow">Your apps</h2> : null}
           <ul
             className={`grid auto-rows-fr grid-cols-2 gap-3 transition-opacity duration-150 sm:grid-cols-3 lg:grid-cols-4 ${
               navigating ? "opacity-60" : ""

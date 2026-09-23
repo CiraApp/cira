@@ -181,7 +181,11 @@ export default async function MembersPage({
           />
 
           <section className="enter-up mt-9">
-            <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
+            <h2
+              id="people"
+              tabIndex={-1}
+              className="text-[13px] font-semibold tracking-[-0.01em] text-ink focus:outline-none"
+            >
               People
             </h2>
 

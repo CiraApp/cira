@@ -50,6 +50,7 @@ export function EnvPanel({
                 className="shrink-0 rounded-[2px] border border-line-strong px-1.5 py-[1px] text-[10.5px] text-ink-muted"
               >
                 cache
+                <span className="sr-only">: the Redis cache Cira made for this app</span>
               </span>
             ) : null}
 
@@ -59,6 +60,9 @@ export function EnvPanel({
                 className="shrink-0 rounded-[2px] border border-line-strong px-1.5 py-[1px] text-[10.5px] text-ink-muted"
               >
                 database
+                <span className="sr-only">
+                  : the Postgres database Cira made for this app
+                </span>
               </span>
             ) : null}
 
@@ -68,6 +72,10 @@ export function EnvPanel({
                 className="shrink-0 rounded-[2px] border border-pending/40 px-1.5 py-[1px] text-[10.5px] text-pending"
               >
                 public
+                <span className="sr-only">
+                  : compiled into the browser bundle, so anyone who opens the app can read
+                  it
+                </span>
               </span>
             ) : null}
 
@@ -75,6 +83,7 @@ export function EnvPanel({
               title="First 8 hex of the value's SHA-256, so you can tell whether it changed"
               className="shrink-0 font-mono text-[11.5px] text-ink-subtle"
             >
+              <span className="sr-only">Fingerprint </span>
               {entry.fingerprint}
             </code>
           </li>

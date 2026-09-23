@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { deleteSpace } from "@/lib/space-actions";
 
 /**
@@ -28,10 +28,18 @@ export function LeaveCira({
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const deleteButton = useRef<HTMLButtonElement>(null);
+
+  const cancel = () => {
+    setConfirming(false);
+    setTyped("");
+    // Back to the button that opened this, once it is drawn again.
+    requestAnimationFrame(() => deleteButton.current?.focus());
+  };
 
   return (
     <section className="mt-8 max-w-[620px] border-t border-line pt-5">
-      <p className="text-[12.5px] font-medium text-ink">Leaving Cira</p>
+      <h2 className="text-[12.5px] font-medium text-ink">Leaving Cira</h2>
       <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
         Take everything Cira holds about {spaceName} with you: who is in it, what each app
         is, and how it runs. Not your apps&rsquo; own data, and not the values of their
@@ -44,7 +52,7 @@ export function LeaveCira({
 
       {canDelete ? (
         <div className="mt-6">
-          <p className="text-[12.5px] font-medium text-ink">Delete this space</p>
+          <h3 className="text-[12.5px] font-medium text-ink">Delete this space</h3>
           <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
             Takes down {apps === 0 ? "everything it runs" : `its ${apps} `}
             {apps === 1 ? "app" : apps > 1 ? "apps" : ""} and removes the space, its
@@ -53,11 +61,12 @@ export function LeaveCira({
 
           {!confirming ? (
             <button
+              ref={deleteButton}
               type="button"
               onClick={() => setConfirming(true)}
               className="btn btn-secondary mt-3 text-failed hover:border-failed hover:bg-failed/5 hover:text-failed"
             >
-              Delete
+              Delete<span className="sr-only"> {spaceName}</span>
             </button>
           ) : (
             <div className="enter-fade mt-3 flex flex-col gap-2">
@@ -69,28 +78,29 @@ export function LeaveCira({
                   id="confirm-space"
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") cancel();
+                  }}
                   autoFocus
                   placeholder={spaceName}
                   className="field field-danger flex-1"
                 />
-                <button
-                  type="button"
-                  onClick={() => setConfirming(false)}
-                  className="btn btn-ghost"
-                >
+                <button type="button" onClick={cancel} className="btn btn-ghost">
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={pending || typed.trim() !== spaceName.trim()}
-                  onClick={() =>
+                  disabled={typed.trim() !== spaceName.trim()}
+                  aria-disabled={pending || undefined}
+                  onClick={() => {
+                    if (pending) return;
                     start(async () => {
                       setError(null);
                       // Only ever returns on refusal; success redirects away.
                       const result = await deleteSpace(spaceSlug, typed);
                       setError(result.error);
-                    })
-                  }
+                    });
+                  }}
                   className="btn btn-danger"
                 >
                   {pending ? "Deleting..." : "Delete for good"}

@@ -14,6 +14,7 @@ import { SettingsLink } from "./settings-link";
 import { ConnectAssistant } from "@/components/connect-assistant";
 import { listAssistantTokens } from "@/lib/assistant-actions";
 import { ThemePicker } from "@/components/theme/theme-picker";
+import { Announcer } from "@/components/ui/announcer";
 
 /**
  * The product shell: a fixed spine on the left, a thin header, and one
@@ -158,6 +159,7 @@ export async function AppShell({
         >
           <div className="mx-auto w-full max-w-[1180px]">{children}</div>
         </main>
+        <Announcer />
       </div>
     </div>
   );

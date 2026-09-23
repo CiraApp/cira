@@ -133,49 +133,87 @@ export default async function UsagePage({
               </p>
             </div>
 
-            <ul className="mt-5 divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
-              {outcome.usage.apps.length === 0 ? (
-                <li className="px-4 py-3.5 text-[13px] text-ink-muted">
-                  Nothing has been deployed here yet.
-                </li>
-              ) : (
-                outcome.usage.apps.map((app) => (
-                  <li
-                    key={app.appId}
-                    // Four columns where there is room for them. On a phone the
-                    // name and the cost share a line and the rest goes under,
-                    // rather than cutting names short and wrapping the cost.
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-3 transition-colors duration-150 hover:bg-sunken/40 sm:grid-cols-[minmax(0,1fr)_92px_104px_76px]"
-                  >
-                    {app.slug === null ? (
-                      <span className="min-w-0 truncate text-[13px] text-ink-muted">
-                        {app.name} <span className="text-ink-subtle">(removed)</span>
-                      </span>
-                    ) : (
-                      <Link
-                        href={`/${spaceSlug}/${app.slug}`}
-                        className="min-w-0 truncate text-[13px] text-ink underline-offset-4 hover:underline"
+            {outcome.usage.apps.length === 0 ? (
+              <p className="mt-5 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5 text-[13px] text-ink-muted">
+                Nothing has been deployed here yet.
+              </p>
+            ) : (
+              // A table, headed: each figure used to be a bare "12m" or
+              // "$0.40" in a row, which a screen reader read with nothing to say
+              // what it measured, and which the eye had to guess at too.
+              <div className="mt-5 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
+                <table className="w-full border-collapse text-left">
+                  <caption className="sr-only">Compute by app in {month}</caption>
+                  <thead>
+                    <tr className="border-b border-line text-[11.5px] text-ink-subtle">
+                      <th scope="col" className="px-4 py-2 font-medium">
+                        App
+                      </th>
+                      <th
+                        scope="col"
+                        className="hidden w-[104px] px-2 py-2 text-right font-medium sm:table-cell"
                       >
-                        {app.name}
-                      </Link>
-                    )}
-                    <span className="tabular hidden text-right text-[12.5px] text-ink-muted sm:block">
-                      {describeInstanceTime(app.instanceSeconds)}
-                    </span>
-                    <span className="tabular hidden text-right text-[12.5px] text-ink-muted sm:block">
-                      {app.requests.toLocaleString()} req
-                    </span>
-                    <span className="tabular text-right text-[12.5px] text-ink">
-                      {describeDollars(app.dollars)}
-                    </span>
-                    <span className="tabular col-span-2 text-[12px] text-ink-subtle sm:hidden">
-                      {describeInstanceTime(app.instanceSeconds)} running,{" "}
-                      {app.requests.toLocaleString()} req
-                    </span>
-                  </li>
-                ))
-              )}
-            </ul>
+                        Running time
+                      </th>
+                      <th
+                        scope="col"
+                        className="hidden w-[104px] px-2 py-2 text-right font-medium sm:table-cell"
+                      >
+                        Requests
+                      </th>
+                      <th
+                        scope="col"
+                        className="w-[92px] px-4 py-2 text-right font-medium"
+                      >
+                        Cost
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {outcome.usage.apps.map((app) => (
+                      <tr
+                        key={app.appId}
+                        className="align-baseline transition-colors duration-150 hover:bg-sunken/40"
+                      >
+                        <th
+                          scope="row"
+                          className="max-w-0 px-4 py-3 text-left text-[13px] font-normal"
+                        >
+                          {app.slug === null ? (
+                            <span className="block truncate text-ink-muted">
+                              {app.name}{" "}
+                              <span className="text-ink-subtle">(removed)</span>
+                            </span>
+                          ) : (
+                            <Link
+                              href={`/${spaceSlug}/${app.slug}`}
+                              className="block truncate text-ink underline-offset-4 hover:underline"
+                            >
+                              {app.name}
+                            </Link>
+                          )}
+                          {/* On a phone the two middle columns go, and what
+                              they said goes under the name instead. */}
+                          <span className="tabular mt-0.5 block text-[12px] text-ink-subtle sm:hidden">
+                            {describeInstanceTime(app.instanceSeconds)} running,{" "}
+                            {app.requests.toLocaleString()} requests
+                          </span>
+                        </th>
+                        <td className="tabular hidden px-2 py-3 text-right text-[12.5px] text-ink-muted sm:table-cell">
+                          {describeInstanceTime(app.instanceSeconds)}
+                        </td>
+                        <td className="tabular hidden px-2 py-3 text-right text-[12.5px] text-ink-muted sm:table-cell">
+                          {app.requests.toLocaleString()}
+                        </td>
+                        <td className="tabular px-4 py-3 text-right text-[12.5px] text-ink">
+                          {describeDollars(app.dollars)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-3">
               {[

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * The quiet motion behind the product.
@@ -22,16 +22,26 @@ import { useEffect, useRef } from "react";
  */
 export function AmbientField() {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Still until the preference is known, and again the moment it is set:
+  // asking for less motion in the middle of a visit stops the field then, not
+  // at the next page load.
+  const [still, setStill] = useState(true);
 
   useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const hear = () => setStill(reduced.matches);
+    hear();
+    reduced.addEventListener("change", hear);
+    return () => reduced.removeEventListener("change", hear);
+  }, []);
+
+  useEffect(() => {
+    if (still) return;
     const canvas = ref.current;
     if (canvas === null) return;
 
     const context = canvas.getContext("2d", { alpha: true });
     if (context === null) return;
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (reduced.matches) return;
 
     let width = 0;
     let height = 0;
@@ -257,7 +267,7 @@ export function AmbientField() {
       document.removeEventListener("visibilitychange", onVisibility);
       themeWatcher.disconnect();
     };
-  }, []);
+  }, [still]);
 
   return (
     <canvas

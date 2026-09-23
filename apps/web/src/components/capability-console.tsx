@@ -18,6 +18,7 @@ import {
 import { validateInput } from "@/lib/json-schema";
 import { runCapability, type ConsoleRun } from "@/lib/console-actions";
 import { SectionLink } from "./section-link";
+import { LiveStatus } from "./ui/live-status";
 
 /**
  * The capability console: an app's capabilities, each one a form.
@@ -167,7 +168,7 @@ function ListGroup({
   return (
     <div className="min-w-0">
       <div className="flex items-baseline justify-between gap-3 px-0.5">
-        <p className="eyebrow">{title}</p>
+        <h2 className="eyebrow">{title}</h2>
         <p className="text-[11px] text-ink-subtle">{note}</p>
       </div>
       <ul className="mt-2 divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
@@ -257,6 +258,10 @@ function Runner({
     null,
   );
   const [confirming, setConfirming] = useState<Record<string, unknown> | null>(null);
+  // The review step replaces the Review button, and running or cancelling
+  // brings it back: focus goes back to it rather than to the top of the page.
+  const runButton = useRef<HTMLButtonElement>(null);
+  const backToRun = () => requestAnimationFrame(() => runButton.current?.focus());
   const [shownRunId, setShownRunId] = useState<number | null>(null);
   const busy = runs.some((r) => r.result === null);
   const runnable = affordance.kind === "run";
@@ -405,7 +410,12 @@ function Runner({
             and a dimmed button beneath it only invites the click. */}
         {!runnable ? null : confirming === null ? (
           <div className="mt-4 flex items-center gap-3">
-            <button type="submit" disabled={busy} className="btn btn-primary">
+            <button
+              ref={runButton}
+              type="submit"
+              aria-disabled={busy || undefined}
+              className="btn btn-primary"
+            >
               {busy ? "Running..." : entry.risk === "write" ? "Review" : "Run"}
             </button>
             {entry.risk === "write" ? (
@@ -419,8 +429,14 @@ function Runner({
             entry={entry}
             appName={appName}
             input={confirming}
-            onCancel={() => setConfirming(null)}
-            onConfirm={() => void send(confirming)}
+            onCancel={() => {
+              setConfirming(null);
+              backToRun();
+            }}
+            onConfirm={() => {
+              void send(confirming);
+              backToRun();
+            }}
           />
         )}
       </form>
@@ -752,9 +768,20 @@ function Result({
   };
 
   return (
-    <div className="border-t border-line" aria-live="polite">
+    <div className="border-t border-line">
+      {/* The outcome in a sentence. The whole result used to be the live
+          region, so a long body was read out in full the moment it arrived. */}
+      <LiveStatus
+        message={
+          run.result === null
+            ? "Running"
+            : answer !== null
+              ? `Answered ${answer.status}${REASONS[answer.status] === undefined ? "" : ` ${REASONS[answer.status]}`} in ${duration(answer.elapsedMs)}`
+              : `Not run. ${run.result.ok ? "" : run.result.error}`
+        }
+      />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pt-4">
-        <p className="eyebrow">Result</p>
+        <h3 className="eyebrow">Result</h3>
         {run.result === null ? (
           <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-muted">
             <span
@@ -848,7 +875,7 @@ function Result({
 
       {history.length > 1 ? (
         <div className="border-t border-line px-5 py-3">
-          <p className="eyebrow">This session</p>
+          <h3 className="eyebrow">This session</h3>
           <ul className="mt-2 flex flex-col">
             {history.map((past) => (
               <li key={past.id}>

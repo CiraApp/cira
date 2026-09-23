@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LogRange, RuntimeLogEntry, RuntimeLogMinimum } from "@cira/core";
 import {
@@ -148,7 +148,10 @@ export function RuntimeLogs({
     [range, around],
   );
 
-  const reload = () => void load(spec(), { minimum, search });
+  const reload = () => {
+    if (loading) return;
+    void load(spec(), { minimum, search });
+  };
 
   const chooseRange = (next: LogRange) => {
     setRange(next);
@@ -169,7 +172,7 @@ export function RuntimeLogs({
   }, [search, minimum, load, spec]);
 
   const loadEarlier = async () => {
-    if (olderToken === null || window_ === null) return;
+    if (olderToken === null || window_ === null || earlier) return;
     setEarlier(true);
     const before = box.current?.scrollHeight ?? 0;
     let result: RuntimeLogsResult;
@@ -417,7 +420,7 @@ export function RuntimeLogs({
         <button
           type="button"
           onClick={reload}
-          disabled={loading}
+          aria-disabled={loading || undefined}
           className="btn btn-secondary h-[30px] px-2.5 py-0 text-[12.5px]"
         >
           {loading ? "Loading..." : "Refresh"}
@@ -440,8 +443,8 @@ export function RuntimeLogs({
             <button
               type="button"
               onClick={() => void loadEarlier()}
-              disabled={earlier}
-              className="block w-full border-b border-line py-2 text-center text-[12px] text-ink-muted transition-colors duration-150 hover:bg-surface/60 hover:text-ink"
+              aria-disabled={earlier || undefined}
+              className="block w-full border-b border-line py-2 text-center text-[12px] text-ink-muted transition-colors duration-150 hover:bg-surface/60 hover:text-ink aria-disabled:cursor-progress aria-disabled:opacity-60"
             >
               {earlier ? "Loading earlier lines..." : "Load earlier lines"}
             </button>
@@ -453,7 +456,9 @@ export function RuntimeLogs({
           <p role="status" className="sr-only">
             {loading
               ? "Loading lines"
-              : `${entries.length} ${entries.length === 1 ? "line" : "lines"}`}
+              : earlier
+                ? "Loading earlier lines"
+                : `${entries.length} ${entries.length === 1 ? "line" : "lines"}`}
           </p>
           <div
             ref={box}
@@ -523,6 +528,7 @@ function Line({
   onToggle: () => void;
 }) {
   const hydrated = useHydrated();
+  const detailId = useId();
   const at = new Date(entry.timestamp);
   const request = entry.request;
   const tone =
@@ -538,6 +544,7 @@ function Line({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
+        aria-controls={open ? detailId : undefined}
         className={`grid w-full min-w-0 gap-x-2.5 px-3.5 py-[3px] text-left font-mono text-[12px] leading-[1.65] transition-colors duration-100 hover:bg-surface/60 ${
           withDate
             ? "grid-cols-[100px_6px_minmax(0,1fr)] sm:grid-cols-[132px_6px_minmax(0,1fr)]"
@@ -593,7 +600,10 @@ function Line({
         </span>
       </button>
       {open ? (
-        <pre className="mx-3.5 mt-1 mb-2 max-h-[360px] overflow-auto rounded-[var(--radius-edge)] border border-line bg-base/60 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-ink-muted">
+        <pre
+          id={detailId}
+          className="mx-3.5 mt-1 mb-2 max-h-[360px] overflow-auto rounded-[var(--radius-edge)] border border-line bg-base/60 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-ink-muted"
+        >
           {entry.detail}
         </pre>
       ) : null}

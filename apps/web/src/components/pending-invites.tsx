@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { revokeInvite } from "@/lib/invite-actions";
+import { announce } from "./ui/announcer";
 
 export interface PendingInvite {
   id: string;
@@ -31,13 +32,18 @@ export function PendingInvites({
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   if (invites.length === 0) return null;
 
   return (
     <section className="enter-up mt-9">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className="text-[13px] font-semibold tracking-[-0.01em] text-ink focus:outline-none"
+        >
           Invited, not joined yet
         </h2>
         <p className="hidden text-[12px] text-ink-subtle sm:block">
@@ -57,13 +63,23 @@ export function PendingInvites({
             </span>
             <button
               type="button"
-              disabled={pending}
+              aria-disabled={pending || undefined}
               onClick={() => {
+                if (pending) return;
                 setError(null);
                 setBusy(invite.id);
                 startTransition(async () => {
                   const result = await revokeInvite(spaceSlug, invite.id);
                   if (!result.ok) setError(result.error);
+                  else {
+                    // The row goes, and with the last one the whole list: the
+                    // words go to the shell, and focus to what is still here.
+                    announce(`Revoked the invitation to ${invite.email}`);
+                    requestAnimationFrame(() => {
+                      const here = heading.current?.isConnected ? heading.current : null;
+                      (here ?? document.getElementById("people"))?.focus();
+                    });
+                  }
                   setBusy(null);
                   router.refresh();
                 });

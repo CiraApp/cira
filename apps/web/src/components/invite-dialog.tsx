@@ -148,7 +148,13 @@ function InviteForm({
           : "We’ll give you a link to send them. Only the address you enter can use it."}
       </p>
 
-      <form action={action} className="mt-5 flex flex-col gap-3">
+      <form
+        action={action}
+        onSubmit={(event) => {
+          if (pending) event.preventDefault();
+        }}
+        className="mt-5 flex flex-col gap-3"
+      >
         <input type="hidden" name="spaceSlug" value={spaceSlug} />
 
         <label className="flex flex-col gap-1.5 text-[12px] text-ink-subtle">
@@ -215,7 +221,11 @@ function InviteForm({
           <button type="button" onClick={onDone} className="btn btn-ghost">
             Cancel
           </button>
-          <button type="submit" disabled={pending} className="btn btn-primary">
+          <button
+            type="submit"
+            aria-disabled={pending || undefined}
+            className="btn btn-primary"
+          >
             {emailing
               ? pending
                 ? "Sending..."

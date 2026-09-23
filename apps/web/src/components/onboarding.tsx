@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { slugify } from "@cira/core";
@@ -53,6 +53,19 @@ export function Onboarding({
   // for a first visit; a pre-filled form to click through is a question
   // already answered.
   const [named, setNamed] = useState<string | null>(firstName);
+
+  // Each step replaces the last in place, taking the pressed button with it,
+  // so focus would fall to the top of the page and the new question go
+  // unannounced. It moves to the step's heading instead - but not on arrival,
+  // where the page's own first field is the right place to start.
+  const step =
+    named === null ? "name" : created !== null ? "done" : founding ? "found" : "join";
+  const shown = useRef(step);
+  useEffect(() => {
+    if (shown.current === step) return;
+    shown.current = step;
+    document.getElementById("entry-title")?.focus();
+  }, [step]);
 
   if (named === null) {
     return (
@@ -171,7 +184,13 @@ function CreateForm({
   const preview = slugify(name);
 
   return (
-    <form action={action} className="flex flex-col">
+    <form
+      action={action}
+      onSubmit={(event) => {
+        if (pending) event.preventDefault();
+      }}
+      className="flex flex-col"
+    >
       <label htmlFor="space-name" className="sr-only">
         Company or team name
       </label>
@@ -213,7 +232,8 @@ function CreateForm({
 
       <button
         type="submit"
-        disabled={pending || preview === ""}
+        disabled={preview === ""}
+        aria-disabled={pending || undefined}
         className="btn btn-primary btn-lg mt-3 w-full"
       >
         {pending ? "Creating..." : "Create space"}
@@ -244,6 +264,7 @@ function JoinList({
   const [error, setError] = useState<string | null>(null);
 
   const join = async (slug: string) => {
+    if (busy !== null) return;
     setError(null);
     setBusy(slug);
     const result = await joinSpaceByDomain(slug);
@@ -262,8 +283,8 @@ function JoinList({
           key={space.id}
           type="button"
           onClick={() => join(space.slug)}
-          disabled={busy !== null}
-          className="group flex items-center justify-between gap-4 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5 text-left transition-[transform,border-color,box-shadow] duration-300 ease-[var(--ease-settle)] hover:-translate-y-[2px] hover:border-line-strong hover:shadow-[var(--shadow-float)] disabled:translate-y-0 disabled:opacity-60"
+          aria-disabled={busy !== null || undefined}
+          className="group flex items-center justify-between gap-4 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-3.5 text-left transition-[transform,border-color,box-shadow] duration-300 ease-[var(--ease-settle)] hover:-translate-y-[2px] hover:border-line-strong hover:shadow-[var(--shadow-float)] aria-disabled:translate-y-0 aria-disabled:cursor-progress aria-disabled:opacity-60"
         >
           <span className="flex min-w-0 items-center gap-3">
             <span

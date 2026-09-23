@@ -78,9 +78,11 @@ export function AskExchange({
               {latest && exchange.status === "stopped" ? (
                 <button
                   type="button"
-                  onClick={onRetry}
-                  disabled={busy}
-                  className="text-ink-muted underline decoration-line-strong underline-offset-4 transition-colors hover:text-ink disabled:opacity-50"
+                  onClick={() => {
+                    if (!busy) onRetry();
+                  }}
+                  aria-disabled={busy || undefined}
+                  className="text-ink-muted underline decoration-line-strong underline-offset-4 transition-colors hover:text-ink aria-disabled:opacity-50"
                 >
                   Ask again
                 </button>
@@ -356,16 +358,20 @@ function Confirm({
           <div className="flex gap-2 px-3.5 pt-3 pb-3.5">
             <button
               type="button"
-              onClick={() => onDecide(true)}
-              disabled={busy}
+              onClick={() => {
+                if (!busy) onDecide(true);
+              }}
+              aria-disabled={busy || undefined}
               className="btn btn-primary"
             >
               Run it
             </button>
             <button
               type="button"
-              onClick={() => onDecide(false)}
-              disabled={busy}
+              onClick={() => {
+                if (!busy) onDecide(false);
+              }}
+              aria-disabled={busy || undefined}
               className="btn btn-secondary"
             >
               Don&rsquo;t

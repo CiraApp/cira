@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Capability } from "@cira/core";
 import { setCapabilityEnabled } from "@/lib/capability-actions";
 import { SectionLink } from "./section-link";
+import { LiveStatus } from "./ui/live-status";
 import {
   retryCapabilityAnalysis,
   verifyPendingCapabilities,
@@ -52,6 +53,20 @@ export function CapabilityPanel({
 }) {
   const router = useRouter();
   const asked = useRef(false);
+  // Turning a capability on or off moves it to another group, which draws it
+  // afresh: the button that was pressed is gone. The new one takes focus back,
+  // and the change is said aloud, since nothing visible happens where the
+  // person was looking.
+  const moved = useRef<string | null>(null);
+  const [said, setSaid] = useState<string | null>(null);
+  const toggled = (capability: Capability, enabled: boolean) => {
+    moved.current = capability.id;
+    setSaid(
+      enabled
+        ? `${capability.name} enabled. Agents can find and run it.`
+        : `${capability.name} disabled.`,
+    );
+  };
   const waiting = capabilities.some((capability) => capability.reach === "pending");
 
   // Anything still waiting to be asked about gets asked about, here, because
@@ -119,12 +134,16 @@ export function CapabilityPanel({
           note="Agents can find and run these."
           items={live}
           canManage={canManage}
+          moved={moved}
+          onToggled={toggled}
         />
         <Group
           title="Review"
           note="Registered, but off until someone turns them on."
           items={review}
           canManage={canManage}
+          moved={moved}
+          onToggled={toggled}
         />
         {/*
           Shown rather than hidden, and shown with the reason. These are real
@@ -162,6 +181,7 @@ export function CapabilityPanel({
           canManage={false}
         />
       </div>
+      <LiveStatus message={said} />
     </section>
   );
 }
@@ -172,11 +192,15 @@ function Group({
   items,
   canManage,
   busy = false,
+  moved,
+  onToggled,
 }: {
   title: string;
   note: React.ReactNode;
   items: Capability[];
   canManage: boolean;
+  moved?: React.RefObject<string | null>;
+  onToggled?: (capability: Capability, enabled: boolean) => void;
   /** Still being checked, so the group says so and offers no switch. */
   busy?: boolean;
 }) {
@@ -185,7 +209,7 @@ function Group({
   return (
     <div>
       <div className="flex items-baseline gap-2.5">
-        <p className="eyebrow inline-flex items-center gap-1.5">
+        <h3 className="eyebrow inline-flex items-center gap-1.5">
           {busy ? (
             <span
               aria-hidden="true"
@@ -193,30 +217,59 @@ function Group({
             />
           ) : null}
           {title}
-        </p>
+        </h3>
         <p className="text-[11px] text-ink-subtle">{note}</p>
       </div>
 
       <ul className="mt-2 divide-y divide-line overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
         {items.map((capability) => (
-          <Row key={capability.id} capability={capability} canManage={canManage} />
+          <Row
+            key={capability.id}
+            capability={capability}
+            canManage={canManage}
+            moved={moved}
+            onToggled={onToggled}
+          />
         ))}
       </ul>
     </div>
   );
 }
 
-function Row({ capability, canManage }: { capability: Capability; canManage: boolean }) {
+function Row({
+  capability,
+  canManage,
+  moved,
+  onToggled,
+}: {
+  capability: Capability;
+  canManage: boolean;
+  moved?: React.RefObject<string | null> | undefined;
+  onToggled?: ((capability: Capability, enabled: boolean) => void) | undefined;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (moved?.current !== capability.id) return;
+    moved.current = null;
+    button.current?.focus();
+  }, [moved, capability.id]);
 
   const toggle = () => {
+    if (pending) return;
     setError(null);
+    const enabled = !capability.enabled;
     startTransition(async () => {
-      const result = await setCapabilityEnabled(capability.id, !capability.enabled);
-      if (!result.ok) setError(result.error);
-      else router.refresh();
+      const result = await setCapabilityEnabled(capability.id, enabled);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      onToggled?.(capability, enabled);
+      router.refresh();
     });
   };
 
@@ -249,11 +302,13 @@ function Row({ capability, canManage }: { capability: Capability; canManage: boo
       {canManage ? (
         <button
           type="button"
+          ref={button}
           onClick={toggle}
-          disabled={pending}
+          aria-disabled={pending || undefined}
           className="btn btn-secondary shrink-0 px-2.5 py-1.5 text-[12px]"
         >
           {pending ? "Saving..." : capability.enabled ? "Disable" : "Enable"}
+          <span className="sr-only"> {capability.name}</span>
         </button>
       ) : null}
     </li>
@@ -311,6 +366,7 @@ function Empty({
   const [error, setError] = useState<string | null>(null);
 
   const retry = () => {
+    if (pending) return;
     setError(null);
     startTransition(async () => {
       const result = await retryCapabilityAnalysis(spaceSlug, appSlug);
@@ -352,7 +408,7 @@ function Empty({
           <button
             type="button"
             onClick={retry}
-            disabled={pending}
+            aria-disabled={pending || undefined}
             className="btn btn-secondary mt-3 px-2.5 py-1.5 text-[12px]"
           >
             {pending

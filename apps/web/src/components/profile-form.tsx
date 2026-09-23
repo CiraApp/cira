@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveStatus } from "./ui/live-status";
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { NameForm } from "./name-form";
@@ -33,12 +34,13 @@ export function ProfileForm({
       />
       {saved ? (
         <p
-          role="status"
+          aria-hidden="true"
           className="enter-fade absolute right-0 bottom-2 text-[12.5px] text-ink-muted"
         >
           Saved
         </p>
       ) : null}
+      <LiveStatus message={saved ? "Saved" : null} />
     </div>
   );
 }

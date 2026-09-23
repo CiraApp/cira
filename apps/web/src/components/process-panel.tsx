@@ -1,7 +1,8 @@
 "use client";
 
+import { LiveStatus } from "./ui/live-status";
 import { Switch } from "./ui/switch";
-import { useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LIMITS } from "@cira/core/limits";
 import { crashCount, describeMemory } from "@cira/core/processes";
@@ -133,6 +134,14 @@ function Row({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // When the editor closes - saved or cancelled - focus goes back to the
+  // button that opened it, not to wherever the removed form leaves it.
+  const editButton = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (!editing && wasEditing.current) editButton.current?.focus();
+    wasEditing.current = editing;
+  }, [editing]);
 
   const act = (
     work: () => Promise<{ ok: true } | { ok: false; error: string }>,
@@ -204,10 +213,17 @@ function Row({
               <>
                 <button
                   type="button"
-                  disabled={pending || missing}
-                  onClick={() =>
-                    act(() => runProcessNow(spaceSlug, appSlug, process.name), "Started.")
-                  }
+                  disabled={missing}
+                  // Busy, not disabled, while saving: disabling the button
+                  // being used drops keyboard focus onto the page.
+                  aria-disabled={pending || undefined}
+                  onClick={() => {
+                    if (pending) return;
+                    act(
+                      () => runProcessNow(spaceSlug, appSlug, process.name),
+                      "Started.",
+                    );
+                  }}
                   className="btn btn-secondary px-2.5 py-1.5 text-[12px]"
                 >
                   Run now
@@ -215,9 +231,12 @@ function Row({
               </>
             ) : null}
             <button
+              ref={editButton}
               type="button"
-              disabled={pending || missing}
+              disabled={missing}
+              aria-disabled={pending || undefined}
               onClick={() => {
+                if (pending) return;
                 setEditing((open) => !open);
                 setError(null);
               }}
@@ -269,13 +288,14 @@ function Row({
           {canManage && more !== null ? (
             <button
               type="button"
-              disabled={pending}
-              onClick={() =>
+              aria-disabled={pending || undefined}
+              onClick={() => {
+                if (pending) return;
                 act(
                   () => setProcessMemory(spaceSlug, appSlug, process.name, more),
                   `Now ${describeMemory(more)}.`,
-                )
-              }
+                );
+              }}
               className="btn btn-secondary px-2.5 py-1 text-[12px]"
             >
               Give it {describeMemory(more)}
@@ -289,10 +309,11 @@ function Row({
           {error}
         </p>
       ) : notice !== null ? (
-        <p role="status" className="enter-fade mt-2 text-[12px] text-ink-muted">
+        <p aria-hidden="true" className="enter-fade mt-2 text-[12px] text-ink-muted">
           {notice}
         </p>
       ) : null}
+      <LiveStatus message={error === null ? notice : null} />
 
       {editing ? (
         <ProcessEditor
@@ -434,6 +455,7 @@ function ProcessEditor({
   }) => void;
 }) {
   const scheduled = process.kind === "scheduled";
+  const idBase = useId();
   const [schedule, setSchedule] = useState(process.schedule ?? "0 6 * * *");
   const [minutes, setMinutes] = useState(
     process.requestedTimeoutMinutes === null
@@ -447,6 +469,7 @@ function ProcessEditor({
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        if (pending || (scheduled && !parsed.ok)) return;
         onSave({
           schedule: scheduled ? schedule : null,
           minutes: minutes.trim() === "" ? null : Number(minutes),
@@ -466,7 +489,7 @@ function ProcessEditor({
                 aria-pressed={schedule === preset.schedule}
                 className={`rounded-[var(--radius-edge)] border px-2 py-1 text-[11.5px] transition-colors duration-150 ${
                   schedule === preset.schedule
-                    ? "border-line-strong bg-surface text-ink"
+                    ? "border-accent bg-surface text-ink"
                     : "border-line text-ink-muted hover:text-ink"
                 }`}
               >
@@ -476,35 +499,54 @@ function ProcessEditor({
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[12px] text-ink-muted">Timetable (cron, UTC)</span>
+            {/* The reading of the timetable sits beside the field, described by
+                it rather than inside its label: inside, the field's name
+                changed with every keystroke. */}
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <label
+                htmlFor={`${idBase}-schedule`}
+                className="text-[12px] text-ink-muted"
+              >
+                Timetable (cron, UTC)
+              </label>
               <input
+                id={`${idBase}-schedule`}
                 value={schedule}
                 onChange={(e) => setSchedule(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
                 maxLength={100}
+                aria-invalid={!parsed.ok}
+                aria-describedby={`${idBase}-schedule-reads`}
                 className="field py-2 font-mono text-[12.5px]"
               />
               <span
+                id={`${idBase}-schedule-reads`}
                 className={`text-[11.5px] ${parsed.ok ? "text-ink-subtle" : "text-failed"}`}
               >
                 {parsed.ok ? describeSchedule(parsed.schedule) : parsed.error}
               </span>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] text-ink-muted">Minutes a run</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor={`${idBase}-minutes`} className="text-[12px] text-ink-muted">
+                Minutes a run
+              </label>
               <input
+                id={`${idBase}-minutes`}
                 value={minutes}
                 onChange={(e) => setMinutes(e.target.value)}
                 inputMode="numeric"
                 placeholder="10"
+                aria-describedby={`${idBase}-minutes-note`}
                 className="field py-2 text-[12.5px]"
               />
-              <span className="text-[11.5px] text-ink-subtle">
+              <span
+                id={`${idBase}-minutes-note`}
+                className="text-[11.5px] text-ink-subtle"
+              >
                 Always stopped before its next run.
               </span>
-            </label>
+            </div>
           </div>
         </>
       ) : null}
@@ -520,7 +562,7 @@ function ProcessEditor({
               aria-pressed={memoryMiB === choice}
               className={`tabular rounded-[var(--radius-edge)] border px-2.5 py-1 text-[11.5px] transition-colors duration-150 ${
                 memoryMiB === choice
-                  ? "border-line-strong bg-surface text-ink"
+                  ? "border-accent bg-surface text-ink"
                   : "border-line text-ink-muted hover:text-ink"
               }`}
             >
@@ -545,7 +587,8 @@ function ProcessEditor({
         </button>
         <button
           type="submit"
-          disabled={pending || (scheduled && !parsed.ok)}
+          disabled={scheduled && !parsed.ok}
+          aria-disabled={pending || undefined}
           className="btn btn-primary px-3 py-1.5 text-[12px]"
         >
           {pending ? "Saving..." : "Save"}

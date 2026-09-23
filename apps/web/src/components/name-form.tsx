@@ -43,7 +43,15 @@ export function NameForm({
   const field = size === "lg" ? "field py-3 text-[15px]" : "field py-2.5 text-[14px]";
 
   return (
-    <form action={action} className="flex flex-col">
+    <form
+      action={action}
+      // The button stays enabled while saving, so focus is not dropped; a
+      // second press is what this refuses.
+      onSubmit={(event) => {
+        if (pending) event.preventDefault();
+      }}
+      className="flex flex-col"
+    >
       <div className="grid grid-cols-2 gap-2.5">
         <label className="flex min-w-0 flex-col gap-1.5">
           <span className="text-[12px] text-ink-subtle">First name</span>
@@ -88,7 +96,7 @@ export function NameForm({
 
       <button
         type="submit"
-        disabled={pending}
+        aria-disabled={pending || undefined}
         className={`btn btn-primary mt-4 ${size === "lg" ? "btn-lg w-full" : "self-start"}`}
       >
         {pending ? "Saving..." : submitLabel}

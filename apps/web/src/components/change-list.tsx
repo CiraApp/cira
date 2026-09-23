@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { describeChange, type ChangeKind } from "@cira/core";
 import { LocalTime } from "./local-time";
+import { LiveStatus } from "./ui/live-status";
 
 export interface ChangeRow {
   id: string;
@@ -50,9 +51,13 @@ export function ChangeList({ changes }: { changes: ChangeRow[] }) {
 
   return (
     <>
-      <label className="mt-4 block">
-        <span className="sr-only">Search the record</span>
+      <label
+        role="search"
+        className="mt-4 flex flex-col gap-1.5 text-[12px] text-ink-subtle"
+      >
+        Search the record
         <input
+          type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search by person, app or team"
@@ -60,6 +65,17 @@ export function ChangeList({ changes }: { changes: ChangeRow[] }) {
           className="field w-full py-2.5 text-[13px]"
         />
       </label>
+      {/* The list changes under the cursor with every letter; this says by how
+          much, once typing settles into a result. */}
+      <LiveStatus
+        message={
+          needle === ""
+            ? null
+            : shown.length === 0
+              ? "Nothing matches"
+              : `${shown.length} ${shown.length === 1 ? "change matches" : "changes match"}`
+        }
+      />
 
       {shown.length === 0 ? (
         <p className="mt-3 rounded-[var(--radius-edge)] border border-line bg-surface px-4 py-4 text-[12.5px] text-ink-muted">

@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveStatus } from "./ui/live-status";
 import { Switch } from "./ui/switch";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -64,6 +65,7 @@ export function AppSettings({
   const [tells, setTells] = useState(tellsWhoIsCalling);
   const [confirmName, setConfirmName] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const deleteButton = useRef<HTMLButtonElement>(null);
   const [saved, setSaved] = useState(false);
   const panel = useRef<HTMLDetailsElement>(null);
 
@@ -88,7 +90,10 @@ export function AppSettings({
       // already where the answer goes.
       const field = element.querySelector<HTMLInputElement>("#app-homepage");
       const target = field ?? element;
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      // Smooth only for someone who has not asked for less motion: the CSS
+      // that honours that preference does not reach a scroll started here.
+      const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
       field?.focus({ preventScroll: true });
     };
 
@@ -98,6 +103,7 @@ export function AppSettings({
   }, []);
 
   const save = (formData: FormData) => {
+    if (pending) return;
     setError(null);
     setSaved(false);
     startTransition(async () => {
@@ -112,6 +118,7 @@ export function AppSettings({
   };
 
   const remove = () => {
+    if (pending) return;
     setError(null);
     startTransition(async () => {
       const result = await deleteApp(spaceSlug, appSlug, confirmName);
@@ -143,12 +150,16 @@ export function AppSettings({
           <label htmlFor="app-homepage" className="text-[12.5px] font-medium text-ink">
             Homepage
           </label>
-          <p className="text-[11.5px] leading-relaxed text-ink-subtle">
+          <p
+            id="app-homepage-note"
+            className="text-[11.5px] leading-relaxed text-ink-subtle"
+          >
             Where Open should send people, if the interface they use lives somewhere Cira
             does not host. Empty means Cira opens the app it serves.
           </p>
           <input
             id="app-homepage"
+            aria-describedby="app-homepage-note"
             name="homepageUrl"
             type="url"
             inputMode="url"
@@ -158,12 +169,19 @@ export function AppSettings({
           />
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button type="submit" disabled={pending} className="btn btn-secondary">
+            <button
+              type="submit"
+              aria-disabled={pending || undefined}
+              className="btn btn-secondary"
+            >
               {pending ? "Saving..." : "Save"}
             </button>
             {saved && !pending ? (
-              <span className="enter-fade text-[11.5px] text-live">Saved</span>
+              <span aria-hidden="true" className="enter-fade text-[11.5px] text-live">
+                Saved
+              </span>
             ) : null}
+            <LiveStatus message={saved && !pending ? "Homepage saved" : null} />
           </div>
         </form>
 
@@ -177,7 +195,10 @@ export function AppSettings({
                 >
                   Memory
                 </label>
-                <p className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle">
+                <p
+                  id="app-memory-note"
+                  className="mt-1 text-[11.5px] leading-relaxed text-ink-subtle"
+                >
                   What each instance of the app runs with.{" "}
                   {memory.chosen !== null
                     ? "Chosen here, over what the repository says."
@@ -190,9 +211,12 @@ export function AppSettings({
               </div>
               <select
                 id="app-memory"
+                aria-describedby="app-memory-note"
                 value={memory.chosen === null ? "" : String(memory.chosen)}
-                disabled={pending}
+                // Busy rather than disabled, which would drop focus mid-change.
+                aria-disabled={pending || undefined}
                 onChange={(e) => {
+                  if (pending) return;
                   const value = e.target.value === "" ? null : Number(e.target.value);
                   setError(null);
                   startTransition(async () => {
@@ -307,6 +331,7 @@ export function AppSettings({
 
           {!confirming ? (
             <button
+              ref={deleteButton}
               type="button"
               onClick={() => setConfirming(true)}
               className="btn btn-secondary mt-3 text-failed hover:border-failed hover:bg-failed/5 hover:text-failed"
@@ -329,7 +354,11 @@ export function AppSettings({
                 />
                 <button
                   type="button"
-                  onClick={() => setConfirming(false)}
+                  onClick={() => {
+                    setConfirming(false);
+                    // Back to Delete, which the confirmation replaced.
+                    requestAnimationFrame(() => deleteButton.current?.focus());
+                  }}
                   className="btn btn-ghost"
                 >
                   Cancel
@@ -337,7 +366,8 @@ export function AppSettings({
                 <button
                   type="button"
                   onClick={remove}
-                  disabled={pending || confirmName.trim() !== appName.trim()}
+                  disabled={confirmName.trim() !== appName.trim()}
+                  aria-disabled={pending || undefined}
                   className="btn btn-danger"
                 >
                   {pending ? "Deleting..." : "Delete for good"}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addAppDomain, checkAppDomains, removeAppDomain } from "@/lib/domain-actions";
+import { LiveStatus } from "./ui/live-status";
 
 interface Domain {
   hostname: string;
@@ -41,14 +42,35 @@ export function DomainPanel({
   const [error, setError] = useState<string | null>(null);
   const [value, setValue] = useState("");
 
-  const run = (action: () => Promise<{ ok: true } | { ok: false; error: string }>) => {
+  const [said, setSaid] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  const run = (
+    action: () => Promise<{ ok: true } | { ok: false; error: string }>,
+    done: string,
+  ) => {
+    if (pending) return;
     setError(null);
+    setSaid(null);
     startTransition(async () => {
       const result = await action();
-      if (result.ok) router.refresh();
-      else setError(result.error);
+      if (result.ok) {
+        setSaid(done);
+        router.refresh();
+      } else setError(result.error);
     });
   };
+
+  // Removing a domain takes its row, and the button, away; adding the last
+  // one allowed takes the form. Focus goes to the heading rather than the
+  // top of the page.
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending && document.activeElement === document.body) {
+      heading.current?.focus();
+    }
+    wasPending.current = pending;
+  }, [pending]);
 
   if (target === null && domains.length === 0) return null;
   const waiting = domains.some((domain) => domain.state !== "active");
@@ -56,7 +78,11 @@ export function DomainPanel({
   return (
     <section className="enter-up mt-10">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className="text-[13px] font-semibold tracking-[-0.01em] text-ink focus:outline-none"
+        >
           Your own domain
         </h2>
         <p className="text-[12px] text-ink-subtle">
@@ -108,9 +134,12 @@ export function DomainPanel({
                 </span>
                 <button
                   type="button"
-                  disabled={pending}
+                  aria-disabled={pending || undefined}
                   onClick={() =>
-                    run(() => removeAppDomain(spaceSlug, appSlug, domain.hostname))
+                    run(
+                      () => removeAppDomain(spaceSlug, appSlug, domain.hostname),
+                      `Removed ${domain.hostname}`,
+                    )
                   }
                   className="btn btn-ghost px-2 py-1 text-[12px]"
                 >
@@ -154,11 +183,12 @@ export function DomainPanel({
           onSubmit={(event) => {
             event.preventDefault();
             const hostname = value;
+            if (hostname.trim() === "") return;
             run(async () => {
               const result = await addAppDomain(spaceSlug, appSlug, hostname);
               if (result.ok) setValue("");
               return result;
-            });
+            }, `Added ${hostname.trim()}. Add the DNS record below to finish.`);
           }}
         >
           <label htmlFor="app-domain" className="sr-only">
@@ -175,7 +205,8 @@ export function DomainPanel({
           />
           <button
             type="submit"
-            disabled={pending || value.trim() === ""}
+            disabled={value.trim() === ""}
+            aria-disabled={pending || undefined}
             className="btn btn-secondary"
           >
             {pending ? "Adding..." : "Add domain"}
@@ -183,8 +214,8 @@ export function DomainPanel({
           {waiting ? (
             <button
               type="button"
-              disabled={pending}
-              onClick={() => run(() => checkAppDomains(spaceSlug, appSlug))}
+              aria-disabled={pending || undefined}
+              onClick={() => run(() => checkAppDomains(spaceSlug, appSlug), "Checked")}
               className="btn btn-ghost text-[12.5px]"
             >
               Check again
@@ -194,13 +225,15 @@ export function DomainPanel({
       ) : waiting ? (
         <button
           type="button"
-          disabled={pending}
-          onClick={() => run(() => checkAppDomains(spaceSlug, appSlug))}
+          aria-disabled={pending || undefined}
+          onClick={() => run(() => checkAppDomains(spaceSlug, appSlug), "Checked")}
           className="btn btn-ghost mt-3 text-[12.5px]"
         >
           Check again
         </button>
       ) : null}
+
+      <LiveStatus message={said} />
 
       {error !== null ? (
         <p role="alert" className="mt-2 text-[12.5px] text-failed">

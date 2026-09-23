@@ -15,7 +15,7 @@ export function RecentStrip({ apps, spaceSlug }: { apps: App[]; spaceSlug: strin
 
   return (
     <section className="enter-up flex flex-col gap-2.5">
-      <p className="eyebrow">Recent</p>
+      <h2 className="eyebrow">Recent</h2>
 
       <ul className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {apps.map((app, index) => {

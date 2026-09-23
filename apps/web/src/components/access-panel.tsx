@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { LiveStatus } from "./ui/live-status";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   grantAccess,
@@ -52,15 +53,46 @@ export function AccessPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
-  const run = (key: string, work: () => Promise<{ ok: boolean; error?: string }>) => {
+  const run = (
+    key: string,
+    work: () => Promise<{ ok: boolean; error?: string }>,
+    done: string,
+  ) => {
+    if (pending) return;
     setError(null);
+    setSaid(null);
     setBusy(key);
     startTransition(async () => {
       const result = await work();
       if (!result.ok) setError(result.error ?? "That did not work.");
+      else setSaid(done);
       setBusy(null);
       router.refresh();
+    });
+  };
+
+  // Giving someone access moves them from the buttons to the list, and taking
+  // it away removes their row: either way the control that was pressed is
+  // gone once the page redraws. Focus goes to this panel's heading then,
+  // rather than to the top of the page.
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending && document.activeElement === document.body) {
+      heading.current?.focus();
+    }
+    wasPending.current = pending;
+  }, [pending]);
+
+  // "N more" goes away once pressed, so focus moves to the first person it
+  // brought into view.
+  const people = useRef<HTMLDivElement>(null);
+  const expand = () => {
+    setExpanded(true);
+    requestAnimationFrame(() => {
+      people.current?.querySelectorAll("button")[VISIBLE_CANDIDATES]?.focus();
     });
   };
 
@@ -74,7 +106,13 @@ export function AccessPanel({
   return (
     <section className="enter-up mt-10">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Access</h2>
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className="text-[13px] font-semibold tracking-[-0.01em] text-ink focus:outline-none"
+        >
+          Access
+        </h2>
         <p className="text-[12px] text-ink-subtle">
           {hasEveryone ? "Open to the whole space" : "Only the people listed"}
         </p>
@@ -125,11 +163,15 @@ export function AccessPanel({
                   <select
                     id={`level-${entry.id}`}
                     value={entry.level}
-                    disabled={pending}
+                    aria-disabled={pending || undefined}
                     onChange={(event) => {
                       const level = event.target.value === "manage" ? "manage" : "use";
-                      run(`level-${entry.id}`, () =>
-                        setAccessLevel(spaceSlug, appSlug, entry.id, level),
+                      run(
+                        `level-${entry.id}`,
+                        () => setAccessLevel(spaceSlug, appSlug, entry.id, level),
+                        level === "manage"
+                          ? `${entry.label} can now manage this app`
+                          : `${entry.label} can now use this app, not manage it`,
                       );
                     }}
                     title="Managing is deploying it, setting its variables and deciding who sees it"
@@ -143,9 +185,13 @@ export function AccessPanel({
 
               <button
                 type="button"
-                disabled={pending}
+                aria-disabled={pending || undefined}
                 onClick={() =>
-                  run(entry.id, () => revokeAccess(spaceSlug, appSlug, entry.id))
+                  run(
+                    entry.id,
+                    () => revokeAccess(spaceSlug, appSlug, entry.id),
+                    `Took away ${entry.label}'s access`,
+                  )
                 }
                 className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[12.5px] hover:text-failed"
               >
@@ -164,17 +210,29 @@ export function AccessPanel({
               .join("\n")}
           >
             {always}
+            <span className="sr-only">
+              {" "}
+              {[implicit.ownerName, ...implicit.adminNames]
+                .filter((name) => name !== null)
+                .join(", ")}
+            </span>
           </li>
         )}
       </ul>
+
+      <LiveStatus message={said} />
 
       <div className="mt-3 flex flex-wrap gap-2">
         {!hasEveryone ? (
           <button
             type="button"
-            disabled={pending}
+            aria-disabled={pending || undefined}
             onClick={() =>
-              run("everyone", () => grantAccess(spaceSlug, appSlug, { kind: "everyone" }))
+              run(
+                "everyone",
+                () => grantAccess(spaceSlug, appSlug, { kind: "everyone" }),
+                `Everyone at ${spaceName} can open this app`,
+              )
             }
             className="btn btn-secondary"
           >
@@ -186,10 +244,13 @@ export function AccessPanel({
           <button
             key={team.teamId}
             type="button"
-            disabled={pending}
+            aria-disabled={pending || undefined}
             onClick={() =>
-              run(team.teamId, () =>
-                grantAccess(spaceSlug, appSlug, { kind: "team", teamId: team.teamId }),
+              run(
+                team.teamId,
+                () =>
+                  grantAccess(spaceSlug, appSlug, { kind: "team", teamId: team.teamId }),
+                `Gave ${team.name} access`,
               )
             }
             title={`${team.size} ${team.size === 1 ? "person" : "people"}`}
@@ -201,40 +262,55 @@ export function AccessPanel({
               <>
                 <TeamGlyph />
                 {team.name}
+                <span className="sr-only">
+                  , {team.size} {team.size === 1 ? "person" : "people"}
+                </span>
               </>
             )}
           </button>
         ))}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div ref={people} className="mt-2 flex flex-wrap gap-2">
         {shown.map((member) => (
           <button
             key={member.userId}
             type="button"
-            disabled={pending}
+            aria-disabled={pending || undefined}
             onClick={() =>
-              run(member.userId, () =>
-                grantAccess(spaceSlug, appSlug, {
-                  kind: "person",
-                  userId: member.userId,
-                }),
+              run(
+                member.userId,
+                () =>
+                  grantAccess(spaceSlug, appSlug, {
+                    kind: "person",
+                    userId: member.userId,
+                  }),
+                `Gave ${member.name} access`,
               )
             }
             title={member.email}
             className="btn border-dashed border-line-strong text-ink-muted hover:border-accent hover:bg-accent-quiet hover:text-accent"
           >
-            {busy === member.userId ? "Adding..." : `+ ${member.name}`}
+            {busy === member.userId ? (
+              "Adding..."
+            ) : (
+              <>
+                <span className="sr-only">Give access to </span>
+                <span aria-hidden="true">+ </span>
+                {member.name}
+                <span className="sr-only">, {member.email}</span>
+              </>
+            )}
           </button>
         ))}
 
         {hidden > 0 ? (
           <button
             type="button"
-            onClick={() => setExpanded(true)}
+            onClick={expand}
             className="btn btn-ghost text-ink-subtle hover:text-ink"
           >
-            {hidden} more
+            {hidden} more<span className="sr-only"> people to choose from</span>
           </button>
         ) : null}
       </div>

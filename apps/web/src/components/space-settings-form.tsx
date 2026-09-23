@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveStatus } from "./ui/live-status";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { renameSpace, setJoinByDomain } from "@/lib/space-actions";
@@ -26,6 +27,7 @@ export function SpaceSettingsForm({
   const [saved, setSaved] = useState<string | null>(null);
 
   const run = (label: string, work: () => Promise<{ ok: boolean; error?: string }>) => {
+    if (pending) return;
     setError(null);
     setSaved(null);
     startTransition(async () => {
@@ -46,6 +48,7 @@ export function SpaceSettingsForm({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (draft.trim() === name) return;
           run("Name saved.", () => renameSpace(spaceSlug, draft));
         }}
         className="mt-3 flex flex-wrap items-end gap-2"
@@ -61,7 +64,9 @@ export function SpaceSettingsForm({
         </label>
         <button
           type="submit"
-          disabled={pending || draft.trim() === name}
+          // Not disabled: once the rename lands the name matches the draft,
+          // and a disabled button would drop focus to the top of the page.
+          aria-disabled={pending || draft.trim() === name || undefined}
           className="btn btn-secondary"
         >
           Rename
@@ -77,7 +82,7 @@ export function SpaceSettingsForm({
           <input
             type="checkbox"
             checked={joinByDomain}
-            disabled={pending}
+            aria-disabled={pending || undefined}
             onChange={() =>
               run(
                 joinByDomain ? "Joining by address is off." : "Joining by address is on.",
@@ -104,10 +109,11 @@ export function SpaceSettingsForm({
           {error}
         </p>
       ) : saved !== null ? (
-        <p role="status" className="enter-fade mt-3 text-[12.5px] text-ink-muted">
+        <p aria-hidden="true" className="enter-fade mt-3 text-[12.5px] text-ink-muted">
           {saved}
         </p>
       ) : null}
+      <LiveStatus message={error === null ? saved : null} />
     </section>
   );
 }

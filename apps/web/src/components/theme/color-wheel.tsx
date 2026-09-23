@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { hexToHsl, hslToHex, type Hsl } from "@/lib/theme";
 
 /**
@@ -30,6 +30,7 @@ export function ColorWheel({
   onCommit: (hex: string) => void;
 }) {
   const wheelRef = useRef<HTMLDivElement>(null);
+  const hintId = useId();
   const hsl = hexToHsl(value);
 
   // A fully dark or fully light colour has no meaningful hue, and reading one
@@ -81,8 +82,16 @@ export function ColorWheel({
     <div className="flex flex-col gap-3">
       <div
         ref={wheelRef}
-        role="application"
-        aria-label="Colour wheel: arrow keys change hue and saturation"
+        // A slider, so that where the knob sits is read out as it moves; the
+        // wheel is two sliders in one, and the text says both.
+        role="slider"
+        aria-roledescription="colour wheel"
+        aria-label="Hue and saturation"
+        aria-describedby={hintId}
+        aria-valuemin={0}
+        aria-valuemax={359}
+        aria-valuenow={Math.round(hue) % 360}
+        aria-valuetext={`${hsl.s < 0.05 ? "grey" : hueName(hue)}, ${Math.round(hsl.s * 100)} percent saturation`}
         tabIndex={0}
         onKeyDown={onKeyDown}
         onPointerDown={(event) => {
@@ -123,6 +132,11 @@ export function ColorWheel({
         />
       </div>
 
+      <span id={hintId} className="sr-only">
+        Left and right arrows change the hue, up and down the saturation. Hold Shift for
+        bigger steps.
+      </span>
+
       <label className="flex items-center gap-2.5">
         <span className="w-[46px] shrink-0 text-[12px] text-ink-muted">Light</span>
         <input
@@ -132,6 +146,7 @@ export function ColorWheel({
           max={100}
           value={Math.round(hsl.l * 100)}
           aria-label="Lightness"
+          aria-valuetext={`${Math.round(hsl.l * 100)} percent`}
           onChange={(event) =>
             onPreview(hslToHex({ h: hue, s: hsl.s, l: Number(event.target.value) / 100 }))
           }
@@ -155,4 +170,21 @@ export function ColorWheel({
       </label>
     </div>
   );
+}
+
+/** A hue said as a word, which is how people think of one. */
+function hueName(degrees: number): string {
+  const names = [
+    [15, "red"],
+    [45, "orange"],
+    [70, "yellow"],
+    [160, "green"],
+    [200, "cyan"],
+    [255, "blue"],
+    [290, "purple"],
+    [335, "pink"],
+    [360, "red"],
+  ] as const;
+  const h = ((degrees % 360) + 360) % 360;
+  return names.find(([limit]) => h < limit)?.[1] ?? "red";
 }

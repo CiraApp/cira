@@ -51,7 +51,7 @@ export function Switch({
       }}
       className={`group relative h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-progress ${
         on
-          ? "bg-live"
+          ? "bg-live-fill"
           : "bg-line-strong shadow-[inset_0_0_0_1px_var(--color-field-border)] enabled:hover:bg-ink-subtle/60"
       } ${className}`}
     >

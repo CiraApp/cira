@@ -15,6 +15,7 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (pending) return;
     setError(null);
     startTransition(async () => {
       const result = await approveCliLogin(code);
@@ -26,7 +27,15 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
   if (done !== null) {
     return (
       <div className="enter-pop rounded-[var(--radius-edge)] border border-line bg-surface px-5 py-6 text-center">
-        <p className="text-[15px] font-medium text-ink">You&rsquo;re connected</p>
+        {/* Focused as it appears: the form, and the button that was pressed,
+            are gone, and this is what there is to hear. */}
+        <p
+          ref={(element) => element?.focus()}
+          tabIndex={-1}
+          className="text-[15px] font-medium text-ink focus:outline-none"
+        >
+          You&rsquo;re connected
+        </p>
         <p className="mt-1.5 text-[14px] text-ink-muted">
           Head back to your terminal. You can close this tab.
         </p>
@@ -74,7 +83,8 @@ export function CliApprove({ initialCode }: { initialCode: string }) {
 
       <button
         type="submit"
-        disabled={pending || !sure}
+        disabled={!sure}
+        aria-disabled={pending || undefined}
         className="btn btn-primary btn-lg"
       >
         {pending ? "Connecting..." : "Connect"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   beginSso,
@@ -10,6 +10,8 @@ import {
   stopScim,
 } from "@/lib/sign-in-actions";
 import type { SsoDetails } from "@/lib/sso";
+import { CopyableCommand } from "./copyable-command";
+import { LiveStatus } from "./ui/live-status";
 
 /**
  * How a company's people get in, for its admins: through the company's own
@@ -41,14 +43,40 @@ export function CompanySignIn({
   const [metadata, setMetadata] = useState("");
   const [token, setToken] = useState<string | null>(null);
 
-  const run = (work: () => Promise<{ ok: true } | { ok: false; error: string }>) => {
+  const [said, setSaid] = useState<string | null>(null);
+  const ssoHeading = useRef<HTMLHeadingElement>(null);
+  const scimHeading = useRef<HTMLHeadingElement>(null);
+  const landing = useRef<HTMLHeadingElement | null>(null);
+
+  const run = (
+    work: () => Promise<{ ok: true } | { ok: false; error: string }>,
+    done: string,
+    section: React.RefObject<HTMLHeadingElement | null>,
+  ) => {
+    if (pending) return;
     setError(null);
+    setSaid(null);
+    landing.current = section.current;
     startTransition(async () => {
       const result = await work();
       if (!result.ok) setError(result.error);
-      else router.refresh();
+      else {
+        setSaid(done);
+        router.refresh();
+      }
     });
   };
+
+  // Most of these replace the form they were pressed in - setting up draws
+  // the details, stopping takes the button away - so focus would fall to the
+  // top of the page. It goes to the heading of the part that changed instead.
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending && document.activeElement === document.body) {
+      landing.current?.focus();
+    }
+    wasPending.current = pending;
+  }, [pending]);
 
   return (
     <section className="mt-10">
@@ -64,7 +92,13 @@ export function CompanySignIn({
       <div className="mt-4 overflow-hidden rounded-[var(--radius-edge)] border border-line bg-surface">
         <div className="px-4 py-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[13px] font-medium text-ink">Single sign-on (SAML)</p>
+            <h3
+              ref={ssoHeading}
+              tabIndex={-1}
+              className="text-[13px] font-medium text-ink focus:outline-none"
+            >
+              Single sign-on (SAML)
+            </h3>
             {sso !== null ? (
               <span
                 className={`text-[11.5px] ${sso.active ? "text-live" : "text-pending"}`}
@@ -79,7 +113,11 @@ export function CompanySignIn({
               className="mt-3 flex flex-wrap items-end gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                run(() => beginSso(spaceSlug, domainDraft));
+                run(
+                  () => beginSso(spaceSlug, domainDraft),
+                  "Single sign-on set up. Add these details to your provider.",
+                  ssoHeading,
+                );
               }}
             >
               <label className="flex min-w-[220px] flex-1 flex-col gap-1.5 text-[12px] text-ink-subtle">
@@ -94,7 +132,8 @@ export function CompanySignIn({
               </label>
               <button
                 type="submit"
-                disabled={pending || domainDraft.trim() === ""}
+                disabled={domainDraft.trim() === ""}
+                aria-disabled={pending || undefined}
                 className="btn btn-secondary"
               >
                 {pending ? "Setting up..." : "Set up"}
@@ -121,7 +160,11 @@ export function CompanySignIn({
                   className="mt-3 flex flex-wrap items-end gap-2"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    run(() => completeSso(spaceSlug, metadata));
+                    run(
+                      () => completeSso(spaceSlug, metadata),
+                      "Single sign-on is on",
+                      ssoHeading,
+                    );
                   }}
                 >
                   <label className="flex min-w-[260px] flex-1 flex-col gap-1.5 text-[12px] text-ink-subtle">
@@ -136,7 +179,8 @@ export function CompanySignIn({
                   </label>
                   <button
                     type="submit"
-                    disabled={pending || metadata.trim() === ""}
+                    disabled={metadata.trim() === ""}
+                    aria-disabled={pending || undefined}
                     className="btn btn-primary"
                   >
                     {pending ? "Turning on..." : "Turn on"}
@@ -146,8 +190,10 @@ export function CompanySignIn({
 
               <button
                 type="button"
-                disabled={pending}
-                onClick={() => run(() => endSso(spaceSlug))}
+                aria-disabled={pending || undefined}
+                onClick={() =>
+                  run(() => endSso(spaceSlug), "Single sign-on stopped", ssoHeading)
+                }
                 className="btn btn-ghost mt-3 px-2 text-[12px] hover:text-failed"
               >
                 Stop single sign-on
@@ -158,7 +204,13 @@ export function CompanySignIn({
 
         <div className="border-t border-line px-4 py-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[13px] font-medium text-ink">Directory sync (SCIM)</p>
+            <h3
+              ref={scimHeading}
+              tabIndex={-1}
+              className="text-[13px] font-medium text-ink focus:outline-none"
+            >
+              Directory sync (SCIM)
+            </h3>
             {scim !== null ? (
               <span className="text-[11.5px] text-ink-subtle">
                 {scim.lastUsedAt === null
@@ -173,23 +225,32 @@ export function CompanySignIn({
           </p>
           <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[12px]">
             <Detail label="Base URL" value={scimBase} />
-            {token !== null ? <Detail label="Token" value={token} /> : null}
           </dl>
           {token !== null ? (
-            <p className="mt-2 text-[11.5px] text-pending">
-              Copy the token now. Cira keeps only a fingerprint and cannot show it again.
-            </p>
+            <div className="mt-3">
+              <p id="scim-token-note" className="text-[11.5px] text-pending">
+                Copy the token now. Cira keeps only a fingerprint and cannot show it
+                again.
+              </p>
+              <div className="mt-1.5">
+                <CopyableCommand command={token} shell={false} />
+              </div>
+            </div>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={pending}
+              aria-disabled={pending || undefined}
               onClick={() =>
-                run(async () => {
-                  const result = await makeScimToken(spaceSlug);
-                  if (result.ok) setToken(result.data.token);
-                  return result;
-                })
+                run(
+                  async () => {
+                    const result = await makeScimToken(spaceSlug);
+                    if (result.ok) setToken(result.data.token);
+                    return result;
+                  },
+                  "Token made. Copy it now: Cira cannot show it again.",
+                  scimHeading,
+                )
               }
               className="btn btn-secondary"
             >
@@ -198,12 +259,16 @@ export function CompanySignIn({
             {scim !== null ? (
               <button
                 type="button"
-                disabled={pending}
+                aria-disabled={pending || undefined}
                 onClick={() =>
-                  run(async () => {
-                    setToken(null);
-                    return stopScim(spaceSlug);
-                  })
+                  run(
+                    async () => {
+                      setToken(null);
+                      return stopScim(spaceSlug);
+                    },
+                    "Directory sync stopped",
+                    scimHeading,
+                  )
                 }
                 className="btn btn-ghost px-2 text-[12px] hover:text-failed"
               >
@@ -213,6 +278,8 @@ export function CompanySignIn({
           </div>
         </div>
       </div>
+
+      <LiveStatus message={said} />
 
       {error !== null ? (
         <p role="alert" className="mt-2 text-[12.5px] text-failed">

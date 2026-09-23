@@ -170,8 +170,16 @@ export function AskPanel() {
                   exchange={exchange}
                   latest={index === exchanges.length - 1}
                   busy={ask.busy}
-                  onDecide={ask.decide}
-                  onRetry={ask.retry}
+                  // Both take away the buttons that were pressed; the question
+                  // field is where anyone goes next.
+                  onDecide={(run) => {
+                    ask.decide(run);
+                    field.current?.focus();
+                  }}
+                  onRetry={() => {
+                    ask.retry();
+                    field.current?.focus();
+                  }}
                 />
               ))}
             </div>

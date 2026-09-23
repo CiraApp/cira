@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { LiveStatus } from "./ui/live-status";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import {
   createAssistantToken,
@@ -39,7 +40,7 @@ export function ConnectAssistant({ connected }: { connected: TokenSummary | null
               Reach these apps from Claude, Cursor or Codex.
             </p>
             <p className="mt-2.5 text-[12px] font-medium text-ink-subtle transition-colors group-hover:text-ink">
-              Connect &rarr;
+              Connect <span aria-hidden="true">&rarr;</span>
             </p>
           </>
         ) : (
@@ -55,7 +56,7 @@ export function ConnectAssistant({ connected }: { connected: TokenSummary | null
                 : `last used ${ago(connected.lastUsedAt)}`}
             </p>
             <p className="mt-2.5 text-[12px] font-medium text-ink-subtle transition-colors group-hover:text-ink">
-              Manage &rarr;
+              Manage <span aria-hidden="true">&rarr;</span>
             </p>
           </>
         )}
@@ -79,6 +80,8 @@ function ConnectSteps({ onClose }: { onClose: () => void }) {
   const [tokens, setTokens] = useState<TokenSummary[] | null>(null);
   const [client, setClient] = useState<ClientId>("claude-code");
   const [state, create, creating] = useActionState(createAssistantToken, null);
+  const [revoked, setRevoked] = useState<string | null>(null);
+  const tokensHeading = useRef<HTMLHeadingElement>(null);
 
   // The endpoint is whichever Cira this is, rather than a configured constant
   // that can disagree with the address in the address bar.
@@ -89,14 +92,27 @@ function ConnectSteps({ onClose }: { onClose: () => void }) {
 
   const token = state?.ok === true ? state.data.token : null;
 
+  // Creating replaces the form, and the button pressed, with the token: focus
+  // goes to its copy button, which is the next thing to do with it.
+  const tokenArea = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (token !== null) tokenArea.current?.querySelector("button")?.focus();
+  }, [token]);
+
   return (
     <>
       <Step n={1} label="Endpoint" />
-      <Copyable value={endpoint} />
+      <Copyable value={endpoint} what="the endpoint" />
 
       <Step n={2} label="Token" />
       {token === null ? (
-        <form action={create} className="flex items-center gap-2">
+        <form
+          action={create}
+          onSubmit={(event) => {
+            if (creating) event.preventDefault();
+          }}
+          className="flex items-center gap-2"
+        >
           <label htmlFor="token-label" className="sr-only">
             What is this token for
           </label>
@@ -107,17 +123,21 @@ function ConnectSteps({ onClose }: { onClose: () => void }) {
             defaultValue={deviceName()}
             className="field flex-1 py-2 text-[13px]"
           />
-          <button type="submit" disabled={creating} className="btn btn-primary">
+          <button
+            type="submit"
+            aria-disabled={creating || undefined}
+            className="btn btn-primary"
+          >
             {creating ? "Creating..." : "Create"}
           </button>
         </form>
       ) : (
-        <>
-          <Copyable value={token} mono />
-          <p className="mt-1.5 text-[11.5px] text-ink-subtle">
+        <div ref={tokenArea}>
+          <Copyable value={token} mono what="the token" describedBy="token-once" />
+          <p id="token-once" className="mt-1.5 text-[11.5px] text-ink-subtle">
             Shown once. Create another if you lose it - they cost nothing.
           </p>
-        </>
+        </div>
       )}
       {state?.ok === false ? (
         <p role="alert" className="mt-1.5 text-[12.5px] text-failed">
@@ -141,7 +161,12 @@ function ConnectSteps({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="mt-2.5">
-        <Copyable value={snippet(client, endpoint, token ?? "YOUR_TOKEN")} mono block />
+        <Copyable
+          value={snippet(client, endpoint, token ?? "YOUR_TOKEN")}
+          mono
+          block
+          what="the configuration"
+        />
       </div>
       <p className="mt-2 text-[11.5px] text-ink-subtle">
         {CLIENTS.find((entry) => entry.id === client)?.hint}
@@ -152,7 +177,10 @@ function ConnectSteps({ onClose }: { onClose: () => void }) {
       </p>
 
       <div className="mt-5 border-t border-line pt-3.5">
-        <p className="eyebrow">Your tokens</p>
+        <h3 ref={tokensHeading} tabIndex={-1} className="eyebrow focus:outline-none">
+          Your tokens
+        </h3>
+        <LiveStatus message={revoked === null ? null : `Revoked ${revoked}`} />
         {tokens === null ? (
           <p className="mt-2 text-[12px] text-ink-subtle">Loading...</p>
         ) : tokens.length === 0 ? (
@@ -163,7 +191,14 @@ function ConnectSteps({ onClose }: { onClose: () => void }) {
               <TokenRow
                 key={entry.id}
                 token={entry}
-                onRevoked={() => void listAssistantTokens().then(setTokens)}
+                onRevoked={() => {
+                  setRevoked(entry.label);
+                  // Its row is about to go, and the Revoke button in it.
+                  void listAssistantTokens().then((next) => {
+                    setTokens(next);
+                    requestAnimationFrame(() => tokensHeading.current?.focus());
+                  });
+                }}
               />
             ))}
           </ul>
@@ -200,14 +235,21 @@ function TokenRow({ token, onRevoked }: { token: TokenSummary; onRevoked: () => 
         {token.scope === "cli" ? "terminal" : "assistants"} ·{" "}
         {token.lastUsedAt === null ? "unused" : `used ${ago(token.lastUsedAt)}`}
       </span>
-      <form action={revoke}>
+      <form
+        action={revoke}
+        onSubmit={(event) => {
+          if (pending) event.preventDefault();
+        }}
+      >
         <input type="hidden" name="id" value={token.id} />
         <button
           type="submit"
-          disabled={pending}
-          className="shrink-0 text-[11.5px] text-ink-subtle transition-colors hover:text-failed"
+          aria-disabled={pending || undefined}
+          className="shrink-0 text-[11.5px] text-ink-subtle transition-colors hover:text-failed aria-disabled:cursor-progress aria-disabled:opacity-60"
         >
-          {pending ? "..." : "Revoke"}
+          {/* Named while it works, not "...": that was all a screen reader heard. */}
+          {pending ? "Revoking..." : "Revoke"}
+          <span className="sr-only"> {token.label}</span>
         </button>
       </form>
     </li>
@@ -224,12 +266,17 @@ function Step({ n, label }: { n: number; label: string }) {
 
 function Copyable({
   value,
+  what,
   mono = false,
   block = false,
+  describedBy,
 }: {
   value: string;
+  /** Said after "Copy", since there are three of these in one dialog. */
+  what: string;
   mono?: boolean;
   block?: boolean;
+  describedBy?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -244,6 +291,7 @@ function Copyable({
       </code>
       <button
         type="button"
+        aria-describedby={describedBy}
         onClick={() => {
           void navigator.clipboard.writeText(value).then(() => {
             setCopied(true);
@@ -253,7 +301,9 @@ function Copyable({
         className="btn btn-secondary shrink-0"
       >
         {copied ? "Copied" : "Copy"}
+        <span className="sr-only"> {what}</span>
       </button>
+      <LiveStatus message={copied ? "Copied" : null} />
     </div>
   );
 }

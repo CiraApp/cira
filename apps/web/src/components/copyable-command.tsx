@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveStatus } from "./ui/live-status";
 import { useEffect, useState } from "react";
 
 /**
@@ -61,7 +62,9 @@ export function CopyableCommand({
     <button
       type="button"
       onClick={copy}
-      aria-label={copied ? "Copied" : `Copy "${command}"`}
+      // A fixed name: a label that changed to "Copied" under focus was not
+      // reliably read out. The status below says it instead.
+      aria-label={`Copy "${command}"`}
       className="group flex w-full max-w-full items-center gap-2 rounded-[var(--radius-edge)] border border-line bg-sunken/60 px-3.5 py-2.5 text-left transition-[border-color,background-color] duration-150 hover:border-line-strong hover:bg-sunken"
     >
       {body}
@@ -70,6 +73,7 @@ export function CopyableCommand({
       <span className="w-[46px] shrink-0 text-right text-[11px] font-medium text-ink-subtle transition-colors duration-150 group-hover:text-ink-muted">
         {copied ? "Copied" : "Copy"}
       </span>
+      <LiveStatus message={copied ? "Copied" : null} />
     </button>
   );
 }

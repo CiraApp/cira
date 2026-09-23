@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Role } from "@cira/core";
 import { changeRole, leaveSpace, removeMember } from "@/lib/member-actions";
+import { announce } from "./ui/announcer";
 import { Dialog } from "./ui/dialog";
+import { LiveStatus } from "./ui/live-status";
 
 const ROLE_NOTE: Record<Role, string> = {
   owner: "Full control of this space",
@@ -47,6 +49,7 @@ export function MemberControls({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
 
   const self = person.userId === viewer.userId;
   const viewerIsAdmin = viewer.role === "admin" || viewer.role === "owner";
@@ -60,7 +63,9 @@ export function MemberControls({
     work: () => Promise<{ ok: boolean; error?: string }>,
     after?: () => void,
   ) => {
+    if (pending) return;
     setError(null);
+    setSaid(null);
     startTransition(async () => {
       const result = await work();
       if (!result.ok) {
@@ -86,12 +91,19 @@ export function MemberControls({
             <select
               id={`role-${person.userId}`}
               value={person.role}
-              disabled={pending}
+              aria-disabled={pending || undefined}
               onChange={(e) => {
                 const role = e.target.value as Role;
-                run(() => changeRole(spaceSlug, person.userId, role));
+                run(
+                  () => changeRole(spaceSlug, person.userId, role),
+                  () =>
+                    setSaid(
+                      `${person.name} is now ${role === "member" ? "a" : "an"} ${role}`,
+                    ),
+                );
               }}
               title={ROLE_NOTE[person.role]}
+              aria-describedby={`role-note-${person.userId}`}
               className="field w-auto py-1.5 pr-7 text-[12.5px]"
             >
               {choices.map((role) => (
@@ -100,9 +112,13 @@ export function MemberControls({
                 </option>
               ))}
             </select>
+            <span id={`role-note-${person.userId}`} className="sr-only">
+              {ROLE_NOTE[person.role]}
+            </span>
+            <LiveStatus message={said} />
             <button
               type="button"
-              disabled={pending}
+              aria-disabled={pending || undefined}
               onClick={() => setConfirming(true)}
               className="btn btn-ghost px-2.5 py-1.5 text-[12.5px] hover:text-failed"
             >
@@ -123,7 +139,7 @@ export function MemberControls({
         {self ? (
           <button
             type="button"
-            disabled={pending}
+            aria-disabled={pending || undefined}
             onClick={() => setConfirming(true)}
             className="btn btn-ghost px-2.5 py-1.5 text-[12.5px] hover:text-failed"
           >
@@ -186,14 +202,24 @@ export function MemberControls({
           </button>
           <button
             type="button"
-            disabled={pending}
+            aria-disabled={pending || undefined}
             onClick={() =>
               self
                 ? run(
                     () => leaveSpace(spaceSlug),
                     () => router.push("/"),
                   )
-                : run(() => removeMember(spaceSlug, person.userId))
+                : run(
+                    () => removeMember(spaceSlug, person.userId),
+                    () => {
+                      // Their row, and this with it, is about to go: the
+                      // words and the focus move to the list's heading.
+                      announce(`Removed ${person.name} from ${spaceName}`);
+                      requestAnimationFrame(() =>
+                        document.getElementById("people")?.focus(),
+                      );
+                    },
+                  )
             }
             className="btn btn-danger"
           >

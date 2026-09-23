@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { decideApproval } from "@/lib/approval-actions";
 
@@ -21,18 +21,33 @@ export function ApprovalDecision({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Set once this person has answered here, so the outcome that replaces the
+  // buttons takes focus and is read out. Arriving at an approval that was
+  // already settled needs neither.
+  const [answered, setAnswered] = useState(false);
+  const outcome = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (answered && status !== "pending") outcome.current?.focus();
+  }, [answered, status]);
 
-  const answer = (choice: "approve" | "deny") =>
+  const answer = (choice: "approve" | "deny") => {
+    if (pending) return;
     start(async () => {
       setError(null);
       const result = await decideApproval(approvalId, choice);
       if (!result.ok) setError(result.error);
+      else setAnswered(true);
       router.refresh();
     });
+  };
 
   if (status !== "pending") {
     return (
-      <p role="status" className="mt-5 text-[13.5px] leading-relaxed text-ink-muted">
+      <p
+        ref={outcome}
+        tabIndex={-1}
+        className="mt-5 text-[13.5px] leading-relaxed text-ink-muted focus:outline-none"
+      >
         {SETTLED[status]}
       </p>
     );
@@ -48,7 +63,7 @@ export function ApprovalDecision({
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={pending}
+          aria-disabled={pending || undefined}
           onClick={() => answer("approve")}
           className="btn btn-primary btn-lg flex-1"
         >
@@ -56,7 +71,7 @@ export function ApprovalDecision({
         </button>
         <button
           type="button"
-          disabled={pending}
+          aria-disabled={pending || undefined}
           onClick={() => answer("deny")}
           className="btn btn-secondary btn-lg flex-1"
         >

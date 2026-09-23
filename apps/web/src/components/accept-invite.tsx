@@ -28,6 +28,7 @@ export function AcceptInvite({
   const [error, setError] = useState<string | null>(null);
 
   const accept = useCallback(() => {
+    if (pending) return;
     setError(null);
     startTransition(async () => {
       const result = await acceptInvite(token);
@@ -37,7 +38,7 @@ export function AcceptInvite({
         setError(result.error);
       }
     });
-  }, [token, router]);
+  }, [token, router, pending]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -52,7 +53,7 @@ export function AcceptInvite({
         <button
           type="button"
           onClick={accept}
-          disabled={pending}
+          aria-disabled={pending || undefined}
           className="btn btn-primary btn-lg"
         >
           {pending ? "Joining..." : `Join ${spaceName}`}

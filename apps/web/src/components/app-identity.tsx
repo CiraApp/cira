@@ -111,6 +111,7 @@ export function AppIdentity({
   };
 
   const storeImage = (picture: string) => {
+    if (pending) return;
     startTransition(async () => {
       const result = await updateAppImage(spaceSlug, appSlug, picture);
       if (!result.ok) setError(result.error);
@@ -118,11 +119,18 @@ export function AppIdentity({
     });
   };
 
+  // Back to the pencil when editing ends, however it ends: the fields that
+  // had focus are gone, and focus must not go with them.
+  const pencil = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
   useEffect(() => {
     if (editing) field.current?.focus();
+    else if (wasEditing.current) pencil.current?.focus();
+    wasEditing.current = editing;
   }, [editing]);
 
   const stop = () => {
+    if (pending) return;
     setEditing(false);
     setError(null);
     setDraftName(name);
@@ -130,6 +138,7 @@ export function AppIdentity({
   };
 
   const save = () => {
+    if (pending) return;
     if (draftName.trim() === name && draftDescription.trim() === (description ?? "")) {
       stop();
       return;
@@ -175,6 +184,7 @@ export function AppIdentity({
 
         {canManage ? (
           <button
+            ref={pencil}
             type="button"
             onClick={() => setEditing(true)}
             aria-label="Rename this app"
@@ -199,8 +209,10 @@ export function AppIdentity({
       */}
       <button
         type="button"
-        onClick={() => picker.current?.click()}
-        disabled={pending}
+        onClick={() => {
+          if (!pending) picker.current?.click();
+        }}
+        aria-disabled={pending || undefined}
         className="group relative shrink-0 rounded-[5px] outline-none"
         aria-label={image === null ? "Add a picture" : "Change the picture"}
         title={image === null ? "Add a picture" : "Change the picture"}
@@ -272,15 +284,15 @@ export function AppIdentity({
           <button
             type="button"
             onClick={save}
-            disabled={pending}
-            className="font-medium text-ink transition-opacity duration-150 hover:opacity-70 disabled:opacity-50"
+            aria-disabled={pending || undefined}
+            className="font-medium text-ink transition-opacity duration-150 hover:opacity-70 aria-disabled:opacity-50"
           >
             {pending ? "Saving..." : "Save"}
           </button>
           <button
             type="button"
             onClick={stop}
-            disabled={pending}
+            aria-disabled={pending || undefined}
             className="text-ink-muted transition-colors duration-150 hover:text-ink"
           >
             Cancel
@@ -289,7 +301,7 @@ export function AppIdentity({
             <button
               type="button"
               onClick={() => storeImage("")}
-              disabled={pending}
+              aria-disabled={pending || undefined}
               className="text-ink-muted transition-colors duration-150 hover:text-ink"
             >
               Remove picture

@@ -12,6 +12,11 @@ type SpaceOption = Space & { role: Role };
  * Sits at the top of the sidebar rather than in the header, because it scopes
  * everything below it: the nav, the gallery, the search. Putting it anywhere
  * else makes it look like a filter.
+ *
+ * A disclosure - a button that shows a list of links - rather than an ARIA
+ * menu. A menu promises arrow keys, Home and End, and focus moving into it;
+ * this never did those, so it told a screen reader it was something it was
+ * not. A list of links behaves exactly as announced.
  */
 export function SpaceMenu({
   spaces,
@@ -22,6 +27,7 @@ export function SpaceMenu({
 }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const current = spaces.find((s) => s.slug === currentSlug);
   const canSwitch = spaces.length > 1;
@@ -31,7 +37,14 @@ export function SpaceMenu({
     const onDown = (e: MouseEvent) => {
       if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      // The link that had focus is about to go; focus goes back to the button.
+      if (boxRef.current?.contains(document.activeElement) === true) {
+        buttonRef.current?.focus();
+      }
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -63,10 +76,12 @@ export function SpaceMenu({
   return (
     <div ref={boxRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-controls="space-list"
+        aria-label={`${current?.name ?? currentSlug}, switch space`}
         className="flex w-full items-center gap-2.5 rounded-[var(--radius-edge)] px-2.5 py-2 text-left transition-colors duration-150 hover:bg-sunken"
       >
         {face}
@@ -85,16 +100,19 @@ export function SpaceMenu({
       </button>
 
       {open ? (
-        <div
-          role="menu"
+        <nav
+          id="space-list"
+          aria-label="Spaces"
           className="enter-scale absolute top-full left-0 z-40 mt-1 w-full min-w-[212px] origin-top overflow-hidden rounded-[var(--radius-edge)] border border-line bg-raised p-1 shadow-[var(--shadow-float)]"
         >
-          <p className="eyebrow px-2 pt-1.5 pb-1">Spaces</p>
+          <p aria-hidden="true" className="eyebrow px-2 pt-1.5 pb-1">
+            Spaces
+          </p>
           {spaces.map((space) => (
             <Link
               key={space.id}
-              role="menuitem"
               href={`/${space.slug}`}
+              aria-current={space.slug === currentSlug ? "true" : undefined}
               onClick={() => setOpen(false)}
               className="flex items-center justify-between gap-3 rounded-[var(--radius-edge)] px-2 py-1.5 text-[13px] text-ink transition-colors duration-150 hover:bg-sunken"
             >
@@ -119,7 +137,7 @@ export function SpaceMenu({
               )}
             </Link>
           ))}
-        </div>
+        </nav>
       ) : null}
     </div>
   );

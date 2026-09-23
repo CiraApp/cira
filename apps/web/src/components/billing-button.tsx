@@ -30,8 +30,9 @@ export function BillingButton({
     <span className="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        disabled={pending}
-        onClick={() =>
+        aria-disabled={pending || undefined}
+        onClick={() => {
+          if (pending) return;
           start(async () => {
             setError(null);
             const outcome = subscribed
@@ -39,8 +40,8 @@ export function BillingButton({
               : await startCheckout(spaceSlug);
             if (outcome.ok) window.location.assign(outcome.url);
             else setError(outcome.error);
-          })
-        }
+          });
+        }}
         className={subscribed ? "btn btn-secondary" : "btn btn-primary"}
       >
         {pending
@@ -52,15 +53,16 @@ export function BillingButton({
       {!subscribed && customer ? (
         <button
           type="button"
-          disabled={pending}
-          onClick={() =>
+          aria-disabled={pending || undefined}
+          onClick={() => {
+            if (pending) return;
             start(async () => {
               setError(null);
               const outcome = await openBilling(spaceSlug);
               if (outcome.ok) window.location.assign(outcome.url);
               else setError(outcome.error);
-            })
-          }
+            });
+          }}
           className="btn btn-ghost"
         >
           Past invoices

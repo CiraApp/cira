@@ -55,6 +55,7 @@
   --color-failed: var(--t-failed);
   --color-pending: var(--t-pending);
   --color-danger-fill: var(--t-danger-fill);
+  --color-live-fill: var(--t-live-fill);
 
   /*
    * Lightly softened, never a pill. Three pixels reads as a cut edge rather
@@ -131,6 +132,11 @@
   --t-pending: #d79a3c;
   /* Under white button text: the failed red itself is too light for that. */
   --t-danger-fill: #c43a3a;
+  /*
+   * Under a white switch knob: the live green is too light to show one at
+   * 3:1, and a darker green still reads as on against the dark ground.
+   */
+  --t-live-fill: #218f63;
 
   --t-shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.06);
   --t-shadow-float:
@@ -178,6 +184,7 @@
   --t-failed: #b02e2e;
   --t-pending: #855607;
   --t-danger-fill: #c43a3a;
+  --t-live-fill: var(--t-live);
 
   --t-shadow-raise: 0 1px 2px rgb(12 14 18 / 0.06), 0 0 0 1px rgb(12 14 18 / 0.07);
   --t-shadow-float: 0 18px 40px -20px rgb(12 14 18 / 0.3), 0 0 0 1px rgb(12 14 18 / 0.09);
@@ -675,13 +682,22 @@ body::after {
       color 0.15s linear,
       box-shadow 0.25s var(--ease-settle);
   }
-  .btn:active:not(:disabled) {
+  .btn:active:not(:disabled, [aria-disabled="true"]) {
     transform: scale(0.97);
     transition-duration: 0.07s;
   }
   .btn:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  /*
+   * A button that is waiting on something it started keeps focus - a disabled
+   * one would drop it to the top of the page - so it is aria-disabled instead,
+   * and looks the same as disabled while it waits.
+   */
+  .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: progress;
   }
 
   .btn-primary {
@@ -690,7 +706,7 @@ body::after {
     box-shadow: 0 6px 20px -10px color-mix(in oklab, var(--color-accent) 85%, transparent);
   }
   @media (hover: hover) {
-    .btn-primary:hover:not(:disabled) {
+    .btn-primary:hover:not(:disabled, [aria-disabled="true"]) {
       background: var(--color-accent-hover);
       box-shadow: 0 10px 26px -10px
         color-mix(in oklab, var(--color-accent) 95%, transparent);
@@ -703,7 +719,7 @@ body::after {
     color: var(--color-ink);
   }
   @media (hover: hover) {
-    .btn-secondary:hover:not(:disabled) {
+    .btn-secondary:hover:not(:disabled, [aria-disabled="true"]) {
       border-color: var(--color-line-strong);
       background: color-mix(in oklab, var(--color-surface) 92%, var(--color-ink));
     }
@@ -713,7 +729,7 @@ body::after {
     color: var(--color-ink-muted);
   }
   @media (hover: hover) {
-    .btn-ghost:hover:not(:disabled) {
+    .btn-ghost:hover:not(:disabled, [aria-disabled="true"]) {
       background: var(--color-sunken);
       color: var(--color-ink);
     }
@@ -724,7 +740,7 @@ body::after {
     color: #fff;
   }
   @media (hover: hover) {
-    .btn-danger:hover:not(:disabled) {
+    .btn-danger:hover:not(:disabled, [aria-disabled="true"]) {
       filter: brightness(1.08);
     }
   }
@@ -747,6 +763,10 @@ body::after {
     transition:
       border-color 0.15s linear,
       box-shadow 0.2s var(--ease-settle);
+  }
+  .field[aria-disabled="true"] {
+    opacity: 0.6;
+    cursor: progress;
   }
   .field::placeholder {
     color: var(--color-ink-subtle);

@@ -50,7 +50,11 @@ export function EntryFrame({
 
         {title !== undefined ? (
           <h1
-            className="enter-up mt-2 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink"
+            // A step that changes in place moves focus here, so its question is
+            // what gets read next (see Onboarding).
+            id="entry-title"
+            tabIndex={-1}
+            className="enter-up mt-2 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink focus:outline-none"
             style={{ animationDelay: "110ms" }}
           >
             {title}
