@@ -1368,3 +1368,91 @@ describe("rolling out both halves", () => {
     expect(new Set(containers.map((c) => c.image)).size).toBe(2);
   });
 });
+
+describe("restore", () => {
+  /** An older build, still in the registry, that the app once ran. */
+  const OLD_TAG = "0f0f0f0f";
+  const handle = `b-0:${SERVICE}:${OLD_TAG}`;
+
+  const patched = () =>
+    calls.find((c) => c.method === "PATCH" && c.url.includes("/services/"))?.body as {
+      template: {
+        labels: Record<string, string>;
+        scaling?: { minInstanceCount?: number };
+        containers: Array<{ image: string; env: Array<{ name: string; value: string }> }>;
+      };
+      traffic: Array<{ type: string; percent: number }>;
+    };
+
+  it("points the service at the old images and builds nothing", async () => {
+    serve([[/run\.googleapis/, (m) => (m === "GET" ? serviceAt(IMAGE) : {})]]);
+
+    const result = await provider().restore(handle);
+
+    expect(result.status).toBe("deploying");
+    expect(calls.some((c) => c.url.includes("cloudbuild"))).toBe(false);
+    expect(patched().template.containers[0]?.image).toBe(
+      `us-central1-docker.pkg.dev/proj/cira-apps/${SERVICE}:${OLD_TAG}`,
+    );
+    // The old code is what should answer, so it takes the requests.
+    expect(patched().traffic).toEqual([
+      { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 },
+    ]);
+  });
+
+  it("keeps the variables and the warmth the app has now", async () => {
+    serve([
+      [
+        /run\.googleapis/,
+        (m) =>
+          m === "GET"
+            ? serviceAt(IMAGE, {
+                template: {
+                  labels: {},
+                  scaling: { minInstanceCount: 2 },
+                  containers: [
+                    {
+                      image: IMAGE,
+                      env: [{ name: "STRIPE_KEY", value: "sk_live_rotated" }],
+                    },
+                  ],
+                },
+              })
+            : {},
+      ],
+    ]);
+
+    await provider().restore(handle);
+
+    // A variable changed since that build was current is not rolled back with
+    // the code: what the app is configured with is not part of the build.
+    expect(patched().template.containers[0]?.env).toEqual([
+      { name: "STRIPE_KEY", value: "sk_live_rotated" },
+    ]);
+    expect(patched().template.scaling?.minInstanceCount).toBe(2);
+  });
+
+  it("says the app is gone rather than making a service to hold old code", async () => {
+    serve([[/run\.googleapis/, () => new Response("", { status: 404 })]]);
+
+    expect(await provider().restore(handle)).toEqual({
+      providerDeploymentId: handle,
+      status: "removed",
+      url: null,
+    });
+  });
+
+  it("moves an app of only workers back and calls it done", async () => {
+    serve([[/run\.googleapis/, (m) => (m === "GET" ? { jobs: [] } : {})]]);
+
+    expect(await provider().restore(`${handle}:noweb`)).toEqual({
+      providerDeploymentId: `${handle}:noweb`,
+      status: "live",
+      url: null,
+    });
+    // Nothing answers requests, so there is no service to point at anything.
+    expect(calls.some((c) => c.method === "PATCH" && c.url.includes("/services/"))).toBe(
+      false,
+    );
+  });
+});

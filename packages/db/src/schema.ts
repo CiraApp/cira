@@ -466,6 +466,12 @@ export const deployments = pgTable(
     releaseStartedAt: timestamp("release_started_at", { withTimezone: true }),
     releaseRun: text("release_run"),
     releaseDoneAt: timestamp("release_done_at", { withTimezone: true }),
+    /**
+     * The deploy this one put the app back on, when it is a rollback. The
+     * history says so rather than showing a deploy that appears from nowhere
+     * with the code of an older one.
+     */
+    restoredFromId: text("restored_from_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

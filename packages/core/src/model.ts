@@ -181,6 +181,8 @@ export interface Deployment {
   releaseRun: string | null;
   /** When the release command succeeded, which is what lets it roll out. */
   releaseDoneAt: Date | null;
+  /** The deploy this one put the app back on, when it is a rollback. */
+  restoredFromId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

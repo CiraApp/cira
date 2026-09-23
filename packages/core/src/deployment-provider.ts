@@ -293,6 +293,12 @@ export interface DeploymentProvider {
   startRelease?(deploymentId: string): Promise<string>;
   releaseState?(deploymentId: string, run: string): Promise<ReleaseState>;
 
+  /**
+   * Put an app back on a build it ran before, without building. Optional: a
+   * provider that cannot address an old build has no way to offer it.
+   */
+  restore?(deploymentId: string): Promise<DeploymentResult>;
+
   getLogs(deploymentId: string): Promise<DeploymentLogLine[]>;
 
   /**

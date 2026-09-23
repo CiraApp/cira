@@ -82,6 +82,12 @@ export default async function AppPage({
       webDownSince(ctx.app.id),
     ]);
 
+    // When each deploy in the list went out, to say what a rollback went back
+    // to by the time it was made rather than by an id nobody can read.
+    const restoredWhen = new Map(
+      history.map((d) => [d.id, relativeTime(d.createdAt)] as const),
+    );
+
     // Whether this app has a front door is settled the same way its deploy
     // status is: by asking, at the moment somebody wants to know. Deploying is
     // not the only chance to find out, and for every app that predates Cira
@@ -393,6 +399,7 @@ export default async function AppPage({
             spaceSlug={spaceSlug}
             appSlug={appSlug}
             logsHref={manages ? `/${spaceSlug}/${appSlug}/logs` : null}
+            canManage={manages}
             deploys={history.map((d) => ({
               id: d.id,
               status: d.id === deployment?.id ? deployment.status : d.status,
@@ -401,6 +408,12 @@ export default async function AppPage({
               reason:
                 d.id === deployment?.id ? deployment.failureReason : d.failureReason,
               warning: d.id === deployment?.id ? deployment.warning : d.warning,
+              // A rollback says which deploy it went back to, so a build that
+              // is older than the one above it is explained rather than odd.
+              restoredFrom:
+                d.restoredFromId === null
+                  ? null
+                  : (restoredWhen.get(d.restoredFromId) ?? null),
             }))}
           />
 

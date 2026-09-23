@@ -50,6 +50,7 @@ function deployment(
     releaseStartedAt: null,
     releaseRun: null,
     releaseDoneAt: null,
+    restoredFromId: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };

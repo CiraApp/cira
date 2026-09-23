@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { DeploymentStatus } from "@cira/core";
 import { fetchBuildLogs, type LogsResult } from "@/lib/log-actions";
+import { planRollback, rollBackTo, type RollbackPlan } from "@/lib/rollback-actions";
 import { SectionLink } from "./section-link";
 import { StatusDot } from "./status-dot";
 
@@ -15,6 +17,8 @@ export interface DeployRow {
   reason: string | null;
   /** What went wrong without stopping it. */
   warning: string | null;
+  /** When this deploy put the app back on an earlier one, how long ago that was. */
+  restoredFrom: string | null;
 }
 
 /** Keyed by every status, so a new one cannot reach this list unlabelled. */
@@ -39,15 +43,23 @@ export function DeploymentHistory({
   appSlug,
   deploys,
   logsHref,
+  canManage,
 }: {
   spaceSlug: string;
   appSlug: string;
   deploys: DeployRow[];
   /** The app's runtime logs, for whoever may read them. */
   logsHref: string | null;
+  /** Whether this person may change what the app runs. */
+  canManage: boolean;
 }) {
+  const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
   const [logs, setLogs] = useState<Record<string, LogsResult>>({});
+  const [plans, setPlans] = useState<Record<string, RollbackPlan | null>>({});
+  const [armed, setArmed] = useState<string | null>(null);
+  const [going, setGoing] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const logRef = useRef<HTMLPreElement>(null);
 
@@ -60,16 +72,41 @@ export function DeploymentHistory({
   }, [openId, logs]);
 
   const toggle = (id: string) => {
+    setArmed(null);
+    setFailure(null);
     if (openId === id) {
       setOpenId(null);
       return;
     }
     setOpenId(id);
-    if (logs[id] !== undefined) return;
 
+    if (logs[id] === undefined) {
+      startTransition(async () => {
+        const result = await fetchBuildLogs(spaceSlug, appSlug, id);
+        setLogs((prev) => ({ ...prev, [id]: result }));
+      });
+    }
+
+    // What going back to this one would mean is worked out while the logs
+    // load, so the offer arrives with the sentence that qualifies it rather
+    // than appearing plain and then growing a warning underneath.
+    if (canManage && plans[id] === undefined) {
+      startTransition(async () => {
+        const result = await planRollback(spaceSlug, appSlug, id);
+        setPlans((prev) => ({ ...prev, [id]: result.ok ? result.plan : null }));
+      });
+    }
+  };
+
+  const goBack = (id: string) => {
+    setGoing(id);
+    setFailure(null);
     startTransition(async () => {
-      const result = await fetchBuildLogs(spaceSlug, appSlug, id);
-      setLogs((prev) => ({ ...prev, [id]: result }));
+      const result = await rollBackTo(spaceSlug, appSlug, id);
+      setGoing(null);
+      setArmed(null);
+      if (result.ok) router.refresh();
+      else setFailure(result.error);
     });
   };
 
@@ -88,6 +125,7 @@ export function DeploymentHistory({
         {deploys.map((d) => {
           const isOpen = openId === d.id;
           const result = logs[d.id];
+          const plan = plans[d.id];
 
           return (
             <li key={d.id}>
@@ -101,6 +139,11 @@ export function DeploymentHistory({
                   status={d.status}
                   label={LABEL[d.status as DeploymentStatus] ?? d.status}
                 />
+                {d.restoredFrom !== null ? (
+                  <span className="truncate text-[12px] text-ink-subtle">
+                    back to the build from {d.restoredFrom}
+                  </span>
+                ) : null}
                 <span className="flex-1" />
                 <span className="tabular text-[12px] text-ink-subtle">{d.relative}</span>
                 <svg
@@ -144,6 +187,70 @@ export function DeploymentHistory({
                   ) : (
                     <p className="text-[12.5px] text-ink-muted">{result.error}</p>
                   )}
+
+                  {plan !== undefined && plan !== null ? (
+                    <div className="mt-3.5 border-t border-line pt-3.5">
+                      {armed === d.id ? (
+                        <>
+                          <p className="text-[12.5px] leading-relaxed text-ink-muted">
+                            {plan.current
+                              ? "This build goes out again, with the variables the app has now. Nothing else changes."
+                              : "The app goes back to this build - its web traffic, its workers and its scheduled runs - with the variables it has now."}
+                            {plan.ranSetup ? (
+                              <>
+                                {" "}
+                                <span className="text-pending">
+                                  A deploy since this one ran a setup command. Going back
+                                  runs the older code, but does not undo what that command
+                                  changed in the database.
+                                </span>
+                              </>
+                            ) : null}
+                          </p>
+                          <div className="mt-2.5 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={going !== null}
+                              onClick={() => goBack(d.id)}
+                              className="btn btn-primary"
+                            >
+                              {going === d.id
+                                ? "Going back..."
+                                : plan.current
+                                  ? "Deploy it again"
+                                  : "Go back to this build"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={going !== null}
+                              onClick={() => setArmed(null)}
+                              className="btn btn-ghost px-2 text-[12px]"
+                            >
+                              Keep what is running
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFailure(null);
+                            setArmed(d.id);
+                          }}
+                          className="btn btn-secondary"
+                        >
+                          {plan.current
+                            ? "Deploy this version again"
+                            : "Roll back to this"}
+                        </button>
+                      )}
+                      {failure !== null && armed === null && going === null ? (
+                        <p role="alert" className="mt-2 text-[12.5px] text-failed">
+                          {failure}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </li>

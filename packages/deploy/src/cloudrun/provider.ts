@@ -422,39 +422,7 @@ export class CloudRunProvider implements DeploymentProvider {
       );
 
     if (current.template?.labels?.[BUILD_LABEL] !== buildId) {
-      // The environment is read back off the service rather than carried from
-      // the deploy, because the deploy is long over. Cira is not storing it -
-      // Cloud Run is, which is where a running app's environment belongs. It
-      // passes through this process and is written straight back, the same way
-      // it passed through on the way in.
-      // Every container the deploy wrote, carried forward by name. The names
-      // and ports are read back from the service rather than recomputed,
-      // because the deploy that knew them is long over - the same reason the
-      // environment is read back rather than remembered.
-      const containers = (current.template?.containers ?? []).map((c) => ({
-        name: c.name ?? "",
-        image: this.imageFor(service, tag, c.name === undefined ? undefined : c.name),
-        // A sidecar has no `ports` - the only record of where it listens is
-        // the probe written to watch it. Losing that here would drop both the
-        // probe and the ordering that depends on it, at the moment the built
-        // image is rolled out and nobody is looking.
-        port: c.ports?.[0]?.containerPort ?? c.startupProbe?.tcpSocket?.port ?? null,
-        ingress: (c.ports?.length ?? 0) > 0,
-      }));
-
-      await this.putService(service, {
-        containers,
-        env: envOf(current),
-        labels: { ...current.template?.labels, [BUILD_LABEL]: buildId },
-        // Read back rather than remembered, like the environment above: a
-        // warm app must not go cold because its build finished, nor a large
-        // one shrink back to the default.
-        minInstances: current.template?.scaling?.minInstanceCount ?? 0,
-        ...memoryOfService(current),
-        // The new code, with the variables held for it, takes the requests.
-        traffic: "latest",
-      });
-
+      await this.pointAt(service, tag, buildId, current);
       // Changing the template starts a new revision. Its readiness is the next
       // poll's question.
       return { providerDeploymentId: deploymentId, status: "deploying", url: null };
@@ -468,6 +436,101 @@ export class CloudRunProvider implements DeploymentProvider {
         ? { warning: swapProblem }
         : {}),
     };
+  }
+
+  /**
+   * Put an app back on a build it ran before, without building anything.
+   *
+   * The images are still in the registry and the build is still known, so a
+   * rollback is the rollout of that build again: the service points at its
+   * images, and its workers and scheduled runs move with it, so code and
+   * background work never disagree about which version is running. What the
+   * service holds that is not code - its variables, how warm it is kept, its
+   * memory - is kept exactly as it is.
+   *
+   * What this cannot undo is what the newer build's release command changed
+   * in a database. Nothing here pretends otherwise; whoever rolls back is
+   * told, and decides.
+   */
+  async restore(deploymentId: string): Promise<DeploymentResult> {
+    const { buildId, service, tag, web } = parseHandle(deploymentId);
+
+    // An app of only workers and scheduled runs has no service to point: its
+    // processes are the whole app, and moving them is the rollback.
+    if (!web) {
+      await this.processes.swap({ service, tag, buildId });
+      return { providerDeploymentId: deploymentId, status: "live", url: null };
+    }
+
+    const current = await this.getService(service);
+    if (current === null) {
+      return { providerDeploymentId: deploymentId, status: "removed", url: null };
+    }
+
+    const swapProblem = await this.processes
+      .swap({ service, tag, buildId, env: envOf(current) })
+      .then(
+        () => undefined,
+        (error: unknown) =>
+          `The app is going back, but its workers and scheduled runs are still on the newer build: ${error instanceof Error ? error.message : "Google refused the change"}.`,
+      );
+
+    await this.pointAt(service, tag, buildId, current);
+    return {
+      providerDeploymentId: deploymentId,
+      status: "deploying",
+      url: null,
+      ...(swapProblem === undefined ? {} : { warning: swapProblem }),
+    };
+  }
+
+  /**
+   * Point a service's containers at one build's images, keeping everything
+   * about the service that is not the code: its variables, how warm it is
+   * kept, and how much memory it was given.
+   *
+   * Used by a finished build and by a rollback alike, which is the point: a
+   * rollback is not a special kind of deploy, it is the same rollout aimed at
+   * a build that already exists.
+   */
+  private async pointAt(
+    service: string,
+    tag: string,
+    buildId: string,
+    current: RunService,
+  ): Promise<void> {
+    // The environment is read back off the service rather than carried from
+    // the deploy, because the deploy is long over. Cira is not storing it -
+    // Cloud Run is, which is where a running app's environment belongs. It
+    // passes through this process and is written straight back, the same way
+    // it passed through on the way in.
+    // Every container the deploy wrote, carried forward by name. The names
+    // and ports are read back from the service rather than recomputed,
+    // because the deploy that knew them is long over - the same reason the
+    // environment is read back rather than remembered.
+    const containers = (current.template?.containers ?? []).map((c) => ({
+      name: c.name ?? "",
+      image: this.imageFor(service, tag, c.name === undefined ? undefined : c.name),
+      // A sidecar has no `ports` - the only record of where it listens is
+      // the probe written to watch it. Losing that here would drop both the
+      // probe and the ordering that depends on it, at the moment the built
+      // image is rolled out and nobody is looking.
+      port: c.ports?.[0]?.containerPort ?? c.startupProbe?.tcpSocket?.port ?? null,
+      ingress: (c.ports?.length ?? 0) > 0,
+    }));
+
+    await this.putService(service, {
+      containers,
+      env: envOf(current),
+      labels: { ...current.template?.labels, [BUILD_LABEL]: buildId },
+      // Read back rather than remembered, like the environment above: a
+      // warm app must not go cold because its build finished, nor a large
+      // one shrink back to the default.
+      minInstances: current.template?.scaling?.minInstanceCount ?? 0,
+      ...memoryOfService(current),
+      // The new code, with the variables held for it, takes the requests.
+      traffic: "latest",
+    });
   }
 
   /**
