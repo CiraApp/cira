@@ -5,6 +5,7 @@ import { apps, db, spaces } from "@cira/db";
 import { userManages } from "@/lib/app-rights";
 import { userFromRequest } from "@/lib/cli-session";
 import { tearDownApp } from "@/lib/app-teardown";
+import { record } from "@/lib/change-record";
 
 /**
  * Take an app down from a terminal.
@@ -65,6 +66,16 @@ export async function POST(request: Request) {
   if (!outcome.ok) {
     return NextResponse.json({ error: outcome.error }, { status: 502 });
   }
+
+  // The same record the app's page writes when it is deleted there: taking an
+  // app away from a company is a change to it, whichever door it went through.
+  await record({
+    spaceId: found.spaceId,
+    kind: "app-deleted",
+    actor: user.name,
+    actorUserId: user.id,
+    subject: found.app.name,
+  });
 
   return NextResponse.json({ removed: found.app.name, images: outcome.images });
 }
