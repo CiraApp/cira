@@ -148,6 +148,9 @@ export async function rollBackTo(
     // on the way back is how a rollback loses data.
     releaseDoneAt: new Date(),
     restoredFromId: going.id,
+    // Who went back, not who built it; what it was built from is the same.
+    deployedByUserId: found.actorUserId,
+    sourceLabel: going.sourceLabel,
   });
   await supersedeEarlierDeploys(going.appId, id);
 

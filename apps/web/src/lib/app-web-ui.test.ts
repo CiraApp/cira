@@ -79,6 +79,8 @@ const deployment = (
   url,
   servesWeb: true,
   restoredFromId: null,
+  deployedByUserId: null,
+  sourceLabel: null,
   failureReason: null,
   warning: null,
   releaseStartedAt: null,

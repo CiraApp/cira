@@ -77,6 +77,17 @@ const body = z.object({
   web: z.boolean().default(true),
   /** The command to run once per deploy before going live. Absent from an older CLI: none. */
   release: z.string().trim().min(1).max(1000).nullable().default(null),
+  // Shown as written, so kept to one short line of printable text.
+  sourceLabel: z
+    .string()
+    .trim()
+    .max(120)
+    .refine(
+      (label) => [...label].every((c) => c >= " " && c !== "\u007f"),
+      "A source label is one line of text",
+    )
+    .nullable()
+    .default(null),
   /** MiB the repository gives its web process. Absent from an older CLI: none. */
   webMemoryMiB: z.number().int().positive().max(1_048_576).nullable().default(null),
   /**
@@ -133,6 +144,7 @@ export async function POST(request: Request) {
     appName: parsed.data.appName,
     appId: parsed.data.appId ?? null,
     sourceId: parsed.data.sourceId,
+    sourceLabel: parsed.data.sourceLabel === "" ? null : parsed.data.sourceLabel,
     framework: parsed.data.framework,
     container: parsed.data.container,
     services: parsed.data.services ?? null,

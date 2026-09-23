@@ -73,6 +73,11 @@ export async function deployToSpace(args: {
   appId: string | null;
   /** Names an archive already uploaded by this user. */
   sourceId: string;
+  /**
+   * What it was built from, as the CLI read it from git: a short commit and
+   * its subject. Shown in the app's history so a team can tell builds apart.
+   */
+  sourceLabel?: string | null;
   /** What the source looks like. A label on the app, not a gate on the build. */
   framework: Framework;
   /**
@@ -452,6 +457,8 @@ export async function deployToSpace(args: {
     url: result.url,
     servesWeb,
     warning: result.warning ?? null,
+    deployedByUserId: user.id,
+    sourceLabel: args.sourceLabel ?? null,
   });
   await supersedeEarlierDeploys(app.id, deploymentId);
 

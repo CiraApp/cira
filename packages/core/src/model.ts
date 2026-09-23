@@ -183,6 +183,10 @@ export interface Deployment {
   releaseDoneAt: Date | null;
   /** The deploy this one put the app back on, when it is a rollback. */
   restoredFromId: string | null;
+  /** Who started it, when that is known. */
+  deployedByUserId: string | null;
+  /** What it was built from - a short commit and its subject - when known. */
+  sourceLabel: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

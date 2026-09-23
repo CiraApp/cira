@@ -372,6 +372,13 @@
       "when": 1790154655690,
       "tag": "0052_let_a_person_turn_on_what_an_app_could_not_confirm",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790159032747,
+      "tag": "0053_say_who_deployed_and_from_what",
+      "breakpoints": true
     }
   ]
 }

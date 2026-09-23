@@ -6,7 +6,7 @@ import { listMySpaces, movedAppFor } from "@/lib/authz";
 import { NotFoundError, requireAppAccess } from "@/lib/authz";
 import { DEFAULT_LIMITS, describeAppAllowance } from "@cira/core";
 import { loadAccess } from "@/lib/access-actions";
-import { deploymentHistory, listServicesForApp } from "@/lib/queries";
+import { deploymentHistory, listServicesForApp, namesOf } from "@/lib/queries";
 import { listCapabilitiesForApp } from "@/lib/capabilities";
 import { reconcileDeployment } from "@/lib/deployment-sync";
 import { DeploymentHistory } from "@/components/deployment-history";
@@ -86,6 +86,9 @@ export default async function AppPage({
     // to by the time it was made rather than by an id nobody can read.
     const restoredWhen = new Map(
       history.map((d) => [d.id, relativeTime(d.createdAt)] as const),
+    );
+    const deployers = await namesOf(
+      history.flatMap((d) => (d.deployedByUserId === null ? [] : [d.deployedByUserId])),
     );
 
     // Whether this app has a front door is settled the same way its deploy
@@ -414,6 +417,11 @@ export default async function AppPage({
                 d.restoredFromId === null
                   ? null
                   : (restoredWhen.get(d.restoredFromId) ?? null),
+              by:
+                d.deployedByUserId === null
+                  ? null
+                  : (deployers.get(d.deployedByUserId) ?? null),
+              source: d.sourceLabel,
             }))}
           />
 

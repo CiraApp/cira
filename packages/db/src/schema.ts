@@ -473,6 +473,20 @@ export const deployments = pgTable(
      * with the code of an older one.
      */
     restoredFromId: text("restored_from_id"),
+    /**
+     * Who started it: the person at the terminal, or who pressed "go back" for
+     * a rollback. Null for deploys from before this was kept, and for anyone
+     * since removed from Cira.
+     */
+    deployedByUserId: text("deployed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * What it was built from, as the CLI saw it: a short commit and its
+     * subject, "+ changes" when the folder had uncommitted work. Null when it
+     * was not a git repository, or the CLI was too old to say.
+     */
+    sourceLabel: text("source_label"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

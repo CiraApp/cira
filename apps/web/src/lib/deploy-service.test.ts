@@ -197,6 +197,15 @@ describe.skipIf(!hasDatabase)("a first deploy", () => {
 
     expect(grants).toHaveLength(1);
     expect(grants[0]?.targetId).toBe(deployer.id);
+
+    // Who shipped it, for the history a team reads to tell builds apart.
+    const { deployments } = await import("@cira/db");
+    const [row] = await database
+      .select()
+      .from(deployments)
+      .where(eq(deployments.appId, outcome.appId))
+      .limit(1);
+    expect(row?.deployedByUserId).toBe(deployer.id);
   });
 
   /**

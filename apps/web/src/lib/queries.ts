@@ -11,6 +11,7 @@ import {
   services,
   spaces,
   teams,
+  users,
 } from "@cira/db";
 import type { Deployment, Service } from "@cira/core";
 import { newId } from "@cira/core";
@@ -71,6 +72,17 @@ export async function deploymentHistory(
     .where(eq(deployments.appId, appId))
     .orderBy(desc(deployments.createdAt))
     .limit(limit);
+}
+
+/** People's names by id, for saying who did something. Unknown ids are left out. */
+export async function namesOf(ids: readonly string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids)];
+  if (wanted.length === 0) return new Map();
+  const rows = await db()
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(inArray(users.id, wanted));
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 /** Remember that someone opened an app, so "Recent" means something. */

@@ -51,6 +51,8 @@ function deployment(
     releaseRun: null,
     releaseDoneAt: null,
     restoredFromId: null,
+    deployedByUserId: null,
+    sourceLabel: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };

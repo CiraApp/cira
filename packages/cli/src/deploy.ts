@@ -1,3 +1,4 @@
+import { gitLabel } from "./git-label.js";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { api, ApiError } from "./api.js";
@@ -570,6 +571,7 @@ export async function deploy(argv: string[] = []): Promise<number> {
         web: servesWeb,
         webMemoryMiB: servesWeb ? declared.webMemoryMiB : null,
         release: declared.release,
+        sourceLabel: gitLabel(here),
         database: databaseEnv === null ? null : { envName: databaseEnv },
         cache: cacheEnv === null ? null : { envName: cacheEnv },
         processes: declared.processes,

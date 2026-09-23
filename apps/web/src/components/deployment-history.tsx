@@ -19,6 +19,10 @@ export interface DeployRow {
   warning: string | null;
   /** When this deploy put the app back on an earlier one, how long ago that was. */
   restoredFrom: string | null;
+  /** Who started it, when known. */
+  by: string | null;
+  /** What it was built from - "3f9a1c2 Fix the filter" - when known. */
+  source: string | null;
 }
 
 /** Keyed by every status, so a new one cannot reach this list unlabelled. */
@@ -168,13 +172,19 @@ export function DeploymentHistory({
                   status={d.status}
                   label={LABEL[d.status as DeploymentStatus] ?? d.status}
                 />
-                {d.restoredFrom !== null ? (
-                  <span className="truncate text-[12px] text-ink-subtle">
-                    back to the build from {d.restoredFrom}
-                  </span>
-                ) : null}
-                <span className="flex-1" />
-                <span className="tabular text-[12px] text-ink-subtle">{d.relative}</span>
+                {/* Which build, and whose: with several people shipping one
+                    app, "Deployed, 5 minutes ago" said neither, and a
+                    rollback is a choice between builds. */}
+                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-subtle">
+                  {d.restoredFrom !== null ? (
+                    `back to the build from ${d.restoredFrom}`
+                  ) : d.source !== null ? (
+                    <span className="font-mono text-[11.5px]">{d.source}</span>
+                  ) : null}
+                </span>
+                <span className="tabular shrink-0 text-[12px] text-ink-subtle">
+                  {d.by === null ? d.relative : `${d.by}, ${d.relative}`}
+                </span>
                 <svg
                   viewBox="0 0 12 12"
                   aria-hidden="true"
