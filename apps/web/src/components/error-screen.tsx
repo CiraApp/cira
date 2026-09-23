@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import * as Sentry from "@sentry/nextjs";
+import { isStaleBuild, reloadForNewBuild } from "@/lib/stale-build";
 
 /**
  * What a person sees when a page breaks, and the report that goes with it.
@@ -19,9 +20,46 @@ export function ErrorScreen({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const stale = isStaleBuild(error);
+  const [reloading, setReloading] = useState(false);
+
   useEffect(() => {
+    // A page from before a deploy is not an error worth anyone's attention.
+    // It goes straight to the new version instead, once.
+    if (stale) {
+      setReloading(reloadForNewBuild());
+      return;
+    }
     if (error.digest === undefined) Sentry.captureException(error);
-  }, [error]);
+  }, [error, stale]);
+
+  if (stale) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center px-4 py-16">
+        <div className="enter-up w-full max-w-[400px]">
+          <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
+            Cira was updated
+          </h1>
+          <p role="status" className="mt-2 text-[13px] leading-relaxed text-ink-muted">
+            {reloading
+              ? "A new version went live while this page was open. Loading it now."
+              : "A new version went live while this page was open. Reload to carry on; what you last pressed did not happen."}
+          </p>
+          {reloading ? null : (
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="btn btn-primary px-3 py-1.5 text-[12.5px]"
+              >
+                Reload
+              </button>
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-16">
