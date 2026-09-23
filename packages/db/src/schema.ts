@@ -1173,3 +1173,38 @@ export const appWatch = pgTable(
   },
   (t) => [uniqueIndex("app_watch_target_idx").on(t.appId, t.target)],
 );
+
+/**
+ * Who changed what about a company: roles, access, teams, what agents may
+ * run, its apps' addresses, and how its people sign in.
+ *
+ * Cira already keeps who *ran* what (`invocations`). This is the other half,
+ * and the half an auditor asks for first. It is append-only: nothing in the
+ * product updates or deletes a row, and it carries the words rather than the
+ * ids - the name of the person, the app, the team - so a person leaving or an
+ * app being deleted does not take the record of it away. The ids are kept
+ * beside them where they help, and go to null rather than taking the row.
+ */
+export const spaceChanges = pgTable(
+  "space_changes",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    /** What happened, from the list in @cira/core. */
+    kind: text("kind").notNull(),
+    /** Who did it, as their name read at the time. */
+    actor: text("actor").notNull(),
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** What it was done to, in words: a person, an app, a team, an address. */
+    subject: text("subject").notNull(),
+    appId: text("app_id").references(() => apps.id, { onDelete: "set null" }),
+    /** What changed, where going from one thing to another is the point. */
+    detail: text("detail"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("space_changes_time_idx").on(t.spaceId, t.createdAt)],
+);

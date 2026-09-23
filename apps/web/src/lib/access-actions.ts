@@ -5,6 +5,7 @@ import { appAccess, db, memberships, teamMembers, teams, users } from "@cira/db"
 import { newId } from "@cira/core";
 import type { AccessLevel, Role } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import { record } from "@/lib/change-record";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -190,6 +191,15 @@ export async function grantAccess(
           targetId: ctx.space.id,
         })
         .onConflictDoNothing();
+      await record({
+        spaceId: ctx.space.id,
+        kind: "access-granted",
+        actor: ctx.user.name,
+        actorUserId: ctx.user.id,
+        subject: "everyone in the company",
+        appId: ctx.app.id,
+        detail: ctx.app.name,
+      });
       return { ok: true, data: null };
     }
 
@@ -197,7 +207,7 @@ export async function grantAccess(
       // Same rule as a person: the team has to belong to this space, or the
       // grant names something the access check will never look at.
       const [team] = await database
-        .select({ id: teams.id })
+        .select({ id: teams.id, name: teams.name })
         .from(teams)
         .where(and(eq(teams.id, target.teamId), eq(teams.spaceId, ctx.space.id)))
         .limit(1);
@@ -216,14 +226,24 @@ export async function grantAccess(
         })
         .onConflictDoNothing();
 
+      await record({
+        spaceId: ctx.space.id,
+        kind: "access-granted",
+        actor: ctx.user.name,
+        actorUserId: ctx.user.id,
+        subject: team.name,
+        appId: ctx.app.id,
+        detail: ctx.app.name,
+      });
       return { ok: true, data: null };
     }
 
     // The person must already be in this space. Without this check a grant
     // could name anyone, and would sit in the table doing nothing.
     const [member] = await database
-      .select({ id: memberships.id })
+      .select({ id: memberships.id, email: users.email })
       .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
       .where(
         and(eq(memberships.userId, target.userId), eq(memberships.spaceId, ctx.space.id)),
       )
@@ -243,6 +263,15 @@ export async function grantAccess(
       })
       .onConflictDoNothing();
 
+    await record({
+      spaceId: ctx.space.id,
+      kind: "access-granted",
+      actor: ctx.user.name,
+      actorUserId: ctx.user.id,
+      subject: member.email,
+      appId: ctx.app.id,
+      detail: ctx.app.name,
+    });
     return { ok: true, data: null };
   } catch (error) {
     return asActionError(error);
@@ -269,7 +298,7 @@ export async function setAccessLevel(
     const database = db();
 
     const [grant] = await database
-      .select({ type: appAccess.type })
+      .select({ type: appAccess.type, targetId: appAccess.targetId })
       .from(appAccess)
       .where(and(eq(appAccess.id, grantId), eq(appAccess.appId, ctx.app.id)))
       .limit(1);
@@ -285,6 +314,19 @@ export async function setAccessLevel(
       .update(appAccess)
       .set({ level })
       .where(and(eq(appAccess.id, grantId), eq(appAccess.appId, ctx.app.id)));
+
+    await record({
+      spaceId: ctx.space.id,
+      kind: "access-level-changed",
+      actor: ctx.user.name,
+      actorUserId: ctx.user.id,
+      subject: await granteeName(grant, ctx.space.id),
+      appId: ctx.app.id,
+      detail:
+        level === "manage"
+          ? `managing ${ctx.app.name}`
+          : `opening ${ctx.app.name}, no longer managing it`,
+    });
     return { ok: true, data: null };
   } catch (error) {
     return asActionError(error);
@@ -300,14 +342,53 @@ export async function revokeAccess(
     const ctx = await requireAppManage(spaceSlug, appSlug);
 
     // Scoped to this app, so a grant id from elsewhere cannot be removed.
-    await db()
+    const [gone] = await db()
       .delete(appAccess)
-      .where(and(eq(appAccess.id, grantId), eq(appAccess.appId, ctx.app.id)));
+      .where(and(eq(appAccess.id, grantId), eq(appAccess.appId, ctx.app.id)))
+      .returning({ type: appAccess.type, targetId: appAccess.targetId });
+
+    if (gone !== undefined) {
+      await record({
+        spaceId: ctx.space.id,
+        kind: "access-revoked",
+        actor: ctx.user.name,
+        actorUserId: ctx.user.id,
+        subject: await granteeName(gone, ctx.space.id),
+        appId: ctx.app.id,
+        detail: ctx.app.name,
+      });
+    }
 
     return { ok: true, data: null };
   } catch (error) {
     return asActionError(error);
   }
+}
+
+/**
+ * Who a grant is for, in the words the record keeps: a person's address, a
+ * team's name, or everyone. Read before the record is written, because the
+ * grant may be the thing that has just gone.
+ */
+async function granteeName(
+  grant: { type: string; targetId: string },
+  spaceId: string,
+): Promise<string> {
+  if (grant.type === "space") return "everyone in the company";
+  if (grant.type === "team") {
+    const [team] = await db()
+      .select({ name: teams.name })
+      .from(teams)
+      .where(and(eq(teams.id, grant.targetId), eq(teams.spaceId, spaceId)))
+      .limit(1);
+    return team?.name ?? "a team that is gone";
+  }
+  const [person] = await db()
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, grant.targetId))
+    .limit(1);
+  return person?.email ?? "someone who is gone";
 }
 
 function asActionError(error: unknown): ActionResult<never> {

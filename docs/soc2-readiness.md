@@ -3,7 +3,7 @@
 What an auditor would look at for a SOC 2 Type I on Security (the Common
 Criteria), with Availability and Confidentiality, mapped to what Cira actually
 does. Written 2026-09-22 from the code and the running system, not from
-intentions. No audit is planned (your call); this is the work an audit would
+intentions; updated 2026-09-23 as gaps were closed. No audit is planned (your call); this is the work an audit would
 start from, and the list of what it would find missing.
 
 A SOC 2 report is an opinion a licensed CPA firm signs. Nothing here replaces
@@ -45,23 +45,23 @@ Status: **in place** (a control exists and there is evidence), **partial**
 
 ## CC7 System operations
 
-| Control                          | Status   | Evidence                                                                                                       |
-| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| Monitoring of Cira itself        | in place | Sentry errors, uptime monitor on `/api/health` and the proxy                                                   |
-| Monitoring of customers' apps    | in place | Watcher every five minutes, emails on outages, crashes, failed runs and deploys (`lib/watch.ts`)               |
-| Record of who ran what           | in place | `invocations`, never the input or output                                                                       |
-| Record of administrative changes | gap      | Role changes, grants, capability switches, SSO and SCIM changes are not logged                                 |
-| Incident handling                | partial  | Incidents are fixed and written up in the ledger (DEPLOY-30); no written response procedure or customer notice |
+| Control                          | Status   | Evidence                                                                                                             |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| Monitoring of Cira itself        | in place | Sentry errors, uptime monitor on `/api/health` and the proxy                                                         |
+| Monitoring of customers' apps    | in place | Watcher every five minutes, emails on outages, crashes, failed runs and deploys (`lib/watch.ts`)                     |
+| Record of who ran what           | in place | `invocations`, never the input or output                                                                             |
+| Record of administrative changes | in place | `space_changes`, written by the actions themselves; shown to admins at `/<space>/~/changes` (`lib/change-record.ts`) |
+| Incident handling                | partial  | Incidents are fixed and written up in the ledger (DEPLOY-30); no written response procedure or customer notice       |
 
 ## CC8 Change management
 
-| Control                           | Status   | Evidence                                                                    |
-| --------------------------------- | -------- | --------------------------------------------------------------------------- |
-| Every change tested before deploy | in place | CI runs format, types, lint, all tests and a build; deploy gated on it      |
-| Migrations additive, in order     | in place | `packages/db/migrations`, applied by CI before the app                      |
-| Peer review of changes            | gap      | Pushed directly to `prod` by one person; branch protection needs GitHub Pro |
-| Dependency updates                | gap      | No Dependabot or equivalent                                                 |
-| The app proxy deployed by process | partial  | Manual `ship`, now refusing a secret Cira rejects; not deployed by CI       |
+| Control                           | Status   | Evidence                                                                                               |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| Every change tested before deploy | in place | CI runs format, types, lint, all tests and a build; deploy gated on it                                 |
+| Migrations additive, in order     | in place | `packages/db/migrations`, applied by CI before the app                                                 |
+| Peer review of changes            | gap      | Pushed directly to `prod` by one person; branch protection needs GitHub Pro                            |
+| Dependency updates                | in place | Dependabot weekly for npm, monthly for actions, security fixes on their own (`.github/dependabot.yml`) |
+| The app proxy deployed by process | partial  | Manual `ship`, now refusing a secret Cira rejects; not deployed by CI                                  |
 
 ## CC9 Vendors
 
@@ -82,17 +82,13 @@ Status: **in place** (a control exists and there is evidence), **partial**
 
 ## The gaps, in the order worth closing
 
-1. **Record of administrative changes.** Buildable: one table written from the
-   same actions that change roles, grants, capabilities, domains, SSO and SCIM,
-   shown to admins beside the record of who ran what.
-2. **Peer review before production.** GitHub Pro for branch protection, and a
+1. **Peer review before production.** GitHub Pro for branch protection, and a
    second person to review; with one person, at least a required CI check.
-3. **Dependency updates.** Dependabot on the repository.
-4. **A restore drill.** Restore Neon to a branch at a past time, check it,
+2. **A restore drill.** Restore Neon to a branch at a past time, check it,
    write down how long it took.
-5. **Written policies.** Security, access control, incident response, change
+3. **Written policies.** Security, access control, incident response, change
    management, vendor management - short, and matching this document.
-6. **Access review.** Quarterly: who holds operator access to each vendor, who
+4. **Access review.** Quarterly: who holds operator access to each vendor, who
    is an owner or admin of each space.
-7. **Tenant isolation.** A Google project per company (roadmap 3.2).
-8. **Vendors' reports.** Download each subprocessor's SOC 2 and keep them.
+5. **Tenant isolation.** A Google project per company (roadmap 3.2).
+6. **Vendors' reports.** Download each subprocessor's SOC 2 and keep them.

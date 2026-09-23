@@ -40,6 +40,8 @@ export const ID_PREFIXES = {
   scimUser: "scu",
   /** A group it pushes, kept as a team. */
   scimGroup: "scg",
+  /** One change to a company: who made it, what it was, never with what. */
+  change: "chg",
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

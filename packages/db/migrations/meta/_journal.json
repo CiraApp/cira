@@ -351,6 +351,13 @@
       "when": 1790138510374,
       "tag": "0049_say_which_deploy_a_rollback_went_back_to",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790139163395,
+      "tag": "0050_record_who_changed_what_about_a_company",
+      "breakpoints": true
     }
   ]
 }

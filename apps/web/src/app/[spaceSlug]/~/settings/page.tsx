@@ -88,14 +88,20 @@ export default async function SettingsPage({
           </dl>
 
           {roleAtLeast(ctx.role, "admin") ? (
-            <p className="mt-4 text-[12.5px]">
+            <div className="mt-4 flex flex-col gap-1.5 text-[12.5px]">
               <Link
                 href={`/${spaceSlug}/~/usage`}
                 className="text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
               >
                 Billing, and what this space has run this month
               </Link>
-            </p>
+              <Link
+                href={`/${spaceSlug}/~/changes`}
+                className="text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
+              >
+                Changes: who changed roles, access and how people sign in
+              </Link>
+            </div>
           ) : null}
 
           {roleAtLeast(ctx.role, "admin") ? (

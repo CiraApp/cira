@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { db, spaces } from "@cira/db";
 import { roleAtLeast } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireSpaceMember } from "@/lib/authz";
+import { record } from "@/lib/change-record";
 import { tearDownSpace } from "@/lib/space-teardown";
 import {
   expireOpenCheckouts,
@@ -96,6 +97,13 @@ export async function renameSpace(
   if (trimmed.length > 60) return { ok: false, error: "That name is too long." };
 
   await db().update(spaces).set({ name: trimmed }).where(eq(spaces.id, ctx.spaceId));
+  await record({
+    spaceId: ctx.spaceId,
+    kind: "space-renamed",
+    actor: ctx.actor,
+    actorUserId: ctx.actorUserId,
+    subject: trimmed,
+  });
   revalidatePath(`/${spaceSlug}`, "layout");
   return { ok: true };
 }
@@ -119,6 +127,14 @@ export async function setJoinByDomain(
   }
 
   await db().update(spaces).set({ joinByDomain: on }).where(eq(spaces.id, ctx.spaceId));
+  await record({
+    spaceId: ctx.spaceId,
+    kind: "join-by-domain-changed",
+    actor: ctx.actor,
+    actorUserId: ctx.actorUserId,
+    subject: ctx.domain ?? "the company domain",
+    detail: on ? "on" : "off",
+  });
   revalidatePath(`/${spaceSlug}/~/settings`);
   return { ok: true };
 }
@@ -126,7 +142,14 @@ export async function setJoinByDomain(
 async function adminOf(
   spaceSlug: string,
 ): Promise<
-  { ok: true; spaceId: string; domain: string | null } | { ok: false; error: string }
+  | {
+      ok: true;
+      spaceId: string;
+      domain: string | null;
+      actor: string;
+      actorUserId: string;
+    }
+  | { ok: false; error: string }
 > {
   let ctx;
   try {
@@ -138,5 +161,11 @@ async function adminOf(
   if (!roleAtLeast(ctx.role, "admin")) {
     return { ok: false, error: "Only admins and owners can change this." };
   }
-  return { ok: true, spaceId: ctx.space.id, domain: ctx.space.domain };
+  return {
+    ok: true,
+    spaceId: ctx.space.id,
+    domain: ctx.space.domain,
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+  };
 }

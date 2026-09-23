@@ -7,6 +7,7 @@ import { newId } from "@cira/core";
 import type { App, Deployment } from "@cira/core";
 import { deploymentProvider } from "@cira/deploy";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
+import { record } from "@/lib/change-record";
 import { supersedeEarlierDeploys } from "@/lib/deployment-sync";
 
 /**
@@ -154,6 +155,16 @@ export async function rollBackTo(
       .where(eq(apps.id, going.appId));
   }
 
+  await record({
+    spaceId: found.spaceId,
+    kind: "app-rolled-back",
+    actor: found.actor,
+    actorUserId: found.actorUserId,
+    subject: found.appName,
+    appId: going.appId,
+    detail: `the build from ${going.createdAt.toISOString().slice(0, 16).replace("T", " ")} UTC`,
+  });
+
   revalidatePath(`/${spaceSlug}/${appSlug}`);
   return { ok: true };
 }
@@ -172,6 +183,10 @@ async function rollbackTarget(
       deployment: Deployment;
       serviceId: string | null;
       appStatus: App["status"];
+      spaceId: string;
+      appName: string;
+      actor: string;
+      actorUserId: string;
     }
   | { ok: false; error: string }
 > {
@@ -212,5 +227,9 @@ async function rollbackTarget(
     deployment: row as Deployment,
     serviceId: row.serviceId,
     appStatus: ctx.app.status,
+    spaceId: ctx.space.id,
+    appName: ctx.app.name,
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
   };
 }

@@ -185,6 +185,41 @@ describe.skipIf(!hasDatabase)("people leaving a space", () => {
     expect((await changeRole("acme", quitter.id, "owner")).ok).toBe(false);
   });
 
+  /**
+   * The record is written by the actions themselves, so what it says can be
+   * trusted to be what happened rather than what the page displayed.
+   */
+  it("writes down every change to who is here, and who made it", async () => {
+    const { changesIn } = await import("./change-record");
+    const { describeChange } = await import("@cira/core");
+
+    const sentences = (await changesIn(spaceId)).map(describeChange);
+
+    // Every one of these happened in the tests above, through the real actions.
+    expect(sentences).toContain(`Admin removed ${leaver.email}`);
+    expect(sentences).toContain(`Founder changed ${admin.email} from admin to owner`);
+    expect(sentences).toContain(`Founder changed ${founder.email} from owner to admin`);
+    expect(
+      sentences.some((line) => line.includes("joined as member, with an @acme.test")),
+    ).toBe(true);
+
+    // A refused change writes nothing: only what happened is in the record.
+    expect(sentences.some((line) => line.includes("to owner"))).toBe(true);
+    expect(sentences.filter((line) => line.includes(`${quitter.email} left`))).toEqual(
+      [],
+    );
+  });
+
+  it("keeps one company's record out of another's", async () => {
+    const { changesIn } = await import("./change-record");
+    const { spaces } = await import("@cira/db");
+    const other = newId("space");
+    await database.insert(spaces).values({ id: other, name: "Other", slug: "other-co" });
+
+    expect(await changesIn(other)).toEqual([]);
+    expect((await changesIn(spaceId)).length).toBeGreaterThan(0);
+  });
+
   it("lets a member leave, and gives what they owned to an owner", async () => {
     const { leaveSpace } = await import("./member-actions");
     const { apps, memberships } = await import("@cira/db");

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { ForbiddenError, NotFoundError, requireAppManage } from "@/lib/authz";
 import { addDomain, removeDomain, refreshDomains } from "@/lib/app-domains";
+import { record } from "@/lib/change-record";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -33,6 +34,15 @@ export async function addAppDomain(
     input: hostname,
   });
   if (!added.ok) return added;
+  await record({
+    spaceId: ctx.space.id,
+    kind: "domain-added",
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+    subject: ctx.app.name,
+    appId: ctx.app.id,
+    detail: added.domain.hostname,
+  });
   revalidatePath(`/${spaceSlug}/${appSlug}`);
   return { ok: true, data: { hostname: added.domain.hostname } };
 }
@@ -46,6 +56,15 @@ export async function removeAppDomain(
   if (ctx === null) return { ok: false, error: "No such app, or you do not manage it." };
   const removed = await removeDomain(ctx.app.id, hostname);
   if (!removed.ok) return removed;
+  await record({
+    spaceId: ctx.space.id,
+    kind: "domain-removed",
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+    subject: ctx.app.name,
+    appId: ctx.app.id,
+    detail: hostname,
+  });
   revalidatePath(`/${spaceSlug}/${appSlug}`);
   return { ok: true, data: null };
 }

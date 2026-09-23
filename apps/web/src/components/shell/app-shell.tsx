@@ -73,6 +73,14 @@ export async function AppShell({
     icon: "settings",
   };
 
+  // The record of what admins have changed. Not in the sidebar - it is read
+  // when something is being looked into, not every day - but reachable by
+  // name in the palette, and linked from Settings.
+  const changes: NavItem[] =
+    role !== undefined && roleAtLeast(role, "admin")
+      ? [{ label: "Changes", href: `/${spaceSlug}/~/changes` as Route, icon: "recent" }]
+      : [];
+
   // Not in the sidebar - it is about you rather than the space - but in the
   // palette, which is where a place is looked for by name.
   const profile: NavItem = {
@@ -126,7 +134,10 @@ export async function AppShell({
           <div className="flex shrink-0 items-center gap-2">
             <ThemePicker />
             {actions}
-            <CommandPalette spaceSlug={spaceSlug} items={[...items, settings, profile]} />
+            <CommandPalette
+              spaceSlug={spaceSlug}
+              items={[...items, ...changes, settings, profile]}
+            />
             <AskButton />
             <HeaderControls spaceSlug={spaceSlug} />
           </div>

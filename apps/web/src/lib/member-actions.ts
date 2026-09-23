@@ -6,6 +6,7 @@ import { db, memberships, users } from "@cira/db";
 import { checkRemoval, checkRoleChange, ROLES } from "@cira/core";
 import type { Role } from "@cira/core";
 import { NotFoundError, requireSpaceMember } from "@/lib/authz";
+import { record } from "@/lib/change-record";
 import { depart } from "@/lib/departure";
 
 /**
@@ -50,6 +51,15 @@ export async function changeRole(
     .set({ role })
     .where(eq(memberships.id, target.membershipId));
 
+  await record({
+    spaceId: ctx.space.id,
+    kind: "role-changed",
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+    subject: target.email,
+    detail: `${target.role} to ${role}`,
+  });
+
   revalidatePath(`/${spaceSlug}/~/members`);
   return { ok: true };
 }
@@ -82,6 +92,14 @@ export async function removeMember(
     email: target.email,
     heir: ctx.user.id,
     blockRejoin: true,
+  });
+
+  await record({
+    spaceId: ctx.space.id,
+    kind: "member-removed",
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+    subject: target.email,
   });
 
   revalidatePath(`/${spaceSlug}/~/members`);
@@ -130,6 +148,13 @@ export async function leaveSpace(spaceSlug: string): Promise<MemberResult> {
     // Leaving is their own choice; nothing stops them being invited back, and
     // nothing needs to stop them coming back by domain either.
     blockRejoin: false,
+  });
+
+  await record({
+    spaceId: ctx.space.id,
+    kind: "member-left",
+    actor: ctx.user.name,
+    subject: ctx.user.email,
   });
 
   return { ok: true };

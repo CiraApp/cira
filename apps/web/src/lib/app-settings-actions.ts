@@ -19,6 +19,7 @@ import { verifyAppCapabilities } from "@/lib/capability-verification";
 import { planForSpace } from "@/lib/plan";
 import { latestDeployment } from "@/lib/queries";
 import { tearDownApp } from "@/lib/app-teardown";
+import { record } from "@/lib/change-record";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -215,6 +216,16 @@ export async function deleteApp(
 
     const outcome = await tearDownApp(ctx.app);
     if (!outcome.ok) return { ok: false, error: outcome.error };
+
+    // Written after the app is gone, and keeping its name rather than its id,
+    // so deleting an app does not delete the record of who deleted it.
+    await record({
+      spaceId: ctx.space.id,
+      kind: "app-deleted",
+      actor: ctx.user.name,
+      actorUserId: ctx.user.id,
+      subject: ctx.app.name,
+    });
 
     return { ok: true, data: null };
   } catch (error) {
@@ -439,6 +450,16 @@ export async function setTellsWhoIsCalling(
     .update(apps)
     .set({ tellsWhoIsCalling: tell, updatedAt: new Date() })
     .where(eq(apps.id, ctx.app.id));
+
+  await record({
+    spaceId: ctx.space.id,
+    kind: "identity-passed-on",
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+    subject: ctx.app.name,
+    appId: ctx.app.id,
+    detail: tell ? "on" : "off",
+  });
 
   if (tell) {
     await database

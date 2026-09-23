@@ -5,6 +5,7 @@ import { db, memberships, spaceJoinBlocks, spaces } from "@cira/db";
 import { isSlug, newId } from "@cira/core";
 import type { Space } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
+import { record } from "@/lib/change-record";
 import { claimableDomain } from "@/lib/email-domain";
 
 export type JoinResult = { ok: true; spaceSlug: string } | { ok: false; error: string };
@@ -103,6 +104,14 @@ export async function joinSpaceByDomain(spaceSlug: string): Promise<JoinResult> 
       userId: user.id,
       spaceId: space.id,
       role: "member",
+    });
+    await record({
+      spaceId: space.id,
+      kind: "member-joined",
+      actor: user.name,
+      actorUserId: user.id,
+      subject: user.email,
+      detail: `as member, with an @${domain} address`,
     });
   }
 

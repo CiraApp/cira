@@ -155,6 +155,16 @@ export async function updateCapabilityEnabled(
     .set({ enabled, updatedAt: new Date() })
     .where(eq(capabilities.id, capabilityId));
 
+  const { record } = await import("@/lib/change-record");
+  await record({
+    spaceId: row.app.spaceId,
+    kind: enabled ? "capability-enabled" : "capability-disabled",
+    actor: user.name,
+    actorUserId: user.id,
+    subject: `${row.capability.name} on ${row.app.name}`,
+    appId: row.app.id,
+  });
+
   return { ok: true };
 }
 

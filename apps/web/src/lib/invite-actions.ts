@@ -16,6 +16,7 @@ import { hashToken } from "@/lib/token-hash";
 import type { Role } from "@cira/core";
 import { requireCurrentUser } from "@/lib/identity";
 import { ForbiddenError, requireInviteRights } from "@/lib/authz";
+import { record } from "@/lib/change-record";
 import { checkInvite, inviteExpiry } from "@/lib/invite-rules";
 import { appOrigin, sendEmail } from "@/lib/email";
 import { inviteMessage } from "@/lib/messages";
@@ -138,6 +139,15 @@ export async function createInvite(
     }),
   });
 
+  await record({
+    spaceId: ctx.space.id,
+    kind: "invite-sent",
+    actor: ctx.user.name,
+    actorUserId: ctx.user.id,
+    subject: email,
+    detail: role,
+  });
+
   return { ok: true, data: { url: path, email, emailed: sent.sent } };
 }
 
@@ -147,9 +157,19 @@ export async function revokeInvite(
 ): Promise<ActionResult<null>> {
   try {
     const ctx = await requireInviteRights(spaceSlug);
-    await db()
+    const [gone] = await db()
       .delete(invites)
-      .where(and(eq(invites.id, inviteId), eq(invites.spaceId, ctx.space.id)));
+      .where(and(eq(invites.id, inviteId), eq(invites.spaceId, ctx.space.id)))
+      .returning({ email: invites.email });
+    if (gone !== undefined) {
+      await record({
+        spaceId: ctx.space.id,
+        kind: "invite-revoked",
+        actor: ctx.user.name,
+        actorUserId: ctx.user.id,
+        subject: gone.email,
+      });
+    }
     return { ok: true, data: null };
   } catch (error) {
     if (error instanceof ForbiddenError) {
@@ -227,6 +247,17 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
         ),
       ),
   ]);
+
+  if (already === undefined) {
+    await record({
+      spaceId: row.space.id,
+      kind: "member-joined",
+      actor: user.name,
+      actorUserId: user.id,
+      subject: user.email,
+      detail: `as ${row.invite.role}, by invitation`,
+    });
+  }
 
   return { ok: true, spaceSlug: row.space.slug, spaceName: row.space.name };
 }

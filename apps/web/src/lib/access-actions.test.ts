@@ -136,6 +136,22 @@ describe.skipIf(!hasDatabase)("managing an app through a grant", () => {
    * which told a person who could not open it that it exists and what it is
    * called now.
    */
+  it("writes down who gave access, and who took it away", async () => {
+    const { grantAccess, revokeAccess } = await import("./access-actions");
+    const { changesIn } = await import("./change-record");
+    const { describeChange } = await import("@cira/core");
+
+    signedIn = owner;
+    await grantAccess("acme", "payroll", { kind: "person", userId: engineer.id });
+    const grant = (await grants()).find((g) => g.targetId === engineer.id);
+    await revokeAccess("acme", "payroll", grant?.id ?? "");
+
+    const sentences = (await changesIn(spaceId)).map(describeChange);
+    expect(sentences).toContain(`${owner.name} gave ${engineer.email} access to Payroll`);
+    // Named by who lost it, although the grant itself is gone by then.
+    expect(sentences).toContain(`${owner.name} took away ${engineer.email}'s access`);
+  });
+
   it("follows a rename only for someone who may open the app", async () => {
     const { apps, appSlugHistory } = await import("@cira/db");
     const { movedAppFor } = await import("./authz");

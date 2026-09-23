@@ -17,6 +17,7 @@ import {
 } from "@cira/db";
 import { newId, slugify, slugWithSuffix, type User } from "@cira/core";
 import { hashToken } from "@/lib/token-hash";
+import { record } from "@/lib/change-record";
 import { depart } from "@/lib/departure";
 import {
   SCHEMA,
@@ -283,6 +284,15 @@ async function reconcileUser(row: ScimUserRow): Promise<void> {
           role: "member",
         })
         .onConflictDoNothing();
+      // No person did this, and saying an admin did would be untrue: the
+      // company's own directory assigned them, and the record says so.
+      await record({
+        spaceId: row.spaceId,
+        kind: "member-joined",
+        actor: "your directory",
+        subject: row.userName,
+        detail: "as member, from your identity provider",
+      });
     }
     await syncTeamsFor(row.id, user.id);
     return;
@@ -305,6 +315,13 @@ async function reconcileUser(row: ScimUserRow): Promise<void> {
     email: row.userName,
     heir: heir.userId,
     blockRejoin: true,
+  });
+  await record({
+    spaceId: row.spaceId,
+    kind: "member-removed",
+    actor: "your directory",
+    subject: row.userName,
+    detail: "deactivated in your identity provider",
   });
 }
 
