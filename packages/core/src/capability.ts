@@ -67,7 +67,52 @@ export type CapabilityReach =
    * The app serves the route and would not let Cira in - almost always
    * because it signs its own users in and Cira is not one of them.
    */
-  | "refused";
+  | "refused"
+  /**
+   * The app was asked and its answer could not settle it either way: it
+   * answers every address alike, or only calling the route would tell. Left
+   * as `pending`, these sat under "Checking" for ever and nobody could turn
+   * them on. Nothing here is offered to an agent until a person turns it on,
+   * reads included, and the first real call that reaches the app's own code
+   * records it as `callable`.
+   */
+  | "unconfirmed";
+
+/** Why an app could not confirm a capability. */
+export type UnconfirmedBecause =
+  /** Every address answers the same, so no probe tells a route from nothing. */
+  | "answers-everything"
+  /** The answer does not separate this route from one that is not there. */
+  | "cannot-tell";
+
+/**
+ * Whether a capability is offered to agents.
+ *
+ * `enabled` is the decision - policy, or a person's - and `reach` is what the
+ * app said. A confirmed route needs only the decision. One the app could not
+ * confirm needs a person to have made it: a read turns itself on by policy,
+ * which is safe only for a route the app has answered for.
+ */
+export function offered(capability: {
+  enabled: boolean;
+  reach: CapabilityReach;
+  vouchedAt: Date | null;
+}): boolean {
+  if (!capability.enabled) return false;
+  if (capability.reach === "callable") return true;
+  return capability.reach === "unconfirmed" && capability.vouchedAt !== null;
+}
+
+/**
+ * Whether an answer leaves anything a person could switch on and run.
+ *
+ * A second lock behind `enabled`, for surfaces that hold a write for its
+ * person: `enabled` already folds this in, and nothing waiting or refused
+ * should ever be put in front of someone to approve even if it did not.
+ */
+export function canRun(reach: CapabilityReach): boolean {
+  return reach === "callable" || reach === "unconfirmed";
+}
 
 /**
  * What an app's recorded answer about a capability means now.
@@ -124,6 +169,8 @@ export interface Capability {
    * difference is what lets a page say "checking" rather than "off".
    */
   reach: CapabilityReach;
+  /** Why the app could not confirm this, when `reach` is `unconfirmed`. */
+  unconfirmedBecause?: UnconfirmedBecause | null;
   createdAt: Date;
   updatedAt: Date;
 }

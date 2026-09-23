@@ -54,6 +54,7 @@ export const capabilityReachEnum = pgEnum("capability_reach", [
   "pending",
   "callable",
   "refused",
+  "unconfirmed",
 ]);
 
 /** What an app runs besides serving requests. See core's processes.ts. */
@@ -740,6 +741,19 @@ export const capabilities = pgTable(
     answeredBy: text("answered_by").references(() => deployments.id, {
       onDelete: "set null",
     }),
+    /**
+     * Why the app's answer could not settle this, when `reach` is
+     * `unconfirmed`: `answers-everything` when every address answers alike,
+     * `cannot-tell` when only calling the route would say. Null otherwise.
+     */
+    unconfirmedBecause: text("unconfirmed_because"),
+    /**
+     * When a person turned this on, or null. A read switches itself on by
+     * policy, which is only safe for a route the app has confirmed; one it
+     * could not confirm is offered to agents only when somebody chose to,
+     * and this is what records that they did.
+     */
+    vouchedAt: timestamp("vouched_at", { withTimezone: true }),
     /**
      * An example input, for reads, used once to ask the app whether the route
      * is there. Never sent to an agent and never used for a write - a write is

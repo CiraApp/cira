@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { User } from "@cira/core";
+import { canRun, type User } from "@cira/core";
 import {
   getCapabilityForUser,
   NO_SUCH_CAPABILITY,
@@ -235,11 +235,13 @@ async function invokeTool(
   const capability = await getCapabilityForUser(user, id, inSpace);
   if (capability === null) return { content: NO_SUCH_CAPABILITY, isError: true };
   let spent: string | undefined;
+  // A write that can run - confirmed, or turned on by a person although the
+  // app could not confirm it - waits for its person the same way either way.
   if (
     via === "mcp" &&
     capability.risk === "write" &&
     capability.enabled &&
-    capability.reach === "callable"
+    canRun(capability.reach)
   ) {
     const given =
       input !== null && typeof input === "object" && !Array.isArray(input)
@@ -338,12 +340,15 @@ async function statusTool(
  * first agent to meet this spent its last turns proposing that someone enable
  * a login capability, which would not have helped either.
  */
-const UNAVAILABLE: Record<"pending" | "refused", string> = {
+const UNAVAILABLE: Record<"pending" | "refused" | "unconfirmed", string> = {
   pending: "Cira has not confirmed this with the app yet. Try again shortly.",
   refused:
     "The app serves this route and will not let Cira call it, because it signs " +
     "its own users in and Cira is not one of them. No setting in Cira changes " +
     "that, so do not suggest enabling it.",
+  unconfirmed:
+    "The app could not confirm this route without being called, so it is off " +
+    "until someone who manages the app turns it on from the app's page in Cira.",
 };
 
 /**
@@ -365,7 +370,9 @@ function brief(capability: CapabilityWithApp, severalCompanies = false) {
     company: capability.spaceSlug,
     risk: capability.risk,
     enabled: capability.enabled,
-    ...(capability.reach === "callable"
+    // An unconfirmed one somebody turned on is available: they chose to let
+    // its first real call settle it.
+    ...(capability.reach === "callable" || capability.enabled
       ? {}
       : { unavailable: UNAVAILABLE[capability.reach] }),
   };

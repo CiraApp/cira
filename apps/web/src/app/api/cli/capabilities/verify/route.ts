@@ -70,6 +70,9 @@ export async function POST(request: Request) {
     callable: outcome.callable,
     refused: outcome.refused,
     absent: outcome.absent,
+    // Answered about but not settled, so they wait for a person. An older CLI
+    // ignores it, as it ignored `refused`.
+    unconfirmed: outcome.unconfirmed,
     inconclusive: outcome.inconclusive,
     // The names the CLI used before there was a third answer. Copies of it are
     // installed on people's machines and cannot be updated from here, and both

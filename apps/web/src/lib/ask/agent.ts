@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { CapabilityReach, JsonSchema } from "@cira/core";
+import { canRun, type CapabilityReach, type JsonSchema } from "@cira/core";
 import { validateInput } from "@/lib/json-schema";
 import { asHistory, pendingCall } from "./conversation";
 import type { AskApp, AskEvent, AskMessage, StepState } from "./protocol";
@@ -263,10 +263,12 @@ export async function runAsk(args: {
 /**
  * A confirmation, if this call would change something and could actually run.
  *
- * Only a write that is switched on, confirmed with the app, and given input
- * its schema accepts is held. Anything short of that goes through to
- * `runTool`, which explains in words why it will not run - holding it would
- * ask a person to approve something that was never going to happen.
+ * Only a write that can run - confirmed with the app and switched on, or
+ * turned on by a person although the app could not confirm it; `enabled` says
+ * both - and given input its schema accepts is held. Anything short of that
+ * goes through to `runTool`, which explains in words why it will not run -
+ * holding it would ask a person to approve something that was never going to
+ * happen.
  */
 async function holdForApproval(
   call: Anthropic.ToolUseBlockParam,
@@ -282,7 +284,7 @@ async function holdForApproval(
     capability === null ||
     capability.risk !== "write" ||
     !capability.enabled ||
-    capability.reach !== "callable"
+    !canRun(capability.reach)
   ) {
     return null;
   }

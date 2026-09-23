@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Capability } from "@cira/core";
 import { setCapabilityEnabled } from "@/lib/capability-actions";
+import { unconfirmedNote } from "@/lib/unconfirmed-note";
 import { SectionLink } from "./section-link";
 import { LiveStatus } from "./ui/live-status";
 import {
@@ -62,9 +63,11 @@ export function CapabilityPanel({
   const toggled = (capability: Capability, enabled: boolean) => {
     moved.current = capability.id;
     setSaid(
-      enabled
-        ? `${capability.name} enabled. Agents can find and run it.`
-        : `${capability.name} disabled.`,
+      !enabled
+        ? `${capability.name} disabled.`
+        : capability.reach === "unconfirmed"
+          ? `${capability.name} enabled. Agents can run it, and its first real call will confirm it.`
+          : `${capability.name} enabled. Agents can find and run it.`,
     );
   };
   const waiting = capabilities.some((capability) => capability.reach === "pending");
@@ -103,7 +106,13 @@ export function CapabilityPanel({
   }
 
   const checking = capabilities.filter((c) => c.reach === "pending");
-  const live = capabilities.filter((c) => c.reach === "callable" && c.enabled);
+  // `enabled` is already the whole rule for running: an unconfirmed one is on
+  // only when somebody turned it on. Those sit with the rest of what agents
+  // can run, because that is what they are, and say they are unconfirmed.
+  const live = capabilities.filter(
+    (c) => (c.reach === "callable" || c.reach === "unconfirmed") && c.enabled,
+  );
+  const unconfirmed = capabilities.filter((c) => c.reach === "unconfirmed" && !c.enabled);
   const review = capabilities.filter((c) => c.reach === "callable" && !c.enabled);
   const refused = capabilities.filter((c) => c.reach === "refused");
 
@@ -133,6 +142,20 @@ export function CapabilityPanel({
           title="Enabled"
           note="Agents can find and run these."
           items={live}
+          canManage={canManage}
+          moved={moved}
+          onToggled={toggled}
+        />
+        {/*
+          The app was asked and could not say either way. They used to sit
+          under "Checking" for ever, with nothing anyone could do; asking
+          again changes nothing, so a person decides, and the first real call
+          settles it.
+        */}
+        <Group
+          title="Unconfirmed"
+          note={unconfirmedNote(unconfirmed)}
+          items={unconfirmed}
           canManage={canManage}
           moved={moved}
           onToggled={toggled}
@@ -288,6 +311,12 @@ function Row({
             <span className="font-semibold">{capability.target.method}</span>{" "}
             {capability.target.path}
           </span>
+          {/* Only where it is on: in its own group the heading says it. */}
+          {capability.reach === "unconfirmed" && capability.enabled ? (
+            <span className="rounded-[2px] border border-line-strong px-1.5 py-[1px] text-[10.5px] text-ink-subtle">
+              not yet confirmed
+            </span>
+          ) : null}
         </span>
         <span className="mt-0.5 block text-[12px] text-ink-muted">
           {capability.description}

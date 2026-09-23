@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { User } from "@cira/core";
+import { canRun, type User } from "@cira/core";
 import type { Suggestion } from "@/components/ask/ask-provider";
 import { listCapabilitiesForUser } from "@/lib/capabilities";
 
@@ -24,7 +24,8 @@ export async function askSuggestions(
     (c) => c.spaceSlug === spaceSlug,
   );
   const usable = here.filter(
-    (c) => c.enabled && c.reach === "callable" && c.risk === "read",
+    // Confirmed, or turned on by a person although the app could not confirm it.
+    (c) => c.enabled && canRun(c.reach) && c.risk === "read",
   );
 
   const picked: typeof usable = [];

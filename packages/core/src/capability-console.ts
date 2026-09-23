@@ -14,7 +14,8 @@ import type { CapabilityReach, JsonSchema } from "./capability.js";
 /**
  * What the console offers for one capability.
  *
- * Only `callable` and switched on can run. Everything else still shows the
+ * Only a switched-on capability the app confirmed, or one a person turned on
+ * although the app could not confirm it, can run. Everything else still shows the
  * capability - hiding it would make an app look as if it does less than it
  * does - with the reason in words. A refusal is stated plainly and is not
  * dressed up as an error: the route is real and the app is doing exactly what
@@ -43,6 +44,17 @@ export function consoleAffordance(capability: {
       return capability.enabled
         ? { kind: "run" }
         : { kind: "off", reason: "Turned off. An app admin can enable it." };
+    // `enabled` here is already the folded answer: on only when a person
+    // turned it on. Running it by hand is the first real call, which is what
+    // settles whether the route is there.
+    case "unconfirmed":
+      return capability.enabled
+        ? { kind: "run" }
+        : {
+            kind: "off",
+            reason:
+              "The app could not confirm this one without being called. An app admin can turn it on; the first real call settles it.",
+          };
   }
 }
 

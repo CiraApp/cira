@@ -29,6 +29,8 @@ export type VerificationOutcome =
       /** Served, and shut to Cira. Kept and explained rather than deleted. */
       refused: number;
       absent: number;
+      /** Answered about without being settled; waiting for a person. */
+      unconfirmed: number;
       inconclusive: boolean;
     }
   | { ok: false; reason: "not-running" | "unreachable" };
@@ -38,6 +40,7 @@ const SETTLED = {
   callable: 0,
   refused: 0,
   absent: 0,
+  unconfirmed: 0,
   inconclusive: false,
 } as const;
 
@@ -84,10 +87,15 @@ export async function verifyAppCapabilities(
       .where(
         and(
           eq(capabilities.appId, appId),
-          inArray(capabilities.reach, ["pending", "refused"]),
+          inArray(capabilities.reach, ["pending", "refused", "unconfirmed"]),
         ),
       )
-  ).filter((row) => currentReach(row, serving?.id ?? null) === "pending");
+  ).filter((row) => {
+    // What the app could not confirm is asked again too, so a later build
+    // that answers clearly gets its routes confirmed.
+    const reach = currentReach(row, serving?.id ?? null);
+    return reach === "pending" || reach === "unconfirmed";
+  });
   const confirmedBefore = (
     serving === null || options.afterDeploy !== true
       ? []
@@ -201,23 +209,29 @@ export async function verifyAppCapabilities(
     })),
   });
 
-  // Nothing is recorded when the app answers everything. Stamping capabilities
-  // an app confirmed indiscriminately would be worse than leaving them off.
-  if (!outcome.inconclusive) {
-    await recordVerification({
-      appId,
-      deploymentId: serving.id,
-      callable: outcome.callable,
-      refused: outcome.refused,
-      absent: outcome.absent,
-    });
-  }
+  // Nothing is confirmed when the app answers everything: stamping what an
+  // app confirms indiscriminately would publish every invention. What it
+  // could not settle is recorded as that, for a person to decide, rather than
+  // left "Checking" for ever - which is where it used to sit. A run that got
+  // no answer at all records nothing, and is asked again.
+  await recordVerification({
+    appId,
+    deploymentId: serving.id,
+    callable: outcome.callable,
+    refused: outcome.refused,
+    absent: outcome.absent,
+    unconfirmed: {
+      names: outcome.unconfirmed,
+      because: outcome.inconclusive ? "answers-everything" : "cannot-tell",
+    },
+  });
 
   return {
     ok: true,
     callable: outcome.callable.length,
     refused: outcome.refused.length,
     absent: outcome.absent.length,
+    unconfirmed: outcome.unconfirmed.length,
     inconclusive: outcome.inconclusive,
   };
 }

@@ -15,6 +15,7 @@ import {
 import {
   getCapabilityForUser,
   recordAbsence,
+  recordAnswered,
   recordRefusal,
   NO_SUCH_CAPABILITY,
   type CapabilityWithApp,
@@ -523,11 +524,19 @@ async function call(
     };
   }
 
-  if (text.trim() === "")
+  if (text.trim() === "") {
+    // A write that answered 2xx with nothing reached its handler; a read that
+    // answered nothing proves little, so it settles nothing.
+    if (write) await settle(capability, target.deploymentId);
     return { ok: true, status: response.status, data: null, answer };
+  }
 
   try {
-    return { ok: true, status: response.status, data: JSON.parse(text), answer };
+    const data: unknown = JSON.parse(text);
+    // A result in JSON is the app's own code answering. A catch-all's page
+    // is HTML, so this cannot be one confirming a route nobody wrote.
+    await settle(capability, target.deploymentId);
+    return { ok: true, status: response.status, data, answer };
   } catch {
     // A write that the app accepted happened, whatever it answered with.
     // Calling it a failure invites the same refund again.
@@ -557,6 +566,21 @@ async function call(
  * the same type, that the app gives a path it has never heard of. One more
  * small request, and only after a 404; a failure to ask counts as no.
  */
+/**
+ * A real call is what settles a capability the app could not confirm by being
+ * asked; see `recordAnswered`. Only ever for one in that state, so every
+ * other call costs nothing here.
+ */
+async function settle(capability: CapabilityWithApp, deploymentId: string) {
+  if (capability.reach !== "unconfirmed") return;
+  try {
+    await recordAnswered({ capabilityId: capability.id, deploymentId });
+  } catch {
+    // Bookkeeping. The call worked and its result is on its way; failing to
+    // note that is no reason to report the call as anything else.
+  }
+}
+
 async function routerSaidIt(
   url: URL,
   answer: AppAnswer,

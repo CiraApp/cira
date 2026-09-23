@@ -16,6 +16,8 @@ describe("consoleAffordance", () => {
     ["refused", false, "refused"],
     ["pending", true, "pending"],
     ["pending", false, "pending"],
+    ["unconfirmed", true, "run"],
+    ["unconfirmed", false, "off"],
   ] as const)("%s and enabled=%s offers %s", (reach, enabled, kind) => {
     expect(consoleAffordance({ reach, enabled }).kind).toBe(kind);
   });
@@ -28,6 +30,16 @@ describe("consoleAffordance", () => {
     expect(consoleAffordance({ reach: "pending", enabled: true })).toEqual({
       kind: "pending",
       reason: "Not yet confirmed against the running app.",
+    });
+  });
+
+  // Not "pending": nothing more will come from asking, so the page says what
+  // will settle it and who can do that.
+  it("says an unconfirmed one waits for a person, not for Cira", () => {
+    expect(consoleAffordance({ reach: "unconfirmed", enabled: false })).toEqual({
+      kind: "off",
+      reason:
+        "The app could not confirm this one without being called. An app admin can turn it on; the first real call settles it.",
     });
   });
 });

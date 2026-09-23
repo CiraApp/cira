@@ -108,7 +108,15 @@ describe("verifyCapabilities", () => {
       capabilities: [read("listOrders", "/api/v1/orders")],
     });
 
-    expect(result).toEqual({ callable: [], refused: [], absent: [], inconclusive: true });
+    // Nothing confirmed, and nothing left waiting on an answer that will
+    // never change: everything asked is for a person to decide.
+    expect(result).toEqual({
+      callable: [],
+      refused: [],
+      absent: [],
+      unconfirmed: ["listOrders"],
+      inconclusive: true,
+    });
   });
 
   it("puts a harmless value where a path parameter goes", async () => {
@@ -252,7 +260,9 @@ describe("verifyCapabilities", () => {
     expect(result.inconclusive).toBe(false);
     expect(result.callable).toEqual(["listReports"]);
     // Named nowhere, so nothing is recorded for it and it is asked again.
-    expect([...result.refused, ...result.absent]).not.toContain("listOrders");
+    expect([...result.refused, ...result.absent, ...result.unconfirmed]).not.toContain(
+      "listOrders",
+    );
   });
 
   // Briefly unreachable is not the same as absent, and treating it as absent
@@ -269,6 +279,9 @@ describe("verifyCapabilities", () => {
     });
 
     expect(result.inconclusive).toBe(true);
+    // A sleeping app is not one that answers everything: asked again, not
+    // handed to a person.
+    expect(result.unconfirmed).toEqual([]);
   });
 
   it("does nothing when there is nothing to check", async () => {
@@ -278,6 +291,7 @@ describe("verifyCapabilities", () => {
       callable: [],
       refused: [],
       absent: [],
+      unconfirmed: [],
       inconclusive: false,
     });
     expect(seen).toHaveLength(0);
@@ -383,6 +397,7 @@ describe("verifyCapabilities, on what real apps answer", () => {
         capabilities: [lookup, read("listGhosts", "/api/ghosts")],
       });
       expect(result.callable).toEqual([]);
+      expect(result.unconfirmed).toEqual(["getCustomer"]);
       // A path with no id in it that says 404 is still simply not there.
       expect(result.absent).toEqual(["listGhosts"]);
     });
@@ -435,7 +450,12 @@ describe("verifyCapabilities, on what real apps answer", () => {
         fetcher: redirecting("/api/report/"),
         capabilities: [read("getReport", "/api/report")],
       });
-      expect(result).toMatchObject({ callable: [], refused: [], absent: [] });
+      expect(result).toMatchObject({
+        callable: [],
+        refused: [],
+        absent: [],
+        unconfirmed: ["getReport"],
+      });
     });
   });
 
@@ -481,7 +501,40 @@ describe("verifyCapabilities, on what real apps answer", () => {
 
     expect(result.callable).toEqual([]);
     expect(result.absent).toEqual([]);
+    expect(result.unconfirmed).toEqual(["countVisit"]);
     expect(seen.filter((call) => call === "GET /api/visits")).toEqual([]);
+  });
+
+  // Measured on production: a plain Node server's `PATCH
+  // /api/shipments/{reference}/status` got the router's 404 for GET and sat
+  // under "Checking" for ever. Express says the same for every
+  // `POST /x/:id/y`. Only calling it would tell, so a person decides.
+  it("leaves a write with an id in its path unconfirmed on a router 404", async () => {
+    const fetcher = async (url: string, init: RequestInit): Promise<Response> => {
+      const { pathname } = new URL(url);
+      const method = (init.method ?? "GET").toUpperCase();
+      if (pathname === "/api/shipments" && method === "GET") {
+        return new Response("{}", { status: 200 });
+      }
+      return new Response('{"error":"Not found"}', {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const result = await verifyCapabilities({
+      ...base,
+      fetcher,
+      capabilities: [
+        write("updateStatus", "PATCH", "/api/shipments/{reference}/status"),
+        write("archiveEverything", "POST", "/api/archive"),
+      ],
+    });
+
+    expect(result.unconfirmed).toEqual(["updateStatus"]);
+    // No parameters to explain the 404 away: simply not there.
+    expect(result.absent).toEqual(["archiveEverything"]);
+    expect(result.callable).toEqual([]);
   });
 
   it("keeps a write on a server that never answers OPTIONS", async () => {

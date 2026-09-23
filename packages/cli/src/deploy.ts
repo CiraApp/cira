@@ -72,6 +72,8 @@ interface VerifyResponse {
   callable: number;
   refused: number;
   absent: number;
+  /** Absent from a Cira older than this answer. */
+  unconfirmed?: number;
   inconclusive: boolean;
 }
 
@@ -975,18 +977,36 @@ function reportCapabilities(
     return;
   }
 
+  // Not a dead end any more: what the app could not settle waits for a
+  // person, and says where to go. "None could be confirmed" alone left people
+  // wondering whether their capabilities would ever work.
+  const waiting = (count: number) =>
+    info(
+      dim(
+        count === 1
+          ? "  It stays off until someone turns it on in Cira; its first real call settles it."
+          : "  They stay off until someone turns them on in Cira; the first real call settles each one.",
+      ),
+    );
+
   if (confirmed.inconclusive) {
-    info(dim("  This app answers every address, so none could be confirmed."));
+    info(
+      dim("  This app answers every address, so Cira could not confirm them by asking."),
+    );
+    if ((confirmed.unconfirmed ?? 0) > 0) waiting(confirmed.unconfirmed ?? 0);
     info("");
     return;
   }
 
   const reads = result.detected.filter((c) => c.risk === "read").length;
+  const unconfirmed = confirmed.unconfirmed ?? 0;
   const parts = [`${confirmed.callable} confirmed by the app`];
   if (confirmed.absent > 0) parts.push(`${confirmed.absent} it does not serve`);
   if (confirmed.refused > 0)
     parts.push(`${confirmed.refused} it would not let Cira call`);
+  if (unconfirmed > 0) parts.push(`${unconfirmed} only a real call can confirm`);
   info(`  ${parts.join(", ")}`);
+  if (unconfirmed > 0) waiting(unconfirmed);
 
   // Worth its own line, because it is the one outcome a developer can do
   // something about and the one that used to be invisible. These routes are

@@ -1085,6 +1085,168 @@ describe.skipIf(!hasDatabase)("capability engine", () => {
   });
 
   /**
+   * What the app could not confirm by being asked - a catch-all that answers
+   * every address, a write whose GET gets the router's 404 - used to stay
+   * "Checking" for ever. Now it waits for a person, and its first real call
+   * settles it. Policy switching reads on must not be enough: that would
+   * publish every route a catch-all app was credited with.
+   */
+  it("offers an unconfirmed capability only once a person turns it on, and confirms it on its first call", async () => {
+    const { capabilities } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { updateCapabilityEnabled } = await import("./capabilities");
+    const runTool = await toolsAs();
+
+    const orderId = newId("capability");
+    const shipId = newId("capability");
+    const shared = {
+      appId,
+      spaceId,
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      path: "/api/orders/{id}",
+      reach: "unconfirmed" as const,
+      unconfirmedBecause: "cannot-tell",
+      answeredBy: deploymentId,
+      verifiedAt: new Date(),
+    };
+    await database.insert(capabilities).values([
+      {
+        ...shared,
+        id: orderId,
+        name: "getOrderByRef",
+        description: "Look up an order by its reference.",
+        method: "GET",
+        risk: "read",
+        // On by policy, as every detected read is. Not a person's decision.
+        enabled: true,
+      },
+      {
+        ...shared,
+        id: shipId,
+        name: "shipOrder",
+        description: "Mark an order shipped.",
+        method: "POST",
+        risk: "write",
+        enabled: false,
+      },
+    ]);
+
+    try {
+      received.length = 0;
+      const search = await runTool(employee, "search_capabilities", { query: "order" });
+      const listed = JSON.parse(search.content) as {
+        capabilities: Array<{ name: string; enabled: boolean; unavailable?: string }>;
+      };
+      const before = listed.capabilities.find((c) => c.name.endsWith("getOrderByRef"));
+      expect(before?.enabled).toBe(false);
+      expect(before?.unavailable).toContain("turns it on");
+
+      const refused = await runTool(employee, "invoke_capability", {
+        capabilityId: orderId,
+        input: { id: "NW-1001" },
+      });
+      expect(refused.isError).toBe(true);
+      expect(refused.content).toContain("not enabled");
+      expect(received).toHaveLength(0);
+
+      // Only whoever manages the app can vouch for it.
+      expect((await updateCapabilityEnabled(employee, orderId, true)).ok).toBe(false);
+      expect((await updateCapabilityEnabled(founder, orderId, true)).ok).toBe(true);
+
+      const ran = await runTool(employee, "invoke_capability", {
+        capabilityId: orderId,
+        input: { id: "NW-1001" },
+      });
+      expect(ran.isError).toBe(false);
+      expect(JSON.parse(ran.content)).toMatchObject({ id: "NW-1001" });
+
+      const [settled] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, orderId));
+      expect(settled?.reach).toBe("callable");
+      expect(settled?.unconfirmedBecause).toBeNull();
+      expect(settled?.answeredBy).toBe(deploymentId);
+
+      // A write turned on the same way still waits for its person over MCP.
+      await updateCapabilityEnabled(founder, shipId, true);
+      received.length = 0;
+      const asked = await runTool(employee, "invoke_capability", {
+        capabilityId: shipId,
+        input: { id: "NW-1001" },
+      });
+      expect(asked.isError).toBe(false);
+      expect(JSON.parse(asked.content)).toMatchObject({ status: "needs_approval" });
+      expect(received).toHaveLength(0);
+
+      // Turning it off takes the vouch back with it.
+      await updateCapabilityEnabled(founder, shipId, false);
+      const [off] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, shipId));
+      expect(off?.vouchedAt).toBeNull();
+    } finally {
+      await database.delete(capabilities).where(eq(capabilities.id, orderId));
+      await database.delete(capabilities).where(eq(capabilities.id, shipId));
+    }
+  });
+
+  it("records what the app could not settle without demoting what worked", async () => {
+    const { capabilities } = await import("@cira/db");
+    const { eq } = await import("drizzle-orm");
+    const { recordVerification } = await import("./capabilities");
+
+    const vagueId = newId("capability");
+    await database.insert(capabilities).values({
+      id: vagueId,
+      appId,
+      spaceId,
+      name: "archiveOrder",
+      description: "Archive an order.",
+      inputSchema: { type: "object", properties: {}, required: [] },
+      method: "POST",
+      path: "/api/orders/{id}/archive",
+      risk: "write",
+      enabled: false,
+    });
+
+    try {
+      await recordVerification({
+        appId,
+        deploymentId,
+        callable: [],
+        refused: [],
+        absent: [],
+        unconfirmed: {
+          names: ["archiveOrder", "getRevenue"],
+          because: "answers-everything",
+        },
+      });
+
+      const [vague] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, vagueId));
+      expect(vague?.reach).toBe("unconfirmed");
+      expect(vague?.unconfirmedBecause).toBe("answers-everything");
+
+      // Confirmed before; a vaguer answer from this build does not undo that.
+      const [revenue] = await database
+        .select()
+        .from(capabilities)
+        .where(eq(capabilities.id, revenueId));
+      expect(revenue?.reach).toBe("callable");
+    } finally {
+      await database.delete(capabilities).where(eq(capabilities.id, vagueId));
+    }
+  });
+
+  /**
    * The console is a second door onto the same room.
    *
    * It is reached by a person in a browser rather than an agent over MCP, and

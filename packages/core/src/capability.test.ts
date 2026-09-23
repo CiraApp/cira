@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  canRun,
   currentReach,
   fillTargetPath,
   isCapabilityName,
   isSafeTargetPath,
+  offered,
   publicationFor,
   reconcileCapabilities,
   riskFor,
@@ -296,6 +298,44 @@ describe("currentReach", () => {
     expect(currentReach({ reach: "callable", answeredBy: "dep_before" }, "dep_now")).toBe(
       "callable",
     );
+  });
+
+  it("leaves an unconfirmed answer as it is", () => {
+    expect(
+      currentReach({ reach: "unconfirmed", answeredBy: "dep_before" }, "dep_now"),
+    ).toBe("unconfirmed");
+  });
+});
+
+describe("offered", () => {
+  const at = new Date("2026-09-23T09:00:00Z");
+
+  it("offers a confirmed route on the decision alone, policy or person", () => {
+    expect(offered({ enabled: true, reach: "callable", vouchedAt: null })).toBe(true);
+    expect(offered({ enabled: false, reach: "callable", vouchedAt: at })).toBe(false);
+  });
+
+  /**
+   * The case this exists for. A read turns itself on by policy, and an app
+   * that answers every address confirms nothing - so a policy "on" for an
+   * unconfirmed read would publish every invention the analyzer made.
+   */
+  it("offers an unconfirmed route only once a person turned it on", () => {
+    expect(offered({ enabled: true, reach: "unconfirmed", vouchedAt: null })).toBe(false);
+    expect(offered({ enabled: true, reach: "unconfirmed", vouchedAt: at })).toBe(true);
+    expect(offered({ enabled: false, reach: "unconfirmed", vouchedAt: at })).toBe(false);
+  });
+
+  it("lets only a confirmed or an unconfirmed answer be run at all", () => {
+    expect(
+      ["callable", "unconfirmed", "pending", "refused"].map((r) => canRun(r as never)),
+    ).toEqual([true, true, false, false]);
+  });
+
+  it("never offers what is waiting or shut", () => {
+    for (const reach of ["pending", "refused"] as const) {
+      expect(offered({ enabled: true, reach, vouchedAt: at })).toBe(false);
+    }
   });
 });
 

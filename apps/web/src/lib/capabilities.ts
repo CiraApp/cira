@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import {
   apps,
   appAccess,
@@ -14,10 +14,12 @@ import {
   canAccessApp,
   currentReach,
   newId,
+  offered,
   reconcileCapabilities,
   type App,
   type AppAccess,
   type Capability,
+  type UnconfirmedBecause,
   type User,
 } from "@cira/core";
 import type { AnalyzedCapability } from "@/lib/capability-grounding";
@@ -150,9 +152,12 @@ export async function updateCapabilityEnabled(
   // learn that a capability exists.
   if (!allowed) return { ok: false, error: NO_SUCH_CAPABILITY };
 
+  // A person turning one on is also what lets a capability the app could not
+  // confirm reach agents; turning it off takes that back. See `offered`.
+  const now = new Date();
   await database
     .update(capabilities)
-    .set({ enabled, updatedAt: new Date() })
+    .set({ enabled, vouchedAt: enabled ? now : null, updatedAt: now })
     .where(eq(capabilities.id, capabilityId));
 
   const { record } = await import("@/lib/change-record");
@@ -248,7 +253,14 @@ export async function replaceCapabilities(args: {
         .set({
           ...columns(entry.detected, entry.enabled),
           ...(moved
-            ? { verifiedAt: null, reach: "pending" as const, answeredBy: null }
+            ? {
+                verifiedAt: null,
+                reach: "pending" as const,
+                answeredBy: null,
+                unconfirmedBecause: null,
+                // Someone vouched for the route at its old address, not this one.
+                vouchedAt: null,
+              }
             : {}),
         })
         .where(eq(capabilities.id, entry.id));
@@ -278,9 +290,16 @@ export async function recordVerification(args: {
   callable: readonly string[];
   refused: readonly string[];
   absent: readonly string[];
+  /**
+   * What the app answered about without settling it, and why. Never
+   * overwrites a `callable` answer: a route that worked under the build
+   * before is not demoted because this build's answer is vaguer.
+   */
+  unconfirmed?: { names: readonly string[]; because: UnconfirmedBecause };
 }): Promise<void> {
   const database = db();
   const stamped = new Date();
+  const unconfirmed = args.unconfirmed?.names ?? [];
 
   const mine = (names: readonly string[]) =>
     and(eq(capabilities.appId, args.appId), inArray(capabilities.name, [...names]));
@@ -310,6 +329,7 @@ export async function recordVerification(args: {
               reach: "callable",
               answeredBy: args.deploymentId,
               verifiedAt: stamped,
+              unconfirmedBecause: null,
               updatedAt: stamped,
             })
             .where(mine(args.callable)),
@@ -324,9 +344,25 @@ export async function recordVerification(args: {
               reach: "refused",
               answeredBy: args.deploymentId,
               verifiedAt: stamped,
+              unconfirmedBecause: null,
               updatedAt: stamped,
             })
             .where(mine(args.refused)),
+        ]
+      : []),
+
+    ...(unconfirmed.length > 0 && args.unconfirmed !== undefined
+      ? [
+          on
+            .update(capabilities)
+            .set({
+              reach: "unconfirmed",
+              unconfirmedBecause: args.unconfirmed.because,
+              answeredBy: args.deploymentId,
+              verifiedAt: stamped,
+              updatedAt: stamped,
+            })
+            .where(and(mine(unconfirmed), ne(capabilities.reach, "callable"))),
         ]
       : []),
   ]);
@@ -380,24 +416,35 @@ export async function recordAbsence(capabilityId: string): Promise<void> {
  * Record that the app turned Cira away from a capability it was really called
  * through, rather than probed.
  *
- * Only ever demotes a `callable` one. Anything else already says as much or
- * more, and this is written from the middle of an agent's request, where
- * overwriting an answer a verification run just gave would be a race nobody
- * could see.
+ * Only ever demotes a `callable` or `unconfirmed` one. Anything else already
+ * says as much or more, and this is written from the middle of an agent's
+ * request, where overwriting an answer a verification run just gave would be
+ * a race nobody could see. Only a `callable` one is news to its managers: an
+ * unconfirmed route never worked, so nothing stopped.
  */
 export async function recordRefusal(args: {
   capabilityId: string;
   deploymentId: string;
 }): Promise<void> {
   const stamped = new Date();
+  const refusal = {
+    reach: "refused" as const,
+    answeredBy: args.deploymentId,
+    verifiedAt: stamped,
+    unconfirmedBecause: null,
+    updatedAt: stamped,
+  };
+
+  await db()
+    .update(capabilities)
+    .set(refusal)
+    .where(
+      and(eq(capabilities.id, args.capabilityId), eq(capabilities.reach, "unconfirmed")),
+    );
+
   const demoted = await db()
     .update(capabilities)
-    .set({
-      reach: "refused",
-      answeredBy: args.deploymentId,
-      verifiedAt: stamped,
-      updatedAt: stamped,
-    })
+    .set(refusal)
     .where(
       and(eq(capabilities.id, args.capabilityId), eq(capabilities.reach, "callable")),
     )
@@ -411,6 +458,32 @@ export async function recordRefusal(args: {
       args.deploymentId,
     );
   }
+}
+
+/**
+ * Record that a real call settled a capability the app could not confirm by
+ * being asked: it reached the app's own code and came back with a result.
+ *
+ * Only ever promotes an `unconfirmed` one, so an answer a verification run
+ * has since given is never overwritten from the middle of a call.
+ */
+export async function recordAnswered(args: {
+  capabilityId: string;
+  deploymentId: string;
+}): Promise<void> {
+  const stamped = new Date();
+  await db()
+    .update(capabilities)
+    .set({
+      reach: "callable",
+      answeredBy: args.deploymentId,
+      verifiedAt: stamped,
+      unconfirmedBecause: null,
+      updatedAt: stamped,
+    })
+    .where(
+      and(eq(capabilities.id, args.capabilityId), eq(capabilities.reach, "unconfirmed")),
+    );
 }
 
 /** Every capability on an app, for the app's own page. */
@@ -579,11 +652,22 @@ function toCapability(row: CapabilityRow, serving: string | null): Capability {
     // invocation - gets the same answer from one rule rather than each
     // remembering to check. That is also why widening it from a boolean fixed
     // the agent surface without the agent surface being touched.
-    enabled: row.enabled && reach === "callable",
+    //
+    // The one exception is a route the app could not confirm, which is on only
+    // when a person turned it on: policy switches reads on, and that is only
+    // safe for routes the app answered for. `offered` holds the rule.
+    enabled: offered({ enabled: row.enabled, reach, vouchedAt: row.vouchedAt }),
     reach,
+    unconfirmedBecause:
+      reach === "unconfirmed" ? toBecause(row.unconfirmedBecause) : null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/** A stored reason, read back without trusting the column's free text. */
+function toBecause(value: string | null): UnconfirmedBecause {
+  return value === "answers-everything" ? "answers-everything" : "cannot-tell";
 }
 
 /** An app row as the access rules read it. */

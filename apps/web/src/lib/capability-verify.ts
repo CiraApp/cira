@@ -42,12 +42,17 @@ export interface ProbeTarget {
 /**
  * What the app said about one capability.
  *
- * Four answers rather than two, because the two hid the interesting ones.
+ * Five answers rather than two, because the two hid the interesting ones.
  * `refused` used to be filed as confirmation, and `unknown` used to be filed
  * as absence - so a guarded route was published as ready, and a route that
  * timed out was deleted.
+ *
+ * `unknown` is no answer at all - a timeout, a dropped connection - and is
+ * asked again. `undecided` is an answer that cannot tell this route from one
+ * that is not there, which asking again will not change: it used to be filed
+ * with `unknown`, and sat under "Checking" for ever.
  */
-export type Reach = "callable" | "refused" | "absent" | "unknown";
+export type Reach = "callable" | "refused" | "absent" | "unknown" | "undecided";
 
 export interface Verification {
   /** The app answered, so Cira can really call these. */
@@ -57,9 +62,15 @@ export interface Verification {
   /** The app has no route for these. */
   absent: string[];
   /**
+   * The app answered about these, and the answer could not settle them.
+   * Every capability asked, when the run is inconclusive.
+   */
+  unconfirmed: string[];
+  /**
    * True when the app answers everything, so no probe distinguishes anything.
    * Nothing is verified in that case - a catch-all that returns 200 for a path
-   * nobody wrote would otherwise confirm every invention.
+   * nobody wrote would otherwise confirm every invention - and everything
+   * asked about is unconfirmed, for a person to decide.
    */
   inconclusive: boolean;
 }
@@ -69,6 +80,7 @@ const NOTHING: Verification = {
   callable: [],
   refused: [],
   absent: [],
+  unconfirmed: [],
   inconclusive: false,
 };
 
@@ -103,7 +115,14 @@ export async function verifyCapabilities(args: {
   // An app that refuses unknown paths as well as real ones tells us nothing
   // by refusing a real one, so the control catches that case too: it comes
   // back 401 rather than 404, and the whole run is inconclusive.
-  if (control?.status !== 404) return { ...NOTHING, inconclusive: true };
+  //
+  // No answer at all is a slow or sleeping app, and says nothing about its
+  // routes: everything stays as it was and is asked again. An answer that is
+  // not a 404 is the app telling us every address looks alike, which asking
+  // again will not change, so everything asked is left for a person.
+  if (control === null) return { ...NOTHING, inconclusive: true };
+  if (control.status !== 404)
+    return { ...NOTHING, unconfirmed: names, inconclusive: true };
 
   // What the app does with OPTIONS on a path it does not serve. Some answer
   // every OPTIONS the same way - CORS middleware in front of everything - and
@@ -121,6 +140,7 @@ export async function verifyCapabilities(args: {
   const callable: string[] = [];
   const refused: string[] = [];
   const absent: string[] = [];
+  const unconfirmed: string[] = [];
 
   for (let i = 0; i < args.capabilities.length; i += CONCURRENCY) {
     const batch = args.capabilities.slice(i, i + CONCURRENCY);
@@ -141,11 +161,11 @@ export async function verifyCapabilities(args: {
       else if (reach === "refused" && args.identity === undefined) {
         refused.push(capability.name);
       } else if (reach === "absent") absent.push(capability.name);
+      else if (reach === "undecided") unconfirmed.push(capability.name);
     }
   }
 
-  void names;
-  return { callable, refused, absent, inconclusive: false };
+  return { callable, refused, absent, unconfirmed, inconclusive: false };
 }
 
 /**
@@ -223,7 +243,7 @@ async function reachOf(
   // the one case where asking with GET is doing it. Measured on production:
   // the check ran the app's counter up. Nothing else is safe to send, so the
   // app is left to say at its first real call.
-  if (capability.method === "GET" || capability.method === "HEAD") return "unknown";
+  if (capability.method === "GET" || capability.method === "HEAD") return "undecided";
 
   // OPTIONS said nothing useful: no `Allow`, a redirect, a 404, or the same
   // answer it gives a path that does not exist. A 404 used to settle it as
@@ -236,15 +256,18 @@ async function reachOf(
   // A GET asks the same question safely - the write's handler does not run
   // for it - and a route that serves another method says 405.
   const answer = await ask(fetcher, args, { method: "GET", path });
-  if (answer === null || isRedirect(answer.status)) return "unknown";
+  if (answer === null) return "unknown";
+  if (isRedirect(answer.status)) return "undecided";
   if (shut(answer.status)) return "refused";
   if (answer.status === 405) return "callable";
   if (answer.status === 404) {
     // `/orders/{id}` can say 404 for the made-up id rather than the route.
+    // When it is the router's own 404 - Express, or a plain Node server, for
+    // every `POST /orders/:id/cancel` - only calling the write would tell.
     return hasParameters(capability.path) && differs(answer, baseline, path)
       ? "callable"
       : hasParameters(capability.path)
-        ? "unknown"
+        ? "undecided"
         : "absent";
   }
   // Something answered GET here, so the path is served; whether it takes this
@@ -274,7 +297,8 @@ interface Answer {
  * not existing, not the route. Deleting on that removed every read with an id
  * in its path. Past a 404 in the app's own words, which is checked first for
  * every read, the route is taken to exist when OPTIONS finds it; when nothing
- * can tell, it is left unconfirmed and asked again, never deleted.
+ * can tell, it is left unconfirmed - for a person to turn on, and asked again
+ * after the next deploy - and never deleted.
  */
 async function missingRecordOrRoute(
   fetcher: Fetcher,
@@ -288,7 +312,9 @@ async function missingRecordOrRoute(
       if (allow.status !== 404) return "callable";
     }
   }
-  return "unknown";
+  // The app answered the read itself, so it is up; this is what it says, and
+  // it will say the same next time.
+  return "undecided";
 }
 
 /**
@@ -354,7 +380,7 @@ function read(answer: Answer | null, origin: string): Reach {
   // agent can use. Sent off to sign in is the app turning Cira away; any
   // other redirect is left unconfirmed rather than published.
   if (isRedirect(status))
-    return toSignIn(answer.location, origin) ? "refused" : "unknown";
+    return toSignIn(answer.location, origin) ? "refused" : "undecided";
   // Anything else routed and ran: a 200, a 400 saying the probe value was
   // wrong, even a 500 from inside the handler. All of them prove Cira got
   // through to the app's own code, which is what calling it requires.
