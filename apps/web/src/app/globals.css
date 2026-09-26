@@ -945,6 +945,13 @@ body::after {
   padding: 7px 10px;
   border-bottom: 1px solid var(--color-line);
   vertical-align: top;
+  /*
+   * Only at spaces. The answer breaks anywhere, which is right for a long
+   * link in a sentence, but in a table it lets the columns squeeze until
+   * "1042" and "Jordan" split mid-word. A table too wide for the panel
+   * scrolls in .ask-table instead.
+   */
+  overflow-wrap: normal;
 }
 .ask-table tr:last-child td {
   border-bottom: 0;
