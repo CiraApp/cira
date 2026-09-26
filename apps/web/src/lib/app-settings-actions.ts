@@ -7,7 +7,7 @@ import {
   DEFAULT_LIMITS,
   appMemory,
   newId,
-  normalizeAppImage,
+  normalizeImage,
   normalizeHomepageUrl,
   slugify,
 } from "@cira/core";
@@ -260,7 +260,7 @@ export async function updateAppImage(
   appSlug: string,
   image: string,
 ): Promise<ActionResult<null>> {
-  const stored = image.trim() === "" ? null : normalizeAppImage(image);
+  const stored = image.trim() === "" ? null : normalizeImage(image);
 
   if (image.trim() !== "" && stored === null) {
     return { ok: false, error: "That image could not be used. Try a PNG or JPEG." };

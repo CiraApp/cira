@@ -144,6 +144,12 @@ export const spaces = pgTable(
     subscriptionStatus: text("subscription_status"),
     /** What the subscription is paid up to, for a page to say so. */
     paidUntil: timestamp("paid_until", { withTimezone: true }),
+    /**
+     * The company's logo, as a data URL: a 128 square the browser redrew
+     * before sending, kept in the row for the same reason an app's picture is
+     * (see `apps.image`). Null draws the first letter of the name instead.
+     */
+    image: text("image"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

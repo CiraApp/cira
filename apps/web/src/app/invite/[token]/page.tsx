@@ -16,8 +16,8 @@ export const metadata: Metadata = { title: "Invitation" };
 
 /**
  * The one screen reachable while signed out, because the person receiving an
- * invite may have no account yet. It never reveals more than the space name,
- * so a guessed token leaks nothing useful.
+ * invite may have no account yet. It never reveals more than the space's name
+ * and logo, so a guessed token leaks nothing useful.
  */
 export default async function InvitePage({
   params,
@@ -41,7 +41,11 @@ export default async function InvitePage({
 
   if (user === null) {
     return (
-      <EntryFrame title={`Join ${row.space.name} on Cira`} subtitle="Sign in to accept.">
+      <EntryFrame
+        picture={row.space.image}
+        title={`Join ${row.space.name} on Cira`}
+        subtitle="Sign in to accept."
+      >
         <SignInButton mode="modal">
           <button type="button" className="btn btn-primary btn-lg">
             Sign in to continue
@@ -74,6 +78,7 @@ export default async function InvitePage({
     const wrongAccount = verdict.code === "wrong-account";
     return (
       <EntryFrame
+        picture={row.space.image}
         title={`Join ${row.space.name} on Cira`}
         subtitle={
           wrongAccount
@@ -125,6 +130,7 @@ export default async function InvitePage({
 
   return (
     <EntryFrame
+      picture={row.space.image}
       title={`Join ${row.space.name} on Cira`}
       subtitle={`${inviter === undefined ? "You were invited" : `${inviter.name} invited you`} as ${as}${on}.${
         user.firstName === null ? " Tell your colleagues who you are." : ""

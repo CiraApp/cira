@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Role, Space } from "@cira/core";
+import { SpaceIcon } from "../space-icon";
 
 type SpaceOption = Space & { role: Role };
 
@@ -53,16 +54,9 @@ export function SpaceMenu({
     };
   }, [open]);
 
-  const initial = (current?.name ?? currentSlug).charAt(0).toUpperCase();
-
   const face = (
     <>
-      <span
-        aria-hidden="true"
-        className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-edge)] bg-accent text-[12px] font-bold text-accent-ink"
-      >
-        {initial}
-      </span>
+      <SpaceIcon name={current?.name ?? currentSlug} image={current?.image ?? null} />
       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
         {current?.name ?? currentSlug}
       </span>
@@ -114,8 +108,9 @@ export function SpaceMenu({
               href={`/${space.slug}`}
               aria-current={space.slug === currentSlug ? "true" : undefined}
               onClick={() => setOpen(false)}
-              className="flex items-center justify-between gap-3 rounded-[var(--radius-edge)] px-2 py-1.5 text-[13px] text-ink transition-colors duration-150 hover:bg-sunken"
+              className="flex items-center justify-between gap-2.5 rounded-[var(--radius-edge)] px-2 py-1.5 text-[13px] text-ink transition-colors duration-150 hover:bg-sunken"
             >
+              <SpaceIcon name={space.name} image={space.image} size="xs" />
               <span className="min-w-0 flex-1 truncate">{space.name}</span>
               {space.slug === currentSlug ? (
                 <svg
@@ -141,9 +136,12 @@ export function SpaceMenu({
           <Link
             href="/onboarding"
             onClick={() => setOpen(false)}
-            className="mt-1 flex items-center gap-2 rounded-[var(--radius-edge)] border-t border-line px-2 pt-2 pb-1.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink"
+            className="mt-1 flex items-center gap-2.5 rounded-[var(--radius-edge)] border-t border-line px-2 pt-2 pb-1.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink"
           >
-            <span aria-hidden="true">+</span>
+            {/* In the logos' column, so the list keeps one left edge. */}
+            <span aria-hidden="true" className="w-[18px] shrink-0 text-center">
+              +
+            </span>
             Start another space
           </Link>
         </nav>

@@ -379,6 +379,13 @@
       "when": 1790159032747,
       "tag": "0053_say_who_deployed_and_from_what",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790413294632,
+      "tag": "0054_give_a_company_a_logo",
+      "breakpoints": true
     }
   ]
 }

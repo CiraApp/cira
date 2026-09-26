@@ -49,6 +49,7 @@ export const CHANGE_KINDS = {
   "app-rolled-back": "put an app back on an earlier build",
   "app-deleted": "deleted an app",
   "space-renamed": "renamed the company",
+  "space-logo-changed": "changed the company's logo",
   "join-by-domain-changed": "changed who may join by email domain",
 } as const;
 
@@ -145,6 +146,10 @@ export function describeChange(change: {
       return `${actor} deleted ${subject}`;
     case "space-renamed":
       return `${actor} renamed the company to ${subject}`;
+    case "space-logo-changed":
+      return detail === "removed"
+        ? `${actor} removed ${possessive(subject)} logo`
+        : `${actor} changed ${possessive(subject)} logo`;
     case "join-by-domain-changed":
       return detail === "on"
         ? `${actor} let anyone with an @${subject} address join`

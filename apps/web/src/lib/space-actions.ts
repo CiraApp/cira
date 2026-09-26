@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, spaces } from "@cira/db";
-import { roleAtLeast } from "@cira/core";
+import { normalizeImage, roleAtLeast } from "@cira/core";
 import { ForbiddenError, NotFoundError, requireSpaceMember } from "@/lib/authz";
 import { record } from "@/lib/change-record";
 import { tearDownSpace } from "@/lib/space-teardown";
@@ -109,6 +109,40 @@ export async function renameSpace(
 }
 
 /**
+ * Give the company a logo, or take it away with an empty string.
+ *
+ * What arrives has already been redrawn by the browser to a small square, and
+ * is checked again here, because it ends up in an `img` on every member's
+ * screen and on the page an invitation opens.
+ */
+export async function setSpaceLogo(
+  spaceSlug: string,
+  image: string,
+): Promise<SpaceSettingResult> {
+  const removing = image.trim() === "";
+  const stored = removing ? null : normalizeImage(image);
+  if (!removing && stored === null) {
+    return { ok: false, error: "That image could not be used. Try a PNG or JPEG." };
+  }
+
+  const ctx = await adminOf(spaceSlug);
+  if (!ctx.ok) return ctx;
+
+  await db().update(spaces).set({ image: stored }).where(eq(spaces.id, ctx.spaceId));
+  await record({
+    spaceId: ctx.spaceId,
+    kind: "space-logo-changed",
+    actor: ctx.actor,
+    actorUserId: ctx.actorUserId,
+    subject: ctx.name,
+    detail: removing ? "removed" : null,
+  });
+  // The logo sits in the sidebar of every page in the space.
+  revalidatePath(`/${spaceSlug}`, "layout");
+  return { ok: true };
+}
+
+/**
  * Whether anyone with a verified address at the space's domain may join
  * without being invited. Off unless an admin says otherwise: it is a door
  * opened to everyone who has, or will ever have, one of those addresses.
@@ -143,6 +177,7 @@ async function adminOf(spaceSlug: string): Promise<
   | {
       ok: true;
       spaceId: string;
+      name: string;
       domain: string | null;
       actor: string;
       actorUserId: string;
@@ -162,6 +197,7 @@ async function adminOf(spaceSlug: string): Promise<
   return {
     ok: true,
     spaceId: ctx.space.id,
+    name: ctx.space.name,
     domain: ctx.space.domain,
     actor: ctx.user.name,
     actorUserId: ctx.user.id,

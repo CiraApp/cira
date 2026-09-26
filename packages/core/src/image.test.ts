@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { MAX_IMAGE_BYTES, normalizeAppImage } from "./app-image.js";
+import { MAX_IMAGE_BYTES, normalizeImage } from "./image.js";
 
 const dataUrl = (type: string, bytes: number) =>
   `data:${type};base64,${"A".repeat(Math.ceil((bytes * 4) / 3))}`;
 
-describe("normalizeAppImage", () => {
+describe("normalizeImage", () => {
   it("keeps a picture", () => {
     for (const type of ["image/webp", "image/png", "image/jpeg"]) {
-      expect(normalizeAppImage(dataUrl(type, 4000)), type).not.toBeNull();
+      expect(normalizeImage(dataUrl(type, 4000)), type).not.toBeNull();
     }
   });
 
   it("treats an empty choice as no picture", () => {
-    expect(normalizeAppImage("")).toBeNull();
-    expect(normalizeAppImage("   ")).toBeNull();
+    expect(normalizeImage("")).toBeNull();
+    expect(normalizeImage("   ")).toBeNull();
   });
 
   /**
@@ -30,15 +30,13 @@ describe("normalizeAppImage", () => {
       "data:image/png;base64,not base64!",
       "data:image/png,plain",
     ]) {
-      expect(normalizeAppImage(value), value).toBeNull();
+      expect(normalizeImage(value), value).toBeNull();
     }
   });
 
   it("refuses one too large to keep in a row", () => {
-    expect(normalizeAppImage(dataUrl("image/webp", MAX_IMAGE_BYTES + 1024))).toBeNull();
-    expect(
-      normalizeAppImage(dataUrl("image/webp", MAX_IMAGE_BYTES - 1024)),
-    ).not.toBeNull();
+    expect(normalizeImage(dataUrl("image/webp", MAX_IMAGE_BYTES + 1024))).toBeNull();
+    expect(normalizeImage(dataUrl("image/webp", MAX_IMAGE_BYTES - 1024))).not.toBeNull();
   });
 
   it("measures what it decodes to, not how long the text is", () => {
@@ -46,6 +44,6 @@ describe("normalizeAppImage", () => {
     // string's length would refuse a picture a third smaller than the ceiling.
     const justUnder = dataUrl("image/webp", MAX_IMAGE_BYTES - 8);
     expect(justUnder.length).toBeGreaterThan(MAX_IMAGE_BYTES);
-    expect(normalizeAppImage(justUnder)).not.toBeNull();
+    expect(normalizeImage(justUnder)).not.toBeNull();
   });
 });

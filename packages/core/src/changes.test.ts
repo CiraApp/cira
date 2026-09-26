@@ -87,4 +87,24 @@ describe("wording the record", () => {
       }),
     ).toBe("your directory removed dana@acme.com");
   });
+
+  it("tells a new logo from one taken away", () => {
+    const logo = (detail: string | null) =>
+      describeChange({
+        kind: "space-logo-changed",
+        actor: "Ada",
+        subject: "Acme",
+        detail,
+      });
+    expect(logo(null)).toBe("Ada changed Acme's logo");
+    expect(logo("removed")).toBe("Ada removed Acme's logo");
+    expect(
+      describeChange({
+        kind: "space-logo-changed",
+        actor: "Ada",
+        subject: "Northwind Logistics",
+        detail: null,
+      }),
+    ).toBe("Ada changed Northwind Logistics' logo");
+  });
 });

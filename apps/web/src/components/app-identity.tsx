@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateAppDetails, updateAppImage } from "@/lib/app-settings-actions";
-import { IMAGE_EDGE } from "@cira/core";
+import { squarePicture } from "@/lib/square-picture";
 import { AppIcon } from "./app-icon";
 
 /**
@@ -71,43 +71,7 @@ export function AppIdentity({
   const choose = (file: File | undefined) => {
     if (file === undefined) return;
     setError(null);
-
-    // Redrawn before it is sent. Whatever was picked becomes a 128 square, so
-    // what crosses the wire is a few kilobytes of a known shape rather than
-    // the photograph somebody dragged in - which is what lets the picture live
-    // in the app's own row instead of needing somewhere to be stored.
-    const reader = new FileReader();
-    reader.onerror = () => setError("That file could not be read.");
-    reader.onload = () => {
-      const picture = new Image();
-      picture.onerror = () => setError("That file is not an image.");
-      picture.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = IMAGE_EDGE;
-        canvas.height = IMAGE_EDGE;
-        const brush = canvas.getContext("2d");
-        if (brush === null) return;
-
-        // Cropped to the square from the middle, the same way the tile crops
-        // it on screen, so what is chosen is what appears.
-        const edge = Math.min(picture.width, picture.height);
-        brush.drawImage(
-          picture,
-          (picture.width - edge) / 2,
-          (picture.height - edge) / 2,
-          edge,
-          edge,
-          0,
-          0,
-          IMAGE_EDGE,
-          IMAGE_EDGE,
-        );
-
-        storeImage(canvas.toDataURL("image/webp", 0.88));
-      };
-      picture.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
+    squarePicture(file).then(storeImage, (reason: Error) => setError(reason.message));
   };
 
   const storeImage = (picture: string) => {

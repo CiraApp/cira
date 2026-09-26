@@ -15,6 +15,7 @@ import { CiraMark } from "@/components/shell/mark";
  */
 export function EntryFrame({
   mark = "logo",
+  picture,
   eyebrow,
   title,
   subtitle,
@@ -23,6 +24,11 @@ export function EntryFrame({
 }: {
   /** A finished step gets a tick; everything else carries the logo. */
   mark?: "logo" | "done";
+  /**
+   * A company's logo, shown in place of Cira's where the page is about that
+   * company - an invitation to join it. Null or left out keeps Cira's.
+   */
+  picture?: string | null;
   eyebrow?: string;
   /** Left out where what follows carries its own heading, as Clerk's card does. */
   title?: string;
@@ -40,7 +46,7 @@ export function EntryFrame({
       />
 
       <main className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col justify-center px-6 py-16">
-        <Mark kind={mark} />
+        <Mark kind={mark} picture={picture ?? null} />
 
         {eyebrow !== undefined ? (
           <p className="eyebrow enter-up mt-7" style={{ animationDelay: "70ms" }}>
@@ -92,7 +98,21 @@ export function EntryFrame({
  * The bloom is the app's own accent at low opacity and heavily blurred, which
  * is what stops a 44px tile on a near-black page reading as a sticker.
  */
-function Mark({ kind }: { kind: "logo" | "done" }) {
+function Mark({ kind, picture }: { kind: "logo" | "done"; picture: string | null }) {
+  if (kind === "logo" && picture !== null) {
+    // On white, with no bloom: the glow is Cira's accent, and a company's own
+    // mark should not be lit in somebody else's colour.
+    return (
+      <div
+        aria-hidden="true"
+        className="enter-pop relative h-11 w-11 shrink-0 overflow-hidden rounded-[var(--radius-edge)] bg-white"
+      >
+        <img src={picture} alt="" className="h-full w-full object-cover" />
+        <span className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-black/10 ring-inset" />
+      </div>
+    );
+  }
+
   return (
     <div className="enter-pop relative h-11 w-11 shrink-0">
       <span

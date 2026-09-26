@@ -108,6 +108,7 @@ export default async function SettingsPage({
             <SpaceSettingsForm
               spaceSlug={spaceSlug}
               name={ctx.space.name}
+              image={ctx.space.image}
               domain={ctx.space.domain}
               joinByDomain={ctx.space.joinByDomain}
             />

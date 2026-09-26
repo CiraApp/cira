@@ -43,6 +43,8 @@ export interface Space {
   stripeSubscriptionId: string | null;
   subscriptionStatus: string | null;
   paidUntil: Date | null;
+  /** The company's logo as a data URL, or null for its first letter. */
+  image: string | null;
   createdAt: Date;
 }
 

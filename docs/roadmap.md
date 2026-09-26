@@ -256,3 +256,5 @@ The product as it stands, for reference.
 - The capability console, for people who do; API-only apps open into it.
 - Runtime logs for whoever manages an app (2026-09-19).
 - Names, onboarding and profile.
+- A company logo, set by its admins from Settings and shown in the sidebar,
+  the space switcher and on invitations (2026-09-26).

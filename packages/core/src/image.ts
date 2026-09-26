@@ -1,10 +1,10 @@
 /**
- * A picture chosen for an app.
+ * A picture chosen for an app, or a company's logo.
  *
- * Small enough to live in the app's own row, which is only true because the
- * browser redraws it before sending: whatever was picked is scaled to a square
- * and re-encoded, so what arrives is a few kilobytes of a known type rather
- * than the four megabyte photograph somebody dragged in.
+ * Small enough to live in the app's or the space's own row, which is only
+ * true because the browser redraws it before sending: whatever was picked is
+ * scaled to a square and re-encoded, so what arrives is a few kilobytes of a
+ * known type rather than the four megabyte photograph somebody dragged in.
  *
  * Checked here as well, because the browser is the wrong place to enforce
  * anything. What is stored ends up in a `src` attribute on everybody else's
@@ -26,7 +26,7 @@ export const MAX_IMAGE_BYTES = 96 * 1024;
 const ALLOWED = ["image/webp", "image/png", "image/jpeg"] as const;
 
 /** The data URL to store, or null when it is not one Cira will render. */
-export function normalizeAppImage(value: string): string | null {
+export function normalizeImage(value: string): string | null {
   const trimmed = value.trim();
   if (trimmed === "") return null;
 
