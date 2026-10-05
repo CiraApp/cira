@@ -9,14 +9,14 @@
     "start": "next start"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.127.0",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@cira/core": "workspace:*",
     "@cira/db": "workspace:*",
     "@cira/deploy": "workspace:*",
-    "@clerk/nextjs": "^7.9.4",
+    "@clerk/nextjs": "^7.9.10",
     "@sentry/nextjs": "^10.75.0",
-    "drizzle-orm": "^0.45.2",
-    "next": "^16.3.5",
+    "drizzle-orm": "^0.45.3",
+    "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.5"
